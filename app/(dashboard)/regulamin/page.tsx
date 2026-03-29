@@ -1,21 +1,22 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function Regulamin() {
   return (
-    <div className="space-y-6">
-      <h1 className="text-4xl font-bold text-foreground">Regulamin Serwisu</h1>
+    <main className="container mx-auto px-4 py-8">
+      <h1 className="text-4xl font-bold text-foreground mb-8">Regulamin Serwisu</h1>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>1. Postanowienia ogólne</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Niniejszy Regulamin określa zasady korzystania z serwisu internetowego CateringMonitor.</p>
           <p className="text-muted-foreground">
-            Właścicielem i administratorem serwisu jest: <strong className="text-foreground">Sparrow Labs - NWD.pl usługi internetowe</strong>, ul. Bogusławskiego 11B, 05-092 Łomianki.
+            Właścicielem i administratorem serwisu jest:{' '}
+            <strong className="text-foreground">Sparrow Labs - NWD.pl usługi internetowe</strong>, ul. Bogusławskiego 11B, 05-092 Łomianki.
           </p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>2. Definicje</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <ul className="space-y-3 text-muted-foreground">
@@ -27,7 +28,7 @@ export default function Regulamin() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>3. Warunki korzystania z serwisu</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Korzystanie z Serwisu jest dobrowolne i wymaga akceptacji niniejszego Regulaminu.</p>
@@ -36,7 +37,7 @@ export default function Regulamin() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>4. Rejestracja i konto użytkownika</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Rejestracja w Serwisie jest bezpłatna i wymaga podania adresu e-mail oraz hasła.</p>
@@ -46,7 +47,7 @@ export default function Regulamin() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>5. Prawa i obowiązki użytkownika</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Użytkownik ma prawo do:</p>
@@ -65,7 +66,7 @@ export default function Regulamin() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>6. Odpowiedzialność</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Administrator dokłada wszelkich starań, aby informacje zawarte w Serwisie były aktualne i dokładne, jednak nie ponosi odpowiedzialności za decyzje biznesowe podjęte na ich podstawie.</p>
@@ -74,7 +75,7 @@ export default function Regulamin() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>7. Własność intelektualna</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Wszystkie treści zawarte w Serwisie, w tym grafiki, teksty, logo, bazy danych oraz ich układ, podlegają ochronie prawa autorskiego i są własnością Administratora lub innych podmiotów, które udzieliły Administratorowi licencji.</p>
@@ -82,7 +83,7 @@ export default function Regulamin() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>8. Reklamacje</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Reklamacje dotyczące funkcjonowania Serwisu można składać za pośrednictwem formularza kontaktowego.</p>
@@ -90,7 +91,7 @@ export default function Regulamin() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>9. Zmiany w regulaminie</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Administrator zastrzega sobie prawo do wprowadzania zmian w Regulaminie. O zmianach użytkownicy zostaną poinformowani poprzez komunikat w Serwisie.</p>
@@ -98,17 +99,13 @@ export default function Regulamin() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>10. Postanowienia końcowe</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">W sprawach nieuregulowanych niniejszym Regulaminem mają zastosowanie przepisy prawa polskiego.</p>
           <p className="text-muted-foreground">Wszelkie spory rozstrzygane będą przez właściwe polskie sądy powszechne.</p>
         </CardContent>
       </Card>
-
-      <p className="text-sm text-muted-foreground">
-        Ostatnia aktualizacja: {new Date().toLocaleDateString("pl-PL")}
-      </p>
-    </div>
-  );
+    </main>
+  )
 }

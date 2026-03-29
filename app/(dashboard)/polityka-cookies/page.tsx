@@ -1,23 +1,26 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function PolitykaCookies() {
   return (
-    <div className="space-y-6">
-      <h1 className="text-4xl font-bold text-foreground">Polityka Cookies</h1>
+    <main className="container mx-auto px-4 py-8">
+      <h1 className="text-4xl font-bold text-foreground mb-8">Polityka Cookies</h1>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>1. Czym są pliki cookies?</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">
-            Pliki cookies (tzw. &quot;ciasteczka&quot;) to małe pliki tekstowe zapisywane na urządzeniu użytkownika podczas przeglądania stron internetowych. Zawierają informacje niezbędne do prawidłowego funkcjonowania strony lub służące do zbierania statystyk.
+            Pliki cookies (tzw. &quot;ciasteczka&quot;) to małe pliki tekstowe zapisywane na urządzeniu użytkownika
+            podczas przeglądania stron internetowych. Zawierają informacje niezbędne do prawidłowego
+            funkcjonowania strony lub służące do zbierania statystyk.
           </p>
           <p className="text-muted-foreground">
-            Właścicielem serwisu jest: <strong className="text-foreground">Sparrow Labs - NWD.pl usługi internetowe</strong>, ul. Bogusławskiego 11B, 05-092 Łomianki.
+            Właścicielem serwisu jest:{' '}
+            <strong className="text-foreground">Sparrow Labs - NWD.pl usługi internetowe</strong>, ul. Bogusławskiego 11B, 05-092 Łomianki.
           </p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>2. Jakie pliki cookies wykorzystujemy?</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-4">
@@ -52,7 +55,7 @@ export default function PolitykaCookies() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>3. Cel wykorzystywania plików cookies</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Wykorzystujemy pliki cookies w następujących celach:</p>
@@ -67,12 +70,10 @@ export default function PolitykaCookies() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>4. Zarządzanie plikami cookies</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-muted-foreground">
-            Większość przeglądarek internetowych akceptuje pliki cookies automatycznie. Użytkownik może w dowolnym momencie zmienić ustawienia swojej przeglądarki, aby blokować lub usuwać pliki cookies.
-          </p>
+          <p className="text-muted-foreground">Większość przeglądarek internetowych akceptuje pliki cookies automatycznie. Użytkownik może w dowolnym momencie zmienić ustawienia swojej przeglądarki, aby blokować lub usuwać pliki cookies.</p>
           <div className="space-y-3 mt-4">
             <h4 className="font-semibold text-foreground">Jak zarządzać cookies w różnych przeglądarkach:</h4>
             <div className="space-y-2 text-muted-foreground">
@@ -85,48 +86,34 @@ export default function PolitykaCookies() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>5. Wyłączenie plików cookies</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-muted-foreground">
-            Użytkownik może w dowolnej chwili wyłączyć lub usunąć pliki cookies za pomocą ustawień przeglądarki. Należy jednak pamiętać, że wyłączenie plików cookies może wpłynąć na funkcjonalność serwisu i uniemożliwić korzystanie z niektórych funkcji.
-          </p>
-          <p className="text-muted-foreground">
-            W szczególności, wyłączenie niezbędnych plików cookies uniemożliwi logowanie do konta oraz korzystanie z funkcji wymagających uwierzytelnienia.
-          </p>
+          <p className="text-muted-foreground">Użytkownik może w dowolnej chwili wyłączyć lub usunąć pliki cookies za pomocą ustawień przeglądarki. Należy jednak pamiętać, że wyłączenie plików cookies może wpłynąć na funkcjonalność serwisu i uniemożliwić korzystanie z niektórych funkcji.</p>
+          <p className="text-muted-foreground">W szczególności, wyłączenie niezbędnych plików cookies uniemożliwi logowanie do konta oraz korzystanie z funkcji wymagających uwierzytelnienia.</p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>6. Pliki cookies stron trzecich</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-muted-foreground">
-            Nasz serwis może wykorzystywać usługi podmiotów trzecich (np. narzędzia analityczne), które również mogą instalować własne pliki cookies. Zachęcamy do zapoznania się z politykami prywatności tych podmiotów.
-          </p>
+          <p className="text-muted-foreground">Nasz serwis może wykorzystywać usługi podmiotów trzecich (np. narzędzia analityczne), które również mogą instalować własne pliki cookies. Zachęcamy do zapoznania się z politykami prywatności tych podmiotów.</p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>7. Zmiany w polityce cookies</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-muted-foreground">
-            Zastrzegamy sobie prawo do wprowadzania zmian w niniejszej Polityce Cookies. O wszelkich istotnych zmianach będziemy informować użytkowników poprzez komunikaty w serwisie.
-          </p>
+          <p className="text-muted-foreground">Zastrzegamy sobie prawo do wprowadzania zmian w niniejszej Polityce Cookies. O wszelkich istotnych zmianach będziemy informować użytkowników poprzez komunikaty w serwisie.</p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>8. Kontakt</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-muted-foreground">
-            W przypadku pytań dotyczących naszej Polityki Cookies, prosimy o kontakt za pośrednictwem formularza kontaktowego dostępnego w serwisie.
-          </p>
+          <p className="text-muted-foreground">W przypadku pytań dotyczących naszej Polityki Cookies, prosimy o kontakt za pośrednictwem formularza kontaktowego dostępnego w serwisie.</p>
         </CardContent>
       </Card>
-
-      <p className="text-sm text-muted-foreground">
-        Ostatnia aktualizacja: {new Date().toLocaleDateString("pl-PL")}
-      </p>
-    </div>
-  );
+    </main>
+  )
 }

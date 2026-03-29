@@ -1,21 +1,21 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function PolitykaPrywatnosci() {
   return (
-    <div className="space-y-6">
-      <h1 className="text-4xl font-bold text-foreground">Polityka Prywatności</h1>
+    <main className="container mx-auto px-4 py-8">
+      <h1 className="text-4xl font-bold text-foreground mb-8">Polityka Prywatności</h1>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>1. Administrator danych</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">
-            Administratorem danych osobowych zbieranych za pośrednictwem serwisu CateringMonitor jest: <strong className="text-foreground">Sparrow Labs - NWD.pl usługi internetowe</strong>, ul. Bogusławskiego 11B, 05-092 Łomianki.
+            Administratorem danych osobowych zbieranych za pośrednictwem serwisu CateringMonitor jest:{' '}
+            <strong className="text-foreground">Sparrow Labs - NWD.pl usługi internetowe</strong>, ul. Bogusławskiego 11B, 05-092 Łomianki.
           </p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>2. Zakres zbieranych danych</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Serwis zbiera dane osobowe podane dobrowolnie przez użytkownika podczas rejestracji oraz korzystania z serwisu, w tym:</p>
@@ -27,7 +27,7 @@ export default function PolitykaPrywatnosci() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>3. Cel przetwarzania danych</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Dane osobowe są przetwarzane w następujących celach:</p>
@@ -41,7 +41,7 @@ export default function PolitykaPrywatnosci() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>4. Podstawa prawna przetwarzania</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Przetwarzanie danych osobowych odbywa się na podstawie:</p>
@@ -53,23 +53,24 @@ export default function PolitykaPrywatnosci() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>5. Okres przechowywania danych</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">
-            Dane osobowe są przechowywane przez okres niezbędny do realizacji celów, dla których zostały zebrane, a po tym czasie przez okres wymagany przez przepisy prawa lub dla dochodzenia roszczeń.
+            Dane osobowe są przechowywane przez okres niezbędny do realizacji celów, dla których zostały zebrane,
+            a po tym czasie przez okres wymagany przez przepisy prawa lub dla dochodzenia roszczeń.
           </p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>6. Prawa użytkownika</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">Użytkownik ma prawo do:</p>
           <ul className="list-disc list-inside space-y-2 text-muted-foreground ml-4">
             <li>Dostępu do swoich danych osobowych</li>
             <li>Sprostowania (poprawiania) danych</li>
-            <li>Usunięcia danych (&quot;prawo do bycia zapomnianym&quot;)</li>
+            <li>Usunięcia danych</li>
             <li>Ograniczenia przetwarzania danych</li>
             <li>Przenoszenia danych</li>
             <li>Wniesienia sprzeciwu wobec przetwarzania</li>
@@ -79,46 +80,47 @@ export default function PolitykaPrywatnosci() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>7. Pliki cookies</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">
-            Serwis wykorzystuje pliki cookies w celu zapewnienia prawidłowego działania strony, personalizacji treści oraz analizy ruchu. Szczegółowe informacje dostępne są w{" "}
-            <Link href="/polityka-cookies" className="text-primary hover:underline">Polityce Cookies</Link>.
+            Serwis wykorzystuje pliki cookies w celu zapewnienia prawidłowego działania strony,
+            personalizacji treści oraz analizy ruchu. Szczegółowe informacje dostępne są w{' '}
+            <a href="/polityka-cookies" className="text-primary hover:underline">Polityce Cookies</a>.
           </p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>8. Bezpieczeństwo danych</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">
-            Administrator stosuje odpowiednie środki techniczne i organizacyjne zapewniające ochronę przetwarzanych danych osobowych, w tym szyfrowanie połączenia SSL/TLS, zabezpieczenia serwerów oraz regularne audyty bezpieczeństwa.
+            Administrator stosuje odpowiednie środki techniczne i organizacyjne zapewniające
+            ochronę przetwarzanych danych osobowych, w tym szyfrowanie połączenia SSL/TLS,
+            zabezpieczenia serwerów oraz regularne audyty bezpieczeństwa.
           </p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>9. Zmiany w polityce prywatności</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">
-            Administrator zastrzega sobie prawo do wprowadzania zmian w niniejszej Polityce Prywatności. O wszelkich zmianach użytkownicy będą informowani poprzez komunikaty w serwisie.
+            Administrator zastrzega sobie prawo do wprowadzania zmian w niniejszej Polityce Prywatności.
+            O wszelkich zmianach użytkownicy będą informowani poprzez komunikaty w serwisie.
           </p>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mb-6">
         <CardHeader><CardTitle>10. Kontakt</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground">
-            W sprawach związanych z ochroną danych osobowych można kontaktować się za pośrednictwem formularza kontaktowego dostępnego w serwisie.
+            W sprawach związanych z ochroną danych osobowych można kontaktować się za pośrednictwem
+            formularza kontaktowego dostępnego w serwisie.
           </p>
         </CardContent>
       </Card>
-
-      <p className="text-sm text-muted-foreground">
-        Ostatnia aktualizacja: {new Date().toLocaleDateString("pl-PL")}
-      </p>
-    </div>
-  );
+    </main>
+  )
 }

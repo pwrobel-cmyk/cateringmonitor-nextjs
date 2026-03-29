@@ -1,120 +1,99 @@
-'use client';
+'use client'
 
-import { useState } from "react";
-import { useGoogleTrendsAnalyses } from "@/hooks/useGoogleTrendsAnalyses";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { TrendingUp, Calendar, Globe, Search, FileText, ChevronRight } from "lucide-react";
-import { format } from "date-fns";
-import { pl } from "date-fns/locale";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import ReactMarkdown from "react-markdown";
-import type { GoogleTrendsAnalysis } from "@/hooks/useGoogleTrendsAnalyses";
+import { useState } from 'react'
+import { useGoogleTrendsAnalyses, GoogleTrendsAnalysis } from '@/hooks/useGoogleTrendsAnalyses'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { TrendingUp, Calendar, Globe, Search, FileText, ChevronRight } from 'lucide-react'
+import { format } from 'date-fns'
+import { pl } from 'date-fns/locale'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import ReactMarkdown from 'react-markdown'
 
 interface TrendDataPoint {
-  date: string;
-  [key: string]: string | number;
+  date: string
+  [key: string]: string | number
 }
 
 export default function Trends() {
-  const { data: analyses, isLoading, error } = useGoogleTrendsAnalyses();
-  const [selectedAnalysis, setSelectedAnalysis] = useState<GoogleTrendsAnalysis | null>(null);
+  const { data: analyses, isLoading, error } = useGoogleTrendsAnalyses()
+  const [selectedAnalysis, setSelectedAnalysis] = useState<GoogleTrendsAnalysis | null>(null)
+
+  const filteredAnalyses = analyses
 
   const getAnalysisTypeLabel = (type: string) => {
     switch (type) {
-      case "interest_over_time":
-        return "Zainteresowanie w czasie";
-      case "interest_by_region":
-      case "multi_region":
-        return "Zainteresowanie wg regionu";
-      case "related_queries":
-        return "Powiązane zapytania";
-      default:
-        return type;
+      case 'interest_over_time': return 'Zainteresowanie w czasie'
+      case 'interest_by_region':
+      case 'multi_region': return 'Zainteresowanie wg regionu'
+      case 'related_queries': return 'Powiązane zapytania'
+      default: return type
     }
-  };
+  }
 
   const getAnalysisTypeColor = (type: string) => {
     switch (type) {
-      case "interest_over_time":
-        return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
-      case "interest_by_region":
-      case "multi_region":
-        return "bg-green-500/10 text-green-600 dark:text-green-400";
-      case "related_queries":
-        return "bg-purple-500/10 text-purple-600 dark:text-purple-400";
-      default:
-        return "bg-muted text-muted-foreground";
+      case 'interest_over_time': return 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+      case 'interest_by_region':
+      case 'multi_region': return 'bg-green-500/10 text-green-600 dark:text-green-400'
+      case 'related_queries': return 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+      default: return 'bg-muted text-muted-foreground'
     }
-  };
+  }
 
   const chartColors = [
-    "hsl(var(--primary))",
-    "hsl(142, 76%, 36%)",
-    "hsl(38, 92%, 50%)",
-    "hsl(280, 65%, 60%)",
-    "hsl(0, 84%, 60%)",
-  ];
+    'hsl(var(--primary))',
+    'hsl(142, 76%, 36%)',
+    'hsl(38, 92%, 50%)',
+    'hsl(280, 65%, 60%)',
+    'hsl(0, 84%, 60%)',
+  ]
 
   const prepareChartData = (data: unknown, analysisType: string): TrendDataPoint[] => {
-    if (!data || typeof data !== 'object') return [];
-
+    if (!data || typeof data !== 'object') return []
     const dataObj = data as {
-      timeline_data?: Array<{ date: string; values: Array<{ query: string; value: number }> }>;
-      timeline?: Array<{ date: string; [key: string]: string | number }>;
-      regions?: string[];
-    };
-
+      timeline_data?: Array<{ date: string; values: Array<{ query: string; value: number }> }>
+      timeline?: Array<{ date: string; [key: string]: string | number }>
+      regions?: string[]
+    }
     if (analysisType === 'multi_region' && dataObj.timeline && Array.isArray(dataObj.timeline)) {
       return dataObj.timeline.map((item) => {
-        const point: TrendDataPoint = { date: item.date as string };
-        Object.keys(item).forEach((key) => {
-          if (key !== 'date') {
-            point[key] = item[key];
-          }
-        });
-        return point;
+        const point: TrendDataPoint = { date: item.date as string }
+        Object.keys(item).forEach((key) => { if (key !== 'date') point[key] = item[key] })
+        return point
       }).sort((a, b) => {
-        const dateA = new Date(a.date.replace(/([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]+)\s(\d+).*(\d{4})/, '$1 $2, $3'));
-        const dateB = new Date(b.date.replace(/([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]+)\s(\d+).*(\d{4})/, '$1 $2, $3'));
-        return dateA.getTime() - dateB.getTime();
-      });
+        const dateA = new Date(a.date.replace(/([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]+)\s(\d+).*(\d{4})/, '$1 $2, $3'))
+        const dateB = new Date(b.date.replace(/([A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ]+)\s(\d+).*(\d{4})/, '$1 $2, $3'))
+        return dateA.getTime() - dateB.getTime()
+      })
     }
-
-    if (!dataObj.timeline_data || !Array.isArray(dataObj.timeline_data)) return [];
-
+    if (!dataObj.timeline_data || !Array.isArray(dataObj.timeline_data)) return []
     return dataObj.timeline_data.map((item) => {
-      const point: TrendDataPoint = { date: item.date };
-      item.values.forEach((v) => {
-        point[v.query] = v.value;
-      });
-      return point;
-    });
-  };
+      const point: TrendDataPoint = { date: item.date }
+      item.values.forEach((v) => { point[v.query] = v.value })
+      return point
+    })
+  }
 
   const getChartKeys = (data: unknown, analysisType: string, queries: string[]): string[] => {
     if (analysisType === 'multi_region' && data && typeof data === 'object') {
-      const dataObj = data as { regions?: string[] };
-      if (dataObj.regions && Array.isArray(dataObj.regions)) {
-        return dataObj.regions;
-      }
+      const dataObj = data as { regions?: string[] }
+      if (dataObj.regions && Array.isArray(dataObj.regions)) return dataObj.regions
     }
-    return queries;
-  };
+    return queries
+  }
 
   return (
-    <div>
+    <main className="container mx-auto px-4 py-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <TrendingUp className="h-6 w-6 text-primary" />
           Google Trends
         </h1>
-        <p className="text-muted-foreground mt-1">
-          Analizy trendów wyszukiwań dla branży catering dietetyczny
-        </p>
+        <p className="text-muted-foreground mt-1">Analizy trendów wyszukiwań dla branży catering dietetyczny</p>
       </div>
 
       {isLoading && (
@@ -123,9 +102,7 @@ export default function Trends() {
             <Skeleton className="h-5 w-3/4" />
             <Skeleton className="h-4 w-1/2" />
           </CardHeader>
-          <CardContent>
-            <Skeleton className="h-20 w-full" />
-          </CardContent>
+          <CardContent><Skeleton className="h-20 w-full" /></CardContent>
         </Card>
       )}
 
@@ -137,7 +114,7 @@ export default function Trends() {
         </Card>
       )}
 
-      {analyses && analyses.length === 0 && (
+      {filteredAnalyses && filteredAnalyses.length === 0 && (
         <Card>
           <CardContent className="py-12 text-center">
             <TrendingUp className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -146,9 +123,9 @@ export default function Trends() {
         </Card>
       )}
 
-      {analyses && analyses.length > 0 && (
+      {filteredAnalyses && filteredAnalyses.length > 0 && (
         <div className="space-y-4">
-          {analyses.map((analysis) => (
+          {filteredAnalyses.map((analysis) => (
             <Card key={analysis.id} className="hover:shadow-md transition-shadow">
               <CardHeader>
                 <div className="flex items-start justify-between gap-2">
@@ -164,48 +141,32 @@ export default function Trends() {
                 </div>
                 <CardDescription className="flex items-center gap-4 text-xs">
                   {analysis.geo && (
-                    <span className="flex items-center gap-1">
-                      <Globe className="h-3 w-3" />
-                      {analysis.geo}
-                    </span>
+                    <span className="flex items-center gap-1"><Globe className="h-3 w-3" />{analysis.geo}</span>
                   )}
                   {analysis.date_range && (
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {analysis.date_range}
-                    </span>
+                    <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{analysis.date_range}</span>
                   )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
                   <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                    <Search className="h-3 w-3" />
-                    Słowa kluczowe:
+                    <Search className="h-3 w-3" />Słowa kluczowe:
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {analysis.queries.map((query, idx) => (
-                      <Badge key={idx} variant="outline" className="text-sm">
-                        {query}
-                      </Badge>
+                      <Badge key={idx} variant="outline" className="text-sm">{query}</Badge>
                     ))}
                   </div>
                 </div>
-
                 <div className="flex items-center justify-between pt-2 border-t">
                   {analysis.created_at && (
                     <p className="text-xs text-muted-foreground">
-                      Utworzono: {format(new Date(analysis.created_at), "d MMM yyyy, HH:mm", { locale: pl })}
+                      Utworzono: {format(new Date(analysis.created_at), 'd MMM yyyy, HH:mm', { locale: pl })}
                     </p>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSelectedAnalysis(analysis)}
-                    className="flex items-center gap-1"
-                  >
-                    Szczegóły
-                    <ChevronRight className="h-4 w-4" />
+                  <Button variant="outline" size="sm" onClick={() => setSelectedAnalysis(analysis)} className="flex items-center gap-1">
+                    Szczegóły<ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
               </CardContent>
@@ -221,78 +182,63 @@ export default function Trends() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5 text-primary" />
-                  {selectedAnalysis.name}
+                  {(selectedAnalysis as any).name}
                 </DialogTitle>
               </DialogHeader>
-
               <div className="space-y-6">
-                {selectedAnalysis.data && (
+                {(selectedAnalysis as any).data && (
                   <div>
                     <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4" />
-                      Wykres zainteresowania
+                      <TrendingUp className="h-4 w-4" />Wykres zainteresowania
                     </h3>
                     <div className="h-[300px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={prepareChartData(selectedAnalysis.data, selectedAnalysis.analysis_type)}>
+                        <LineChart data={prepareChartData((selectedAnalysis as any).data, (selectedAnalysis as any).analysis_type)}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                           <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                           <YAxis tick={{ fontSize: 11 }} />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: 'hsl(var(--card))',
-                              border: '1px solid hsl(var(--border))',
-                              borderRadius: '8px'
-                            }}
-                          />
+                          <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} />
                           <Legend />
-                          {getChartKeys(selectedAnalysis.data, selectedAnalysis.analysis_type, selectedAnalysis.queries).map((key, idx) => (
-                            <Line
-                              key={key}
-                              type="monotone"
-                              dataKey={key}
-                              stroke={chartColors[idx % chartColors.length]}
-                              strokeWidth={2}
-                              dot={false}
-                            />
+                          {getChartKeys((selectedAnalysis as any).data, (selectedAnalysis as any).analysis_type, (selectedAnalysis as any).queries).map((key: string, idx: number) => (
+                            <Line key={key} type="monotone" dataKey={key} stroke={chartColors[idx % chartColors.length]} strokeWidth={2} dot={false} />
                           ))}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
                 )}
-
-                {selectedAnalysis.ai_analysis && (
+                {(selectedAnalysis as any).ai_analysis && (
                   <div>
                     <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      Analiza AI
+                      <FileText className="h-4 w-4" />Analiza AI
                     </h3>
-                    <div className="prose prose-sm max-w-none dark:prose-invert">
-                      <ReactMarkdown>{selectedAnalysis.ai_analysis}</ReactMarkdown>
-                    </div>
+                    <ReactMarkdown
+                      components={{
+                        h1: ({ children }) => <div className="bg-primary/10 rounded-lg p-4 mb-4 border-l-4 border-primary"><h2 className="text-lg font-bold text-foreground flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary" />{children}</h2></div>,
+                        h2: ({ children }) => <div className="relative bg-gradient-to-r from-primary/15 via-primary/10 to-transparent rounded-xl p-5 mt-8 mb-4 border border-primary/20 shadow-sm"><div className="absolute -left-1 top-1/2 -translate-y-1/2 w-1.5 h-8 bg-primary rounded-full" /><h3 className="text-base font-bold text-foreground tracking-tight">{children}</h3></div>,
+                        h3: ({ children }) => <div className="flex items-center gap-2 mt-5 mb-2 pb-2 border-b border-border/50"><div className="w-2 h-2 rounded-full bg-primary" /><h4 className="text-sm font-semibold text-primary">{children}</h4></div>,
+                        p: ({ children }) => <p className="text-sm text-muted-foreground leading-relaxed mb-4 pl-4">{children}</p>,
+                        ul: ({ children }) => <ul className="space-y-2 my-3 pl-4">{children}</ul>,
+                        ol: ({ children }) => <ol className="space-y-2 my-3 pl-4 list-decimal list-inside">{children}</ol>,
+                        li: ({ children }) => <li className="text-sm text-muted-foreground leading-relaxed flex items-start gap-2"><span className="text-primary mt-1.5">•</span><span>{children}</span></li>,
+                        strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                        hr: () => <hr className="my-6 border-border" />,
+                        blockquote: ({ children }) => <blockquote className="border-l-4 border-primary bg-primary/5 p-4 rounded-r-lg my-4 italic">{children}</blockquote>,
+                      }}
+                    >
+                      {(selectedAnalysis as any).ai_analysis}
+                    </ReactMarkdown>
                   </div>
                 )}
-
                 <div className="flex items-center gap-4 text-xs text-muted-foreground pt-4 border-t">
-                  {selectedAnalysis.geo && (
-                    <span className="flex items-center gap-1">
-                      <Globe className="h-3 w-3" />
-                      Region: {selectedAnalysis.geo}
-                    </span>
-                  )}
-                  {selectedAnalysis.date_range && (
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      Zakres: {selectedAnalysis.date_range}
-                    </span>
-                  )}
+                  {(selectedAnalysis as any).geo && <span className="flex items-center gap-1"><Globe className="h-3 w-3" />Region: {(selectedAnalysis as any).geo}</span>}
+                  {(selectedAnalysis as any).date_range && <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />Zakres: {(selectedAnalysis as any).date_range}</span>}
                 </div>
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
-    </div>
-  );
+    </main>
+  )
 }
