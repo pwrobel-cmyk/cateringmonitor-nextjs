@@ -138,8 +138,52 @@ function matchBrand(cell: string, brands: Brand[]): { brand: Brand | null; score
   return { brand: bestScore > 0 ? best : null, score: bestScore };
 }
 
+const PACKAGE_ALIASES: Record<string, string> = {
+  // Zdrowa Szama
+  'active - 5 posiłków': 'Zdrowa Szama - ACTIVE',
+  'fit&slim - 5 posiłków': 'Zdrowa Szama - FIT & SLIM',
+  'fit slim - 5 posiłków': 'Zdrowa Szama - FIT & SLIM',
+  'fodmap - 5 posiłków': 'Zdrowa Szama - FODMAP',
+  'hashi - 5 posiłków': 'Zdrowa Szama - HASHI',
+  'intermittent fasting - 3 posiłki': 'Zdrowa Szama - INTERMITTENT FASTING',
+  'keto - 4 posiłki': 'Zdrowa Szama - KETO',
+  'klasyczna - 3 posiłki': 'Zdrowa Szama - KLASYCZNA',
+  'klasyczna - 5 posiłków': 'Zdrowa Szama - KLASYCZNA',
+  'low carb - 5 posiłków': 'Zdrowa Szama - LOW CARB',
+  'sokowa - 6 soków': 'Zdrowa Szama - SOKOWA',
+  'vege - 5 posiłków': 'Zdrowa Szama - VEGE',
+  // SuperMenu WM
+  'supermenu - wm fit 30': 'SM NEW Wybór menu 30',
+  'supermenu - wm fit 40': 'SM NEW Wybór menu 40',
+  'supermenu - wm keto 40': 'SM NEW Wybór menu 40',
+  'supermenu - wm niski ig 30': 'SM NEW Wybór menu 30',
+  'supermenu - wm niski ig 40': 'SM NEW Wybór menu 40',
+  'supermenu - wm no gluten & no lactose 30': 'SM NEW Wybór menu 30',
+  'supermenu - wm no gluten & no lactose 40': 'SM NEW Wybór menu 40',
+  'supermenu - wm super smart 10': 'SM NEW Wybór menu 10',
+  'supermenu - wm vege 30': 'SM NEW Wybór menu 30',
+  'supermenu - wm vege 40': 'SM NEW Wybór menu 40',
+  'supermenu - wm wegańska 30': 'SM NEW Wybór menu 30',
+  'supermenu - wm wegańska 40': 'SM NEW Wybór menu 40',
+  'supermenu - wm wrażliwe jelita 40': 'SM NEW Wybór menu 40',
+  'supermenu - wm wzmocnienie odporności 10': 'SM NEW Wybór menu 10',
+  'supermenu - wm wzmocnienie odporności 30': 'SM NEW Wybór menu 30',
+  'supermenu - wm wzmocnienie odporności 40': 'SM NEW Wybór menu 40',
+  // FitApetit
+  'fitapetit - signature': 'FitApetit - Standard - wybór menu 10',
+  // Pomelo
+  'pomelo - wegeteriańska': 'Pomelo - Wegetariańska',
+};
+
 function matchPackage(cell: string, packages: Package[]): { pkg: Package | null; score: number } {
   const cellLower = cell.toLowerCase().trim();
+
+  // Alias lookup
+  const aliasTarget = PACKAGE_ALIASES[cellLower];
+  if (aliasTarget) {
+    const found = packages.find((p) => p.name.toLowerCase() === aliasTarget.toLowerCase());
+    if (found) return { pkg: found, score: 4 };
+  }
   const cellNorm = normalize(cell);
   let best: Package | null = null;
   let bestScore = 0;
