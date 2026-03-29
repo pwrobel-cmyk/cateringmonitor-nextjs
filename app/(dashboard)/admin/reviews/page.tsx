@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, RefreshCw, Star, Trash2 } from 'lucide-react';
 
 const ADMIN_EMAIL = 'p.wrobel@nwd.pl';
 
@@ -47,6 +47,18 @@ interface ImportError {
   row: number;
   marka: string;
   powod: string;
+}
+
+interface PendingReview {
+  id: string;
+  brand_id: string | null;
+  original_brand_name: string | null;
+  author_name: string | null;
+  rating: number;
+  content: string;
+  review_date: string | null;
+  source: string | null;
+  created_at: string;
 }
 
 function parseDate(val: unknown): string | null {
@@ -95,6 +107,11 @@ export default function AdminReviewsPage() {
   const [unmappedBrandsFromFile, setUnmappedBrandsFromFile] = useState<string[]>([]);
   const [parseErrors, setParseErrors] = useState<ImportError[]>([]);
 
+  // moderation
+  const [pendingReviews, setPendingReviews] = useState<PendingReview[]>([]);
+  const [loadingPending, setLoadingPending] = useState(false);
+  const [moderating, setModerating] = useState<string | null>(null);
+
   useEffect(() => {
     if (user && user.email !== ADMIN_EMAIL) {
       router.replace('/dashboard');
@@ -112,8 +129,50 @@ export default function AdminReviewsPage() {
     loadBrands();
   }, []);
 
+  useEffect(() => {
+    if (user?.email === ADMIN_EMAIL) loadPending();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   if (!user || user.email !== ADMIN_EMAIL) {
     return null;
+  }
+
+  async function loadPending() {
+    setLoadingPending(true);
+    const { data } = await supabase
+      .from('reviews')
+      .select('id, brand_id, original_brand_name, author_name, rating, content, review_date, source, created_at')
+      .eq('is_approved', false)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (data) setPendingReviews(data as PendingReview[]);
+    setLoadingPending(false);
+  }
+
+  async function approveReview(id: string) {
+    setModerating(id);
+    await supabase.from('reviews').update({ is_approved: true }).eq('id', id);
+    setPendingReviews((prev) => prev.filter((r) => r.id !== id));
+    setModerating(null);
+    toast.success('Opinia zatwierdzona.');
+  }
+
+  async function rejectReview(id: string) {
+    setModerating(id);
+    await supabase.from('reviews').delete().eq('id', id);
+    setPendingReviews((prev) => prev.filter((r) => r.id !== id));
+    setModerating(null);
+    toast.success('Opinia usunięta.');
+  }
+
+  async function approveAll() {
+    setLoadingPending(true);
+    const ids = pendingReviews.map((r) => r.id);
+    await supabase.from('reviews').update({ is_approved: true }).in('id', ids);
+    setPendingReviews([]);
+    setLoadingPending(false);
+    toast.success(`Zatwierdzono ${ids.length} opinii.`);
   }
 
   function matchBrand(name: string, brandList: Brand[]): Brand | undefined {
@@ -412,6 +471,92 @@ export default function AdminReviewsPage() {
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">Importowanie... {progress}%</p>
               <Progress value={progress} className="h-2" />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Moderation panel */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-yellow-500" />
+              Moderacja opinii
+              {pendingReviews.length > 0 && (
+                <Badge variant="destructive" className="ml-1">{pendingReviews.length}</Badge>
+              )}
+            </CardTitle>
+            <CardDescription>Opinie oczekujące na zatwierdzenie</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            {pendingReviews.length > 0 && (
+              <Button size="sm" onClick={approveAll} disabled={loadingPending}>
+                <CheckCircle className="h-4 w-4 mr-1" />
+                Zatwierdź wszystkie
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={loadPending} disabled={loadingPending}>
+              <RefreshCw className={`h-4 w-4 ${loadingPending ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loadingPending ? (
+            <p className="text-sm text-muted-foreground">Ładowanie...</p>
+          ) : pendingReviews.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Brak opinii oczekujących na zatwierdzenie.</p>
+          ) : (
+            <div className="space-y-3">
+              {pendingReviews.map((review) => (
+                <div key={review.id} className="border rounded-lg p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">
+                          {review.original_brand_name || review.brand_id || '—'}
+                        </span>
+                        <div className="flex items-center gap-0.5">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star
+                              key={i}
+                              className={`h-3 w-3 ${i < review.rating ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground/30'}`}
+                            />
+                          ))}
+                        </div>
+                        {review.author_name && (
+                          <span className="text-xs text-muted-foreground">{review.author_name}</span>
+                        )}
+                        {review.review_date && (
+                          <span className="text-xs text-muted-foreground">{review.review_date}</span>
+                        )}
+                        <Badge variant="outline" className="text-xs">{review.source || 'import'}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground line-clamp-3">{review.content}</p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-green-600 border-green-500/30 hover:bg-green-500/10"
+                        onClick={() => approveReview(review.id)}
+                        disabled={moderating === review.id}
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                        onClick={() => rejectReview(review.id)}
+                        disabled={moderating === review.id}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
