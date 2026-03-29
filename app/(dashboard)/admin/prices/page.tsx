@@ -75,7 +75,7 @@ function AdminNav() {
       {adminLinks.map((link) => {
         const isActive = pathname === link.href;
         return (
-          <Link key={link.href} href={link.href}><Button variant={isActive ? 'default' : 'outline'} size="sm">link.label</Button></Link>
+          <Link key={link.href} href={link.href}><Button variant={isActive ? 'default' : 'outline'} size="sm">{link.label}</Button></Link>
         );
       })}
     </nav>
