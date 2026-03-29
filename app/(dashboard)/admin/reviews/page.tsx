@@ -313,7 +313,6 @@ export default function AdminReviewsPage() {
       const { data } = await supabase
         .from('reviews')
         .select('brand_id, author_name, content')
-        .eq('source', 'manual')
         .in('brand_id', brandIds)
         .range(fromOffset, fromOffset + pageSize - 1);
 
@@ -357,7 +356,7 @@ export default function AdminReviewsPage() {
         rating: r.rating,
         review_date: r.review_date || null,
         source: 'manual',
-        is_approved: false,
+        is_approved: true,
         import_batch_id: batchId,
       };
 
