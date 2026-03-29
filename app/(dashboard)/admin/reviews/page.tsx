@@ -149,7 +149,7 @@ export default function AdminReviewsPage() {
         .select('id')
         .eq('brand_id', review.brand_id)
         .eq('author_name', review.author_name)
-        .eq('rating', review.rating)
+        .ilike('content', review.content.slice(0, 80).replace(/[%_]/g, '') + '%')
         .limit(1)
 
       if (existing && existing.length > 0) {
