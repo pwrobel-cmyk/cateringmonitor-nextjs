@@ -217,6 +217,8 @@ export default function AdminReviewsPage() {
       'Data',
     ]);
 
+    console.log('PARSE START: headers=', headers, '| cols:', { brandCol, contentCol, authorCol, ratingCol, dateCol });
+
     const unmappedBrandSet = new Set<string>();
     const parsed: ParsedRow[] = [];
     const fingerprintSet = new Set<string>();
@@ -234,6 +236,11 @@ export default function AdminReviewsPage() {
       if (!contentRaw) continue;
 
       const brand = matchBrand(brandRaw, brands);
+
+      if (i === 1) {
+        console.log('IMPORT ROW 0:', { brandRaw, brandFound: brand?.name ?? null, authorRaw, content: contentRaw?.slice(0, 50), ratingRaw, dateRaw });
+      }
+
       if (!brand) {
         if (brandRaw) {
           unmappedBrandSet.add(brandRaw);
@@ -262,6 +269,8 @@ export default function AdminReviewsPage() {
         review_date,
       });
     }
+
+    console.log('PARSE END: parsed=', parsed.length, '| unmapped=', [...unmappedBrandSet], '| rowErrors=', rowErrors.length);
 
     setAllParsedRows(parsed);
     setPreviewRows(parsed.slice(0, 5));
@@ -304,7 +313,7 @@ export default function AdminReviewsPage() {
       const { data } = await supabase
         .from('reviews')
         .select('brand_id, author_name, content')
-        .eq('source', 'excel_import')
+        .eq('source', 'manual')
         .in('brand_id', brandIds)
         .range(fromOffset, fromOffset + pageSize - 1);
 
@@ -331,6 +340,8 @@ export default function AdminReviewsPage() {
       }
     }
 
+    console.log('AFTER DEDUP:', { total: allParsedRows.length, afterDedup: toInsert.length, existingCount: existingFingerprints.size, skipped });
+
     const batchSize = 100;
     let inserted = 0;
 
@@ -342,12 +353,14 @@ export default function AdminReviewsPage() {
         content: r.content,
         rating: r.rating,
         review_date: r.review_date || null,
-        source: 'excel_import',
+        source: 'manual',
         is_approved: false,
         import_batch_id: batchId,
       }));
 
-      await supabase.from('reviews').insert(batch);
+      console.log('INSERTING BATCH:', batch.length, 'reviews, first:', { brand_id: batch[0]?.brand_id, author: batch[0]?.author_name, content: batch[0]?.content?.slice(0,50) });
+      const { error: insertError } = await supabase.from('reviews').insert(batch);
+      if (insertError) console.error('INSERT ERROR:', insertError);
       inserted += batch.length;
       setProgress(Math.round((inserted / toInsert.length) * 100));
     }
