@@ -43,6 +43,12 @@ interface ImportResult {
   unmappedBrands: string[];
 }
 
+interface ImportError {
+  row: number;
+  marka: string;
+  powod: string;
+}
+
 function parseDate(val: unknown): string | null {
   if (val === null || val === undefined || val === '') return null;
 
@@ -87,6 +93,7 @@ export default function AdminReviewsPage() {
   const [brands, setBrands] = useState<Brand[]>([]);
   const [brandsLoaded, setBrandsLoaded] = useState(false);
   const [unmappedBrandsFromFile, setUnmappedBrandsFromFile] = useState<string[]>([]);
+  const [parseErrors, setParseErrors] = useState<ImportError[]>([]);
 
   useEffect(() => {
     if (user && user.email !== ADMIN_EMAIL) {
@@ -123,6 +130,7 @@ export default function AdminReviewsPage() {
     setPreviewRows([]);
     setAllParsedRows([]);
     setUnmappedBrandsFromFile([]);
+    setParseErrors([]);
 
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
@@ -153,6 +161,7 @@ export default function AdminReviewsPage() {
     const unmappedBrandSet = new Set<string>();
     const parsed: ParsedRow[] = [];
     const fingerprintSet = new Set<string>();
+    const rowErrors: ImportError[] = [];
 
     for (let i = 1; i < raw.length; i++) {
       const row = raw[i] as unknown[];
@@ -167,7 +176,10 @@ export default function AdminReviewsPage() {
 
       const brand = matchBrand(brandRaw, brands);
       if (!brand) {
-        if (brandRaw) unmappedBrandSet.add(brandRaw);
+        if (brandRaw) {
+          unmappedBrandSet.add(brandRaw);
+          rowErrors.push({ row: i + 1, marka: brandRaw, powod: 'nie znaleziono marki' });
+        }
         continue;
       }
 
@@ -195,6 +207,7 @@ export default function AdminReviewsPage() {
     setAllParsedRows(parsed);
     setPreviewRows(parsed.slice(0, 5));
     setUnmappedBrandsFromFile([...unmappedBrandSet]);
+    setParseErrors(rowErrors);
   }
 
   async function handleImport() {
@@ -286,7 +299,8 @@ export default function AdminReviewsPage() {
         .update({
           status: 'completed',
           successful_records: inserted,
-          failed_records: skipped,
+          failed_records: parseErrors.length,
+          rejection_reasons: parseErrors.length > 0 ? JSON.stringify(parseErrors.slice(0, 200)) : null,
         })
         .eq('id', batchId);
     }

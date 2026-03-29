@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Upload, RefreshCw, FileSpreadsheet, X } from 'lucide-react';
+import { Upload, RefreshCw, FileSpreadsheet, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Fragment } from 'react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +48,15 @@ interface ImportBatch {
   total_records: number;
   successful_records: number;
   failed_records: number;
+  rejection_reasons?: string | null;
+}
+
+interface ImportError {
+  row: number;
+  marka: string;
+  pakiet?: string;
+  kcal?: string;
+  powod: string;
 }
 
 // ─── Admin Nav ────────────────────────────────────────────────────────────────
@@ -197,6 +207,7 @@ export default function AdminPricesPage() {
   // history
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
 
   // ── Auth guard ────────────────────────────────────────────────────────────
 
@@ -230,7 +241,7 @@ export default function AdminPricesPage() {
     setLoadingHistory(true);
     const { data } = await supabase
       .from('import_batches')
-      .select('id, source_file_name, created_at, status, total_records, successful_records, failed_records')
+      .select('id, source_file_name, created_at, status, total_records, successful_records, failed_records, rejection_reasons')
       .order('created_at', { ascending: false })
       .limit(20);
     if (data) setBatches(data);
@@ -354,7 +365,7 @@ export default function AdminPricesPage() {
       const iWaluta = colIndex('Waluta', 'Currency', 'waluta');
 
       let successCount = 0;
-      const errors: string[] = [];
+      const errors: ImportError[] = [];
 
       // Keep a local mutable copy of package_kcal_ranges for auto-created entries
       const localPkr = [...packageKcalRanges];
@@ -369,22 +380,23 @@ export default function AdminPricesPage() {
         // 1. Date
         const dateVal = iDate >= 0 ? row[iDate] : null;
         const parsedDate = parseDate(dateVal);
+        const markaRaw = iMarka >= 0 ? String(row[iMarka] ?? '').trim() : '?';
         if (!parsedDate) {
-          errors.push(`Wiersz ${rowNum}: nieprawidłowa data "${dateVal}"`);
+          errors.push({ row: rowNum, marka: markaRaw || '?', powod: `nieprawidłowa data "${dateVal}"` });
           setProgress(i + 1);
           continue;
         }
 
         // 2. Brand
-        const markaCell = iMarka >= 0 ? String(row[iMarka] ?? '').trim() : '';
+        const markaCell = markaRaw;
         if (!markaCell) {
-          errors.push(`Wiersz ${rowNum}: brak marki`);
+          errors.push({ row: rowNum, marka: '?', powod: 'brak marki' });
           setProgress(i + 1);
           continue;
         }
         const { brand, score: brandScore } = matchBrand(markaCell, brands);
         if (!brand) {
-          errors.push(`Wiersz ${rowNum}: nie znaleziono marki dla "${markaCell}"`);
+          errors.push({ row: rowNum, marka: markaCell, powod: `nie znaleziono marki dla "${markaCell}"` });
           setProgress(i + 1);
           continue;
         }
@@ -392,14 +404,14 @@ export default function AdminPricesPage() {
         // 3. Package
         const pakietCell = iPakiet >= 0 ? String(row[iPakiet] ?? '').trim() : '';
         if (!pakietCell) {
-          errors.push(`Wiersz ${rowNum}: brak pakietu`);
+          errors.push({ row: rowNum, marka: brand.name, powod: 'brak pakietu' });
           setProgress(i + 1);
           continue;
         }
         const brandPackages = packages.filter((p) => p.brand_id === brand.id);
         const { pkg, score: pkgScore } = matchPackage(pakietCell, brandPackages);
         if (!pkg) {
-          errors.push(`Wiersz ${rowNum}: nie znaleziono pakietu "${pakietCell}" dla marki "${brand.name}"`);
+          errors.push({ row: rowNum, marka: brand.name, pakiet: pakietCell, powod: `nie znaleziono pakietu "${pakietCell}"` });
           setProgress(i + 1);
           continue;
         }
@@ -414,7 +426,7 @@ export default function AdminPricesPage() {
         const priceRaw = iCena >= 0 ? row[iCena] : null;
         const price = priceRaw !== null && priceRaw !== '' ? parseFloat(String(priceRaw)) : NaN;
         if (isNaN(price)) {
-          errors.push(`Wiersz ${rowNum}: nieprawidłowa cena "${priceRaw}"`);
+          errors.push({ row: rowNum, marka: brand.name, pakiet: pkg.name, kcal: String(kcalCell ?? '').trim() || '?', powod: `nieprawidłowa cena "${priceRaw}"` });
           setProgress(i + 1);
           continue;
         }
@@ -436,7 +448,7 @@ export default function AdminPricesPage() {
               .select('id')
               .single();
             if (pkrError || !newPkr) {
-              errors.push(`Wiersz ${rowNum}: błąd tworzenia package_kcal_range: ${pkrError?.message}`);
+              errors.push({ row: rowNum, marka: brand.name, pakiet: pkg.name, kcal: String(kcalCell ?? '').trim() || '?', powod: `błąd tworzenia package_kcal_range: ${pkrError?.message}` });
               setProgress(i + 1);
               continue;
             }
@@ -469,13 +481,13 @@ export default function AdminPricesPage() {
             upsertError = error;
           }
         } else {
-          errors.push(`Wiersz ${rowNum}: brak zakresu kcal — nie można zapisać ceny bez package_kcal_range_id`);
+          errors.push({ row: rowNum, marka: brand.name, pakiet: pkg.name, kcal: String(kcalCell ?? '').trim() || '?', powod: 'brak zakresu kcal' });
           setProgress(i + 1);
           continue;
         }
 
         if (upsertError) {
-          errors.push(`Wiersz ${rowNum}: ${upsertError.message}`);
+          errors.push({ row: rowNum, marka: brand.name, pakiet: pkg.name, kcal: String(kcalCell ?? '').trim() || '?', powod: upsertError.message });
         } else {
           successCount++;
         }
@@ -491,7 +503,7 @@ export default function AdminPricesPage() {
           status: finalStatus,
           successful_records: successCount,
           failed_records: errors.length,
-          notes: errors.length > 0 ? errors.slice(0, 50).join('\n') : null,
+          rejection_reasons: errors.length > 0 ? JSON.stringify(errors.slice(0, 200)) : null,
         })
         .eq('id', batchId);
 
@@ -672,45 +684,89 @@ export default function AdminPricesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {batches.map((batch) => (
-                    <tr key={batch.id} className="border-b last:border-0">
-                      <td className="py-2 pr-4 font-mono text-xs max-w-[200px] truncate">
-                        {batch.source_file_name}
-                      </td>
-                      <td className="py-2 pr-4 whitespace-nowrap text-muted-foreground">
-                        {new Date(batch.created_at).toLocaleString('pl-PL', {
-                          dateStyle: 'short',
-                          timeStyle: 'short',
-                        })}
-                      </td>
-                      <td className="py-2 pr-4">
-                        <Badge
-                          variant={
-                            batch.status === 'completed'
-                              ? 'default'
-                              : batch.status === 'failed'
-                              ? 'destructive'
-                              : 'secondary'
-                          }
-                        >
-                          {batch.status === 'completed'
-                            ? 'Zakończony'
-                            : batch.status === 'failed'
-                            ? 'Błąd'
-                            : 'W trakcie'}
-                        </Badge>
-                      </td>
-                      <td className="py-2 pr-4 text-right">{batch.total_records ?? '—'}</td>
-                      <td className="py-2 pr-4 text-right">{batch.successful_records ?? '—'}</td>
-                      <td className="py-2 text-right">
-                        {batch.failed_records > 0 ? (
-                          <span className="text-destructive font-medium">{batch.failed_records}</span>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
+                  {batches.map((batch) => {
+                    const batchErrors: ImportError[] = (() => {
+                      try { return JSON.parse(batch.rejection_reasons ?? '[]'); } catch { return []; }
+                    })();
+                    const isExpanded = expandedBatchId === batch.id;
+                    return (
+                      <Fragment key={batch.id}>
+                        <tr className="border-b last:border-0">
+                          <td className="py-2 pr-4 font-mono text-xs max-w-[200px] truncate">
+                            {batch.source_file_name}
+                          </td>
+                          <td className="py-2 pr-4 whitespace-nowrap text-muted-foreground">
+                            {new Date(batch.created_at).toLocaleString('pl-PL', {
+                              dateStyle: 'short',
+                              timeStyle: 'short',
+                            })}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <Badge
+                              variant={
+                                batch.status === 'completed'
+                                  ? 'default'
+                                  : batch.status === 'failed'
+                                  ? 'destructive'
+                                  : 'secondary'
+                              }
+                            >
+                              {batch.status === 'completed'
+                                ? 'Zakończony'
+                                : batch.status === 'failed'
+                                ? 'Błąd'
+                                : 'W trakcie'}
+                            </Badge>
+                          </td>
+                          <td className="py-2 pr-4 text-right">{batch.total_records ?? '—'}</td>
+                          <td className="py-2 pr-4 text-right">{batch.successful_records ?? '—'}</td>
+                          <td className="py-2 text-right">
+                            {batch.failed_records > 0 ? (
+                              <button
+                                onClick={() => setExpandedBatchId(isExpanded ? null : batch.id)}
+                                className="inline-flex items-center gap-1 text-destructive font-medium underline decoration-dotted"
+                              >
+                                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                {batch.failed_records}
+                              </button>
+                            ) : (
+                              <span className="text-muted-foreground">0</span>
+                            )}
+                          </td>
+                        </tr>
+                        {isExpanded && batchErrors.length > 0 && (
+                          <tr className="bg-muted/30">
+                            <td colSpan={6} className="py-3 px-4">
+                              <div className="overflow-x-auto max-h-64 overflow-y-auto rounded border border-border/50">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-muted sticky top-0">
+                                    <tr>
+                                      <th className="px-2 py-1.5 text-left font-medium">Wiersz</th>
+                                      <th className="px-2 py-1.5 text-left font-medium">Marka</th>
+                                      <th className="px-2 py-1.5 text-left font-medium">Pakiet</th>
+                                      <th className="px-2 py-1.5 text-left font-medium">Kcal</th>
+                                      <th className="px-2 py-1.5 text-left font-medium">Powód</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {batchErrors.map((err, idx) => (
+                                      <tr key={idx} className="border-t border-border/30">
+                                        <td className="px-2 py-1 text-muted-foreground">{err.row}</td>
+                                        <td className="px-2 py-1">{err.marka}</td>
+                                        <td className="px-2 py-1 text-muted-foreground">{err.pakiet ?? '—'}</td>
+                                        <td className="px-2 py-1 text-muted-foreground">{err.kcal ?? '—'}</td>
+                                        <td className="px-2 py-1 text-destructive">{err.powod}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                    </tr>
-                  ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
