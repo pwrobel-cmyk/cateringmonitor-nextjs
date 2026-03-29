@@ -342,11 +342,14 @@ export default function AdminReviewsPage() {
 
     console.log('AFTER DEDUP:', { total: allParsedRows.length, afterDedup: toInsert.length, existingCount: existingFingerprints.size, skipped });
 
-    const batchSize = 100;
     let inserted = 0;
+    let skippedDup = 0;
 
-    for (let i = 0; i < toInsert.length; i += batchSize) {
-      const batch = toInsert.slice(i, i + batchSize).map((r) => ({
+    console.log('INSERTING:', toInsert.length, 'reviews row by row');
+
+    for (let i = 0; i < toInsert.length; i++) {
+      const r = toInsert[i];
+      const record = {
         brand_id: r.brand_id,
         original_brand_name: r.brand_name,
         author_name: r.author_name || null,
@@ -356,14 +359,25 @@ export default function AdminReviewsPage() {
         source: 'manual',
         is_approved: false,
         import_batch_id: batchId,
-      }));
+      };
 
-      console.log('INSERTING BATCH:', batch.length, 'reviews, first:', { brand_id: batch[0]?.brand_id, author: batch[0]?.author_name, content: batch[0]?.content?.slice(0,50) });
-      const { error: insertError } = await supabase.from('reviews').insert(batch);
-      if (insertError) console.error('INSERT ERROR:', insertError);
-      inserted += batch.length;
-      setProgress(Math.round((inserted / toInsert.length) * 100));
+      if (i === 0) console.log('INSERTING ROW 0:', { brand_id: record.brand_id, author: record.author_name, content: record.content?.slice(0, 50) });
+
+      const { error: insertError } = await supabase.from('reviews').insert(record);
+      if (insertError) {
+        if (insertError.code === '23505') {
+          skippedDup++;
+        } else {
+          console.error('INSERT ERROR row', i, ':', insertError);
+        }
+      } else {
+        inserted++;
+      }
+
+      setProgress(Math.round(((i + 1) / toInsert.length) * 100));
     }
+
+    console.log('INSERT DONE:', { inserted, skippedDup });
 
     if (batchId) {
       await supabase
@@ -379,7 +393,7 @@ export default function AdminReviewsPage() {
 
     const result: ImportResult = {
       imported: inserted,
-      skipped,
+      skipped: skipped + skippedDup,
       unmappedBrands: unmappedBrandsFromFile,
     };
 
