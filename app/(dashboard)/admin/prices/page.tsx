@@ -28,9 +28,9 @@ interface Package {
 
 interface KcalRange {
   id: string;
-  kcal_min: number;
-  kcal_max: number;
-  label: string;
+  kcal_from: number;
+  kcal_to: number;
+  kcal_label: string;
 }
 
 interface PackageKcalRange {
@@ -41,12 +41,12 @@ interface PackageKcalRange {
 
 interface ImportBatch {
   id: string;
-  filename: string;
+  source_file_name: string;
   created_at: string;
   status: string;
-  total_rows: number;
-  processed_rows: number;
-  error_count: number;
+  total_records: number;
+  successful_records: number;
+  failed_records: number;
 }
 
 // ─── Admin Nav ────────────────────────────────────────────────────────────────
@@ -160,10 +160,11 @@ function matchKcal(cell: unknown, kcalRanges: KcalRange[]): KcalRange | null {
   const num = parseFloat(raw);
 
   for (const kr of kcalRanges) {
-    if (kr.label.replace(/kcal/gi, '').trim() === raw) return kr;
+    if (kr.kcal_label.replace(/kcal/gi, '').trim() === raw) return kr;
     if (!isNaN(num)) {
-      if (kr.kcal_min === num) return kr;
-      if (Math.abs(kr.kcal_min - num) <= 100) return kr;
+      if (kr.kcal_from === num) return kr;
+      if (num >= kr.kcal_from && num <= kr.kcal_to) return kr;
+      if (Math.abs(kr.kcal_from - num) <= 100) return kr;
     }
   }
   return null;
@@ -212,7 +213,7 @@ export default function AdminPricesPage() {
       const [{ data: b }, { data: p }, { data: k }, { data: pkr }] = await Promise.all([
         supabase.from('brands').select('id, name'),
         supabase.from('packages').select('id, name, brand_id'),
-        supabase.from('kcal_ranges').select('id, kcal_min, kcal_max, label'),
+        supabase.from('kcal_ranges').select('id, kcal_from, kcal_to, kcal_label'),
         supabase.from('package_kcal_ranges').select('id, package_id, kcal_range_id'),
       ]);
       if (b) setBrands(b);
@@ -229,7 +230,7 @@ export default function AdminPricesPage() {
     setLoadingHistory(true);
     const { data } = await supabase
       .from('import_batches')
-      .select('id, filename, created_at, status, total_rows, processed_rows, error_count')
+      .select('id, source_file_name, created_at, status, total_records, successful_records, failed_records')
       .order('created_at', { ascending: false })
       .limit(20);
     if (data) setBatches(data);
@@ -324,11 +325,14 @@ export default function AdminPricesPage() {
       const { data: batchData, error: batchError } = await supabase
         .from('import_batches')
         .insert({
-          filename: file.name,
+          source_file_name: file.name,
           status: 'processing',
-          total_rows: totalRows,
-          processed_rows: 0,
-          errors: [],
+          total_records: totalRows,
+          successful_records: 0,
+          failed_records: 0,
+          import_type: 'price_import',
+          user_id: user?.id,
+          notes: null,
         })
         .select('id')
         .single();
@@ -340,13 +344,14 @@ export default function AdminPricesPage() {
       }
       const batchId = batchData.id;
 
-      const colIndex = (name: string) => headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
-      const iDate = colIndex('Data');
-      const iMarka = colIndex('Marka');
-      const iPakiet = colIndex('Pakiet');
-      const iKcal = colIndex('Kcal');
-      const iCena = colIndex('Cena');
-      const iWaluta = colIndex('Waluta');
+      const colIndex = (...names: string[]) =>
+        headers.findIndex((h) => names.some((n) => h.toLowerCase() === n.toLowerCase()));
+      const iDate = colIndex('Data', 'Date', 'data');
+      const iMarka = colIndex('Marka', 'Brand', 'Firma');
+      const iPakiet = colIndex('Pakiet', 'Package', 'Dieta');
+      const iKcal = colIndex('Kcal', 'Kalorie', 'Kalorii', 'kcal', 'kalorie', 'Kaloryczność');
+      const iCena = colIndex('Cena', 'Cena PLN', 'Price', 'cena');
+      const iWaluta = colIndex('Waluta', 'Currency', 'waluta');
 
       let successCount = 0;
       const errors: string[] = [];
@@ -357,6 +362,9 @@ export default function AdminPricesPage() {
       for (let i = 0; i < dataRows.length; i++) {
         const row = dataRows[i] as unknown[];
         const rowNum = i + 2;
+
+        if (i === 0) {
+        }
 
         // 1. Date
         const dateVal = iDate >= 0 ? row[iDate] : null;
@@ -374,7 +382,7 @@ export default function AdminPricesPage() {
           setProgress(i + 1);
           continue;
         }
-        const { brand } = matchBrand(markaCell, brands);
+        const { brand, score: brandScore } = matchBrand(markaCell, brands);
         if (!brand) {
           errors.push(`Wiersz ${rowNum}: nie znaleziono marki dla "${markaCell}"`);
           setProgress(i + 1);
@@ -389,7 +397,7 @@ export default function AdminPricesPage() {
           continue;
         }
         const brandPackages = packages.filter((p) => p.brand_id === brand.id);
-        const { pkg } = matchPackage(pakietCell, brandPackages);
+        const { pkg, score: pkgScore } = matchPackage(pakietCell, brandPackages);
         if (!pkg) {
           errors.push(`Wiersz ${rowNum}: nie znaleziono pakietu "${pakietCell}" dla marki "${brand.name}"`);
           setProgress(i + 1);
@@ -398,6 +406,8 @@ export default function AdminPricesPage() {
 
         // 4. Kcal
         const kcalCell = iKcal >= 0 ? row[iKcal] : null;
+        if (i === 0) {
+        }
         const matchedKcal = matchKcal(kcalCell, kcalRanges);
 
         // 5. Price
@@ -435,50 +445,33 @@ export default function AdminPricesPage() {
           }
         }
 
-        // 7. Upsert price
-        const { data: existing } = await supabase
-          .from('prices')
-          .select('id')
-          .eq('package_kcal_range_id', pkrId ?? '')
-          .eq('date', parsedDate)
-          .maybeSingle();
-
+        // 7. Upsert price — only via package_kcal_range_id (price_history has no package_id column)
         let upsertError: { message: string } | null = null;
 
         if (pkrId) {
+          const { data: existing } = await supabase
+            .from('price_history')
+            .select('id')
+            .eq('package_kcal_range_id', pkrId)
+            .eq('date_recorded', parsedDate)
+            .maybeSingle();
+
           if (existing) {
             const { error } = await supabase
-              .from('prices')
+              .from('price_history')
               .update({ price, currency })
               .eq('id', existing.id);
             upsertError = error;
           } else {
             const { error } = await supabase
-              .from('prices')
-              .insert({ package_kcal_range_id: pkrId, date: parsedDate, price, currency });
+              .from('price_history')
+              .insert({ package_kcal_range_id: pkrId, date_recorded: parsedDate, price, currency });
             upsertError = error;
           }
         } else {
-          // no kcal — try to find price by package_id + date if the schema supports it
-          const { data: existingPkg } = await supabase
-            .from('prices')
-            .select('id')
-            .eq('package_id', pkg.id)
-            .eq('date', parsedDate)
-            .maybeSingle();
-
-          if (existingPkg) {
-            const { error } = await supabase
-              .from('prices')
-              .update({ price, currency })
-              .eq('id', existingPkg.id);
-            upsertError = error;
-          } else {
-            const { error } = await supabase
-              .from('prices')
-              .insert({ package_id: pkg.id, date: parsedDate, price, currency });
-            upsertError = error;
-          }
+          errors.push(`Wiersz ${rowNum}: brak zakresu kcal — nie można zapisać ceny bez package_kcal_range_id`);
+          setProgress(i + 1);
+          continue;
         }
 
         if (upsertError) {
@@ -496,9 +489,9 @@ export default function AdminPricesPage() {
         .from('import_batches')
         .update({
           status: finalStatus,
-          processed_rows: successCount + errors.length,
-          error_count: errors.length,
-          errors_json: errors,
+          successful_records: successCount,
+          failed_records: errors.length,
+          notes: errors.length > 0 ? errors.slice(0, 50).join('\n') : null,
         })
         .eq('id', batchId);
 
@@ -674,7 +667,7 @@ export default function AdminPricesPage() {
                     <th className="pb-2 pr-4 font-medium">Data</th>
                     <th className="pb-2 pr-4 font-medium">Status</th>
                     <th className="pb-2 pr-4 font-medium text-right">Wiersze</th>
-                    <th className="pb-2 pr-4 font-medium text-right">Przetworzone</th>
+                    <th className="pb-2 pr-4 font-medium text-right">Sukces</th>
                     <th className="pb-2 font-medium text-right">Błędy</th>
                   </tr>
                 </thead>
@@ -682,7 +675,7 @@ export default function AdminPricesPage() {
                   {batches.map((batch) => (
                     <tr key={batch.id} className="border-b last:border-0">
                       <td className="py-2 pr-4 font-mono text-xs max-w-[200px] truncate">
-                        {batch.filename}
+                        {batch.source_file_name}
                       </td>
                       <td className="py-2 pr-4 whitespace-nowrap text-muted-foreground">
                         {new Date(batch.created_at).toLocaleString('pl-PL', {
@@ -707,11 +700,11 @@ export default function AdminPricesPage() {
                             : 'W trakcie'}
                         </Badge>
                       </td>
-                      <td className="py-2 pr-4 text-right">{batch.total_rows ?? '—'}</td>
-                      <td className="py-2 pr-4 text-right">{batch.processed_rows ?? '—'}</td>
+                      <td className="py-2 pr-4 text-right">{batch.total_records ?? '—'}</td>
+                      <td className="py-2 pr-4 text-right">{batch.successful_records ?? '—'}</td>
                       <td className="py-2 text-right">
-                        {batch.error_count > 0 ? (
-                          <span className="text-destructive font-medium">{batch.error_count}</span>
+                        {batch.failed_records > 0 ? (
+                          <span className="text-destructive font-medium">{batch.failed_records}</span>
                         ) : (
                           <span className="text-muted-foreground">0</span>
                         )}

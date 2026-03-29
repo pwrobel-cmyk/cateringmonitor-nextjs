@@ -29,76 +29,76 @@ type Brand = {
 type Discount = {
   id: string;
   created_at: string;
-  discount_code: string;
+  code: string;
   brand_id: string | null;
-  discount_percent: number | null;
-  discount_amount: number | null;
+  percentage: number | null;
+  fixed_amount: number | null;
   valid_from: string | null;
   valid_until: string | null;
-  conditions: string | null;
+  requirements: string | null;
   min_days: number | null;
   max_days: number | null;
   min_order_value: number | null;
-  source: string | null;
-  exclusions: string | null;
+  code_source: string[] | null;
+  exclusions_limits: string | null;
   description: string | null;
-  channels: string | null;
-  notes: string | null;
+  communication_channels: string | null;
+  additional_notes: string | null;
   is_cashback: boolean;
   is_active: boolean;
   brands: { name: string } | null;
 };
 
 type FormData = {
-  discount_code: string;
+  code: string;
   brand_id: string;
-  discount_percent: string;
-  discount_amount: string;
+  percentage: string;
+  fixed_amount: string;
   valid_from: string;
   valid_until: string;
-  conditions: string;
+  requirements: string;
   min_days: string;
   max_days: string;
   min_order_value: string;
-  source: string[];
-  exclusions: string;
+  code_source: string[];
+  exclusions_limits: string;
   description: string;
-  channels: string;
-  notes: string;
+  communication_channels: string;
+  additional_notes: string;
   is_cashback: boolean;
   is_active: boolean;
 };
 
 type BulkRow = {
-  discount_code: string;
+  code: string;
   brand_id: string;
-  discount_percent: string;
+  percentage: string;
   valid_from: string;
   valid_until: string;
 };
 
 const emptyForm: FormData = {
-  discount_code: '',
+  code: '',
   brand_id: '',
-  discount_percent: '',
-  discount_amount: '',
+  percentage: '',
+  fixed_amount: '',
   valid_from: '',
   valid_until: '',
-  conditions: '',
+  requirements: '',
   min_days: '',
   max_days: '',
   min_order_value: '',
-  source: [],
-  exclusions: '',
+  code_source: [],
+  exclusions_limits: '',
   description: '',
-  channels: '',
-  notes: '',
+  communication_channels: '',
+  additional_notes: '',
   is_cashback: false,
   is_active: true,
 };
 
 function emptyBulkRow(): BulkRow {
-  return { discount_code: '', brand_id: '', discount_percent: '', valid_from: '', valid_until: '' };
+  return { code: '', brand_id: '', percentage: '', valid_from: '', valid_until: '' };
 }
 
 function formatDate(dateStr: string | null): string {
@@ -188,7 +188,7 @@ export default function AdminDiscountsPage() {
     const term = search.toLowerCase();
     const matchesSearch =
       !term ||
-      d.discount_code?.toLowerCase().includes(term) ||
+      d.code?.toLowerCase().includes(term) ||
       d.description?.toLowerCase().includes(term) ||
       d.brands?.name?.toLowerCase().includes(term);
     const matchesStatus =
@@ -213,25 +213,23 @@ export default function AdminDiscountsPage() {
 
   function openEdit(d: Discount) {
     setEditingDiscount(d);
-    const sourceArr: string[] = d.source
-      ? d.source.split(',').map((s) => s.trim()).filter(Boolean)
-      : [];
+    const sourceArr: string[] = Array.isArray(d.code_source) ? d.code_source : [];
     setForm({
-      discount_code: d.discount_code ?? '',
+      code: d.code ?? '',
       brand_id: d.brand_id ?? '',
-      discount_percent: d.discount_percent !== null ? String(d.discount_percent) : '',
-      discount_amount: d.discount_amount !== null ? String(d.discount_amount) : '',
+      percentage: d.percentage !== null ? String(d.percentage) : '',
+      fixed_amount: d.fixed_amount !== null ? String(d.fixed_amount) : '',
       valid_from: d.valid_from ? d.valid_from.slice(0, 10) : '',
       valid_until: d.valid_until ? d.valid_until.slice(0, 10) : '',
-      conditions: d.conditions ?? '',
+      requirements: d.requirements ?? '',
       min_days: d.min_days !== null ? String(d.min_days) : '',
       max_days: d.max_days !== null ? String(d.max_days) : '',
       min_order_value: d.min_order_value !== null ? String(d.min_order_value) : '',
-      source: sourceArr,
-      exclusions: d.exclusions ?? '',
+      code_source: sourceArr,
+      exclusions_limits: d.exclusions_limits ?? '',
       description: d.description ?? '',
-      channels: d.channels ?? '',
-      notes: d.notes ?? '',
+      communication_channels: d.communication_channels ?? '',
+      additional_notes: d.additional_notes ?? '',
       is_cashback: d.is_cashback ?? false,
       is_active: d.is_active ?? true,
     });
@@ -240,21 +238,21 @@ export default function AdminDiscountsPage() {
 
   function buildPayload(f: FormData) {
     return {
-      discount_code: f.discount_code || null,
+      code: f.code || null,
       brand_id: f.brand_id || null,
-      discount_percent: f.discount_percent !== '' ? Number(f.discount_percent) : null,
-      discount_amount: f.discount_amount !== '' ? Number(f.discount_amount) : null,
+      percentage: f.percentage !== '' ? Number(f.percentage) : null,
+      fixed_amount: f.fixed_amount !== '' ? Number(f.fixed_amount) : null,
       valid_from: f.valid_from || null,
       valid_until: f.valid_until || null,
-      conditions: f.conditions || null,
+      requirements: f.requirements || null,
       min_days: f.min_days !== '' ? Number(f.min_days) : null,
       max_days: f.max_days !== '' ? Number(f.max_days) : null,
       min_order_value: f.min_order_value !== '' ? Number(f.min_order_value) : null,
-      source: f.source.length > 0 ? f.source.join(', ') : null,
-      exclusions: f.exclusions || null,
+      code_source: f.code_source.length > 0 ? f.code_source : null,
+      exclusions_limits: f.exclusions_limits || null,
       description: f.description || null,
-      channels: f.channels || null,
-      notes: f.notes || null,
+      communication_channels: f.communication_channels || null,
+      additional_notes: f.additional_notes || null,
       is_cashback: f.is_cashback,
       is_active: f.is_active,
     };
@@ -282,7 +280,7 @@ export default function AdminDiscountsPage() {
   }
 
   async function handleDelete(d: Discount) {
-    if (!confirm(`Usunąć rabat "${d.discount_code}"?`)) return;
+    if (!confirm(`Usunąć rabat "${d.code}"?`)) return;
     const { error } = await supabase.from('discounts').delete().eq('id', d.id);
     if (error) {
       toast.error('Błąd usuwania: ' + error.message);
@@ -295,7 +293,7 @@ export default function AdminDiscountsPage() {
   function toggleSource(s: string) {
     setForm((f) => ({
       ...f,
-      source: f.source.includes(s) ? f.source.filter((x) => x !== s) : [...f.source, s],
+      code_source: f.code_source.includes(s) ? f.code_source.filter((x) => x !== s) : [...f.code_source, s],
     }));
   }
 
@@ -304,16 +302,16 @@ export default function AdminDiscountsPage() {
   }
 
   async function handleBulkAdd() {
-    const valid = bulkRows.filter((r) => r.discount_code.trim());
+    const valid = bulkRows.filter((r) => r.code.trim());
     if (valid.length === 0) {
       toast.error('Brak wierszy do dodania.');
       return;
     }
     setBulkSaving(true);
     const payload = valid.map((r) => ({
-      discount_code: r.discount_code.trim(),
+      code: r.code.trim(),
       brand_id: r.brand_id || null,
-      discount_percent: r.discount_percent !== '' ? Number(r.discount_percent) : null,
+      percentage: r.percentage !== '' ? Number(r.percentage) : null,
       valid_from: r.valid_from || null,
       valid_until: r.valid_until || null,
       is_active: true,
@@ -373,21 +371,21 @@ export default function AdminDiscountsPage() {
       const brand = brands.find((b) => b.name.toLowerCase() === brandName.toLowerCase());
 
       const payload = {
-        discount_code: String(row['Kod'] ?? '').trim() || null,
+        code: String(row['Kod'] ?? '').trim() || null,
         brand_id: brand?.id ?? null,
-        discount_percent: row['Procent'] !== undefined && row['Procent'] !== '' ? Number(row['Procent']) : null,
-        discount_amount: row['Kwota'] !== undefined && row['Kwota'] !== '' ? Number(row['Kwota']) : null,
+        percentage: row['Procent'] !== undefined && row['Procent'] !== '' ? Number(row['Procent']) : null,
+        fixed_amount: row['Kwota'] !== undefined && row['Kwota'] !== '' ? Number(row['Kwota']) : null,
         valid_from: parseDateValue(row['DataOd']),
         valid_until: parseDateValue(row['DataDo']),
-        conditions: String(row['Warunki'] ?? '').trim() || null,
+        requirements: String(row['Warunki'] ?? '').trim() || null,
         min_days: row['MinDni'] !== undefined && row['MinDni'] !== '' ? Number(row['MinDni']) : null,
         max_days: row['MaxDni'] !== undefined && row['MaxDni'] !== '' ? Number(row['MaxDni']) : null,
         min_order_value: row['MinWartosc'] !== undefined && row['MinWartosc'] !== '' ? Number(row['MinWartosc']) : null,
-        source: String(row['Zrodlo'] ?? '').trim() || null,
-        exclusions: String(row['Wylaczenia'] ?? '').trim() || null,
+        code_source: String(row['Zrodlo'] ?? '').trim() ? [String(row['Zrodlo']).trim()] : null,
+        exclusions_limits: String(row['Wylaczenia'] ?? '').trim() || null,
         description: String(row['Opis'] ?? '').trim() || null,
-        channels: String(row['Kanaly'] ?? '').trim() || null,
-        notes: String(row['Uwagi'] ?? '').trim() || null,
+        communication_channels: String(row['Kanaly'] ?? '').trim() || null,
+        additional_notes: String(row['Uwagi'] ?? '').trim() || null,
         is_cashback: String(row['Cashback'] ?? '').toLowerCase() === 'tak' || row['Cashback'] === true,
         is_active: true,
         created_at: now,
@@ -431,18 +429,18 @@ export default function AdminDiscountsPage() {
       'Data od': formatDate(d.valid_from),
       'Data do': formatDate(d.valid_until),
       'Marka': d.brands?.name ?? '',
-      'Procent': d.discount_percent ?? '',
-      'Kwota': d.discount_amount ?? '',
-      'Warunki': d.conditions ?? '',
-      'Kod': d.discount_code ?? '',
+      'Procent': d.percentage ?? '',
+      'Kwota': d.fixed_amount ?? '',
+      'Warunki': d.requirements ?? '',
+      'Kod': d.code ?? '',
       'Min. dni': d.min_days ?? '',
       'Max. dni': d.max_days ?? '',
       'Min. wartość': d.min_order_value ?? '',
-      'Źródło': d.source ?? '',
-      'Wykluczenia': d.exclusions ?? '',
+      'Źródło': Array.isArray(d.code_source) ? d.code_source.join(', ') : '',
+      'Wykluczenia': d.exclusions_limits ?? '',
       'Opis': d.description ?? '',
-      'Kanały': d.channels ?? '',
-      'Uwagi': d.notes ?? '',
+      'Kanały': d.communication_channels ?? '',
+      'Uwagi': d.additional_notes ?? '',
       'Cashback': d.is_cashback ? 'Tak' : 'Nie',
       'Aktywny': d.is_active ? 'Tak' : 'Nie',
     }));
@@ -614,13 +612,13 @@ export default function AdminDiscountsPage() {
                         ) : '—'}
                       </td>
                       <td className="px-3 py-2">
-                        {d.discount_percent !== null ? `${d.discount_percent}%` : '—'}
+                        {d.percentage !== null ? `${d.percentage}%` : '—'}
                       </td>
-                      <td className="px-3 py-2 max-w-[160px] truncate" title={d.conditions ?? undefined}>
-                        {d.conditions || '—'}
+                      <td className="px-3 py-2 max-w-[160px] truncate" title={d.requirements ?? undefined}>
+                        {d.requirements || '—'}
                       </td>
                       <td className="px-3 py-2 font-mono">
-                        {d.discount_code || '—'}
+                        {d.code || '—'}
                       </td>
                       <td className="px-3 py-2">{d.min_days ?? '—'}</td>
                       <td className="px-3 py-2">
@@ -712,8 +710,8 @@ export default function AdminDiscountsPage() {
                       <tr key={idx} className="border-b last:border-0">
                         <td className="px-2 py-1">
                           <Input
-                            value={row.discount_code}
-                            onChange={(e) => updateBulkRow(idx, 'discount_code', e.target.value)}
+                            value={row.code}
+                            onChange={(e) => updateBulkRow(idx, 'code', e.target.value)}
                             className="h-7 text-sm"
                             placeholder="KOD"
                           />
@@ -737,8 +735,8 @@ export default function AdminDiscountsPage() {
                         <td className="px-2 py-1">
                           <Input
                             type="number"
-                            value={row.discount_percent}
-                            onChange={(e) => updateBulkRow(idx, 'discount_percent', e.target.value)}
+                            value={row.percentage}
+                            onChange={(e) => updateBulkRow(idx, 'percentage', e.target.value)}
                             className="h-7 text-sm w-20"
                             placeholder="0"
                           />
@@ -806,8 +804,8 @@ export default function AdminDiscountsPage() {
             <div className="space-y-1">
               <Label>Kod rabatowy</Label>
               <Input
-                value={form.discount_code}
-                onChange={(e) => setForm((f) => ({ ...f, discount_code: e.target.value }))}
+                value={form.code}
+                onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
                 placeholder="KOD123"
               />
             </div>
@@ -832,8 +830,8 @@ export default function AdminDiscountsPage() {
               <Label>Procent zniżki (%)</Label>
               <Input
                 type="number"
-                value={form.discount_percent}
-                onChange={(e) => setForm((f) => ({ ...f, discount_percent: e.target.value }))}
+                value={form.percentage}
+                onChange={(e) => setForm((f) => ({ ...f, percentage: e.target.value }))}
                 placeholder="10"
               />
             </div>
@@ -841,8 +839,8 @@ export default function AdminDiscountsPage() {
               <Label>Kwota zniżki (opcjonalnie)</Label>
               <Input
                 type="number"
-                value={form.discount_amount}
-                onChange={(e) => setForm((f) => ({ ...f, discount_amount: e.target.value }))}
+                value={form.fixed_amount}
+                onChange={(e) => setForm((f) => ({ ...f, fixed_amount: e.target.value }))}
                 placeholder="50"
               />
             </div>
@@ -892,8 +890,8 @@ export default function AdminDiscountsPage() {
             <div className="space-y-1">
               <Label>Kanały</Label>
               <Input
-                value={form.channels}
-                onChange={(e) => setForm((f) => ({ ...f, channels: e.target.value }))}
+                value={form.communication_channels}
+                onChange={(e) => setForm((f) => ({ ...f, communication_channels: e.target.value }))}
                 placeholder="Kanały dystrybucji"
               />
             </div>
@@ -904,7 +902,7 @@ export default function AdminDiscountsPage() {
                   <label key={s} className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={form.source.includes(s)}
+                      checked={form.code_source.includes(s)}
                       onChange={() => toggleSource(s)}
                       className="rounded"
                     />
@@ -916,8 +914,8 @@ export default function AdminDiscountsPage() {
             <div className="col-span-2 space-y-1">
               <Label>Warunki</Label>
               <Textarea
-                value={form.conditions}
-                onChange={(e) => setForm((f) => ({ ...f, conditions: e.target.value }))}
+                value={form.requirements}
+                onChange={(e) => setForm((f) => ({ ...f, requirements: e.target.value }))}
                 placeholder="Warunki skorzystania z rabatu"
                 rows={2}
               />
@@ -925,8 +923,8 @@ export default function AdminDiscountsPage() {
             <div className="col-span-2 space-y-1">
               <Label>Wykluczenia</Label>
               <Textarea
-                value={form.exclusions}
-                onChange={(e) => setForm((f) => ({ ...f, exclusions: e.target.value }))}
+                value={form.exclusions_limits}
+                onChange={(e) => setForm((f) => ({ ...f, exclusions_limits: e.target.value }))}
                 placeholder="Wykluczenia"
                 rows={2}
               />
@@ -943,8 +941,8 @@ export default function AdminDiscountsPage() {
             <div className="col-span-2 space-y-1">
               <Label>Uwagi</Label>
               <Textarea
-                value={form.notes}
-                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                value={form.additional_notes}
+                onChange={(e) => setForm((f) => ({ ...f, additional_notes: e.target.value }))}
                 placeholder="Uwagi wewnętrzne"
                 rows={2}
               />

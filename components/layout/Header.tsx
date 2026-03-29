@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot } from "lucide-react";
+import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCountry } from "@/contexts/CountryContext";
 import { Button } from "@/components/ui/button";
@@ -120,6 +120,18 @@ export function Header() {
                     <DropdownMenuItem onClick={() => router.push('/admin/scrapers')}>
                       <Bot className="mr-2 h-4 w-4" />
                       <span>Scrapery</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/admin/discounts')}>
+                      <ClipboardList className="mr-2 h-4 w-4" />
+                      <span>Zarządzanie rabatami</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/admin/prices')}>
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      <span>Import cen</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/admin/reviews')}>
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      <span>Import opinii</span>
                     </DropdownMenuItem>
                   </>
                 )}
