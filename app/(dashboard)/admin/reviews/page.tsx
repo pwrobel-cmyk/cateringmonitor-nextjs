@@ -27,24 +27,14 @@ interface ParsedReview {
   review_date: string | null
 }
 
-interface PendingReview {
-  id: string
-  brand_id: string
-  author_name: string
-  content: string
-  rating: number
-  review_date: string | null
-  brands: { name: string; logo_url: string | null }
-}
-
 export default function AdminReviewsPage() {
   const { user } = useAuth()
   const router = useRouter()
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ParsedReview[]>([])
-  const [pending, setPending] = useState<PendingReview[]>([])
+  const [pending, setPending] = useState<ParsedReview[]>([])
   const [importing, setImporting] = useState(false)
-  const [stats, setStats] = useState<{ imported: number; skipped: number; duplicates: number } | null>(null)
+  const [stats, setStats] = useState<{ imported: number; duplicates: number } | null>(null)
 
   if (!user) return null
   if (user.email !== 'p.wrobel@nwd.pl') {
@@ -129,6 +119,7 @@ export default function AdminReviewsPage() {
     if (!f) return
     setFile(f)
     setStats(null)
+    setPending([])
     const parsed = await parseFile(f)
     setPreview(parsed.slice(0, 5))
   }
@@ -137,10 +128,10 @@ export default function AdminReviewsPage() {
     if (!file) return
     setImporting(true)
     setStats(null)
+    setPending([])
 
     const parsed = await parseFile(file)
-    let imported = 0
-    let skipped = 0
+    const newReviews: ParsedReview[] = []
     let duplicates = 0
 
     for (const review of parsed) {
@@ -149,14 +140,53 @@ export default function AdminReviewsPage() {
         .select('id')
         .eq('brand_id', review.brand_id)
         .eq('author_name', review.author_name)
+        .eq('is_approved', true)
         .ilike('content', review.content.slice(0, 80).replace(/[%_]/g, '') + '%')
         .limit(1)
 
       if (existing && existing.length > 0) {
         duplicates++
-        continue
+      } else {
+        newReviews.push(review)
       }
+    }
 
+    setPending(newReviews)
+    setStats({ imported: newReviews.length, duplicates })
+    toast.success(`Znaleziono ${newReviews.length} nowych opinii. Duplikaty: ${duplicates}.`)
+    setImporting(false)
+  }
+
+  async function approve(review: ParsedReview) {
+    const { error } = await supabase.from('reviews').insert({
+      brand_id: review.brand_id,
+      author_name: review.author_name,
+      content: review.content,
+      rating: review.rating,
+      review_date: review.review_date,
+      source: 'manual',
+      is_approved: true,
+      original_brand_name: review.brand_name,
+    })
+
+    if (error) {
+      toast.error(`Błąd zapisu: ${error.message}`)
+      return
+    }
+
+    setPending((prev) => prev.filter((r) => r !== review))
+    toast.success('Opinia zatwierdzona i zapisana')
+  }
+
+  function reject(review: ParsedReview) {
+    setPending((prev) => prev.filter((r) => r !== review))
+    toast.success('Opinia odrzucona')
+  }
+
+  async function approveAll() {
+    let saved = 0
+    let failed = 0
+    for (const review of pending) {
       const { error } = await supabase.from('reviews').insert({
         brand_id: review.brand_id,
         author_name: review.author_name,
@@ -164,53 +194,14 @@ export default function AdminReviewsPage() {
         rating: review.rating,
         review_date: review.review_date,
         source: 'manual',
-        is_approved: false,
+        is_approved: true,
         original_brand_name: review.brand_name,
       })
-
-      if (error) {
-        if (error.code === '23505') duplicates++
-        else skipped++
-      } else {
-        imported++
-      }
-    }
-
-    setStats({ imported, skipped, duplicates })
-    toast.success(`Zaimportowano ${imported} opinii. Duplikaty: ${duplicates}. Błędy: ${skipped}.`)
-    setImporting(false)
-    loadPending()
-  }
-
-  async function loadPending() {
-    const { data } = await supabase
-      .from('reviews')
-      .select('id, brand_id, author_name, content, rating, review_date, brands(name, logo_url)')
-      .eq('is_approved', false)
-      .eq('source', 'manual')
-      .order('created_at', { ascending: false })
-    setPending((data || []) as unknown as PendingReview[])
-  }
-
-  async function approve(id: string) {
-    await supabase.from('reviews').update({ is_approved: true }).eq('id', id)
-    setPending((prev) => prev.filter((r) => r.id !== id))
-    toast.success('Opinia zatwierdzona')
-  }
-
-  async function reject(id: string) {
-    await supabase.from('reviews').delete().eq('id', id)
-    setPending((prev) => prev.filter((r) => r.id !== id))
-    toast.success('Opinia odrzucona')
-  }
-
-  async function approveAll() {
-    const ids = pending.map((r) => r.id)
-    for (const id of ids) {
-      await supabase.from('reviews').update({ is_approved: true }).eq('id', id)
+      if (error) failed++
+      else saved++
     }
     setPending([])
-    toast.success(`Zatwierdzono ${ids.length} opinii`)
+    toast.success(`Zatwierdzono ${saved} opinii${failed > 0 ? `. Błędy: ${failed}` : ''}`)
   }
 
   return (
@@ -265,15 +256,14 @@ export default function AdminReviewsPage() {
 
           {file && (
             <Button onClick={handleImport} disabled={importing}>
-              {importing ? 'Importowanie...' : 'Importuj opinie'}
+              {importing ? 'Sprawdzanie duplikatów...' : 'Wczytaj i sprawdź duplikaty'}
             </Button>
           )}
 
           {stats && (
             <div className="flex gap-4 text-sm">
-              <span className="text-green-600">✓ Zaimportowano: {stats.imported}</span>
+              <span className="text-green-600">✓ Nowe: {stats.imported}</span>
               <span className="text-yellow-600">⊘ Duplikaty: {stats.duplicates}</span>
-              <span className="text-red-600">✗ Błędy: {stats.skipped}</span>
             </div>
           )}
         </CardContent>
@@ -284,28 +274,25 @@ export default function AdminReviewsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Moderacja opinii — {pending.length} oczekujących</CardTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={loadPending}>
-                Odśwież
+            {pending.length > 0 && (
+              <Button size="sm" onClick={approveAll}>
+                Zatwierdź wszystkie ({pending.length})
               </Button>
-              {pending.length > 0 && (
-                <Button size="sm" onClick={approveAll}>
-                  Zatwierdź wszystkie
-                </Button>
-              )}
-            </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
           {pending.length === 0 ? (
-            <p className="text-muted-foreground text-sm">Brak opinii do moderacji.</p>
+            <p className="text-muted-foreground text-sm">
+              Wczytaj plik Excel i kliknij &quot;Wczytaj i sprawdź duplikaty&quot;, aby zobaczyć opinie do moderacji.
+            </p>
           ) : (
             <div className="space-y-3">
-              {pending.map((r) => (
-                <div key={r.id} className="border rounded-lg p-4 flex gap-4 items-start">
+              {pending.map((r, i) => (
+                <div key={i} className="border rounded-lg p-4 flex gap-4 items-start">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-sm">{(r.brands as { name: string })?.name}</span>
+                      <span className="font-medium text-sm">{r.brand_name}</span>
                       <Badge variant="outline">{r.rating}★</Badge>
                       <span className="text-xs text-muted-foreground">{r.author_name}</span>
                       <span className="text-xs text-muted-foreground">{r.review_date}</span>
@@ -313,10 +300,10 @@ export default function AdminReviewsPage() {
                     <p className="text-sm text-gray-700 line-clamp-3">{r.content}</p>
                   </div>
                   <div className="flex gap-2 shrink-0">
-                    <Button size="sm" onClick={() => approve(r.id)}>
+                    <Button size="sm" onClick={() => approve(r)}>
                       Zatwierdź
                     </Button>
-                    <Button size="sm" variant="destructive" onClick={() => reject(r.id)}>
+                    <Button size="sm" variant="destructive" onClick={() => reject(r)}>
                       Odrzuć
                     </Button>
                   </div>
