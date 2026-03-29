@@ -212,7 +212,7 @@ export default function AdminReviewsPage() {
 
     while (true) {
       const { data } = await supabase
-        .from('pending_reviews')
+        .from('reviews')
         .select('brand_id, author_name, content')
         .eq('source', 'excel_import')
         .in('brand_id', brandIds)
@@ -255,7 +255,7 @@ export default function AdminReviewsPage() {
         is_approved: false,
       }));
 
-      await supabase.from('pending_reviews').insert(batch);
+      await supabase.from('reviews').insert(batch);
       inserted += batch.length;
       setProgress(Math.round((inserted / toInsert.length) * 100));
     }
