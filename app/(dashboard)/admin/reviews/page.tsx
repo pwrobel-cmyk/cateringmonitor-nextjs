@@ -204,10 +204,28 @@ export default function AdminReviewsPage() {
     setProgress(0);
     setImportResult(null);
 
+    // Create import_batches record
+    const { data: batchData } = await supabase
+      .from('import_batches')
+      .insert({
+        source_file_name: fileName,
+        status: 'processing',
+        total_records: allParsedRows.length,
+        successful_records: 0,
+        failed_records: 0,
+        import_type: 'review_import',
+        user_id: user?.id,
+        notes: null,
+      })
+      .select('id')
+      .single();
+
+    const batchId: string | null = batchData?.id ?? null;
+
     const brandIds = [...new Set(allParsedRows.map((r) => r.brand_id))];
 
     const existingFingerprints = new Set<string>();
-    let from = 0;
+    let fromOffset = 0;
     const pageSize = 1000;
 
     while (true) {
@@ -216,7 +234,7 @@ export default function AdminReviewsPage() {
         .select('brand_id, author_name, content')
         .eq('source', 'excel_import')
         .in('brand_id', brandIds)
-        .range(from, from + pageSize - 1);
+        .range(fromOffset, fromOffset + pageSize - 1);
 
       if (!data || data.length === 0) break;
 
@@ -226,7 +244,7 @@ export default function AdminReviewsPage() {
       }
 
       if (data.length < pageSize) break;
-      from += pageSize;
+      fromOffset += pageSize;
     }
 
     const toInsert: ParsedRow[] = [];
@@ -247,17 +265,30 @@ export default function AdminReviewsPage() {
     for (let i = 0; i < toInsert.length; i += batchSize) {
       const batch = toInsert.slice(i, i + batchSize).map((r) => ({
         brand_id: r.brand_id,
+        original_brand_name: r.brand_name,
         author_name: r.author_name || null,
         content: r.content,
         rating: r.rating,
         review_date: r.review_date || null,
         source: 'excel_import',
         is_approved: false,
+        import_batch_id: batchId,
       }));
 
       await supabase.from('reviews').insert(batch);
       inserted += batch.length;
       setProgress(Math.round((inserted / toInsert.length) * 100));
+    }
+
+    if (batchId) {
+      await supabase
+        .from('import_batches')
+        .update({
+          status: 'completed',
+          successful_records: inserted,
+          failed_records: skipped,
+        })
+        .eq('id', batchId);
     }
 
     const result: ImportResult = {
