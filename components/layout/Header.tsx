@@ -108,7 +108,7 @@ export function Header() {
                   <ClipboardList className="mr-2 h-4 w-4" />
                   <span>Backlog zgłoszeń</span>
                 </DropdownMenuItem>
-                {user?.email === 'p.wrobel@nwd.pl' && (
+                {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
@@ -209,7 +209,7 @@ export function Header() {
                     <ClipboardList className="h-4 w-4 mr-2" />
                     Backlog zgłoszeń
                   </Button>
-                  {user?.email === 'p.wrobel@nwd.pl' && (
+                  {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
                     <Button
                       variant="outline"
                       className="w-full justify-start"

@@ -256,7 +256,7 @@ export default function AdminPricesPage() {
   // ── Auth guard ────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (user && user.email !== 'p.wrobel@nwd.pl') {
+    if (user && user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
       router.replace('/dashboard');
     }
   }, [user, router]);
@@ -566,7 +566,7 @@ export default function AdminPricesPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (!user || user.email !== 'p.wrobel@nwd.pl') {
+  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
     return null;
   }
 

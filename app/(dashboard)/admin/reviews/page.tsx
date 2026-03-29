@@ -37,7 +37,7 @@ export default function AdminReviewsPage() {
   const [stats, setStats] = useState<{ imported: number; duplicates: number } | null>(null)
 
   if (!user) return null
-  if (user.email !== 'p.wrobel@nwd.pl') {
+  if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
     router.push('/dashboard')
     return null
   }
@@ -134,7 +134,20 @@ export default function AdminReviewsPage() {
     const newReviews: ParsedReview[] = []
     let duplicates = 0
 
+    // Deduplicate within the file first
+    const seenFingerprints = new Set<string>()
+    const dedupedParsed: ParsedReview[] = []
     for (const review of parsed) {
+      const fp = `${review.brand_id}|${review.author_name.toLowerCase()}|${review.content.slice(0, 80).toLowerCase()}`
+      if (!seenFingerprints.has(fp)) {
+        seenFingerprints.add(fp)
+        dedupedParsed.push(review)
+      } else {
+        duplicates++
+      }
+    }
+
+    for (const review of dedupedParsed) {
       const { data: existing } = await supabase
         .from('reviews')
         .select('id')
@@ -169,7 +182,7 @@ export default function AdminReviewsPage() {
       original_brand_name: review.brand_name,
     })
 
-    if (error) {
+    if (error && error.code !== '23505') {
       toast.error(`Błąd zapisu: ${error.message}`)
       return
     }
@@ -197,7 +210,7 @@ export default function AdminReviewsPage() {
         is_approved: true,
         original_brand_name: review.brand_name,
       })
-      if (error) failed++
+      if (error && error.code !== '23505') failed++
       else saved++
     }
     setPending([])

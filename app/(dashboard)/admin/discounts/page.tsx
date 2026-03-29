@@ -154,13 +154,13 @@ export default function AdminDiscountsPage() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.email !== 'p.wrobel@nwd.pl') {
+    if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
       router.replace('/dashboard');
     }
   }, [user, router]);
 
   useEffect(() => {
-    if (user?.email === 'p.wrobel@nwd.pl') {
+    if (user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
       fetchData();
     }
   }, [user]);
@@ -453,7 +453,7 @@ export default function AdminDiscountsPage() {
 
   const paginationPages = parsePaginationPages(currentPage, totalPages);
 
-  if (!user || user.email !== 'p.wrobel@nwd.pl') {
+  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
     return null;
   }
 
