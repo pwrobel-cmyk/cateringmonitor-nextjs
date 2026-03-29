@@ -144,6 +144,7 @@ export default function AdminReviewsPage() {
       .from('reviews')
       .select('id, brand_id, original_brand_name, author_name, rating, content, review_date, source, created_at')
       .eq('is_approved', false)
+      .eq('source', 'manual')
       .order('created_at', { ascending: false })
       .limit(100);
     if (data) setPendingReviews(data as PendingReview[]);
@@ -285,7 +286,6 @@ export default function AdminReviewsPage() {
     setProgress(0);
     setImportResult(null);
 
-    // Create import_batches record
     const { data: batchData } = await supabase
       .from('import_batches')
       .insert({
@@ -303,80 +303,48 @@ export default function AdminReviewsPage() {
 
     const batchId: string | null = batchData?.id ?? null;
 
-    const brandIds = [...new Set(allParsedRows.map((r) => r.brand_id))];
-
-    const existingFingerprints = new Set<string>();
-    let fromOffset = 0;
-    const pageSize = 1000;
-
-    while (true) {
-      const { data } = await supabase
-        .from('reviews')
-        .select('brand_id, author_name, content')
-        .in('brand_id', brandIds)
-        .range(fromOffset, fromOffset + pageSize - 1);
-
-      if (!data || data.length === 0) break;
-
-      for (const row of data) {
-        const fp = `${row.brand_id}|${row.author_name || ''}|${(row.content ?? '').slice(0, 100)}`;
-        existingFingerprints.add(fp);
-      }
-
-      if (data.length < pageSize) break;
-      fromOffset += pageSize;
-    }
-
-    const toInsert: ParsedRow[] = [];
+    let inserted = 0;
     let skipped = 0;
 
-    for (const row of allParsedRows) {
-      const fp = `${row.brand_id}|${row.author_name}|${row.content.slice(0, 100)}`;
-      if (existingFingerprints.has(fp)) {
+    for (let i = 0; i < allParsedRows.length; i++) {
+      const r = allParsedRows[i];
+
+      // Check for duplicate by brand_id + author_name + rating
+      const { data: existing } = await supabase
+        .from('reviews')
+        .select('id')
+        .eq('brand_id', r.brand_id)
+        .eq('author_name', r.author_name.trim())
+        .eq('rating', r.rating)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
         skipped++;
       } else {
-        toInsert.push(row);
-      }
-    }
-
-    console.log('AFTER DEDUP:', { total: allParsedRows.length, afterDedup: toInsert.length, existingCount: existingFingerprints.size, skipped });
-
-    let inserted = 0;
-    let skippedDup = 0;
-
-    console.log('INSERTING:', toInsert.length, 'reviews row by row');
-
-    for (let i = 0; i < toInsert.length; i++) {
-      const r = toInsert[i];
-      const record = {
-        brand_id: r.brand_id,
-        original_brand_name: r.brand_name,
-        author_name: r.author_name || null,
-        content: r.content,
-        rating: r.rating,
-        review_date: r.review_date || null,
-        source: 'manual',
-        is_approved: true,
-        import_batch_id: batchId,
-      };
-
-      if (i === 0) console.log('INSERTING ROW 0:', { brand_id: record.brand_id, author: record.author_name, content: record.content?.slice(0, 50) });
-
-      const { error: insertError } = await supabase.from('reviews').insert(record);
-      if (insertError) {
-        if (insertError.code === '23505') {
-          skippedDup++;
+        const { error: insertError } = await supabase.from('reviews').insert({
+          brand_id: r.brand_id,
+          original_brand_name: r.brand_name,
+          author_name: r.author_name || null,
+          content: r.content,
+          rating: r.rating,
+          review_date: r.review_date || null,
+          source: 'manual',
+          is_approved: false,
+          import_batch_id: batchId,
+        });
+        if (insertError) {
+          if (insertError.code === '23505') {
+            skipped++;
+          } else {
+            console.error('INSERT ERROR row', i, ':', insertError);
+          }
         } else {
-          console.error('INSERT ERROR row', i, ':', insertError);
+          inserted++;
         }
-      } else {
-        inserted++;
       }
 
-      setProgress(Math.round(((i + 1) / toInsert.length) * 100));
+      setProgress(Math.round(((i + 1) / allParsedRows.length) * 100));
     }
-
-    console.log('INSERT DONE:', { inserted, skippedDup });
 
     if (batchId) {
       await supabase
@@ -390,18 +358,11 @@ export default function AdminReviewsPage() {
         .eq('id', batchId);
     }
 
-    const result: ImportResult = {
-      imported: inserted,
-      skipped: skipped + skippedDup,
-      unmappedBrands: unmappedBrandsFromFile,
-    };
-
-    setImportResult(result);
+    setImportResult({ imported: inserted, skipped, unmappedBrands: unmappedBrandsFromFile });
     setImporting(false);
+    loadPending();
 
-    toast.success(
-      `Zaimportowano ${inserted} opinii. Pominięto ${result.skipped} duplikatów. Niezmapowane marki: ${unmappedBrandsFromFile.join(', ') || 'brak'}.`
-    );
+    toast.success(`Zaimportowano ${inserted} nowych opinii. Pominięto ${skipped} duplikatów.`);
   }
 
   return (
