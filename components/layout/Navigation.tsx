@@ -10,8 +10,6 @@ import {
   Percent,
   Home,
   MessageSquare,
-  Search,
-  Brain,
   Camera,
   Menu,
   Image,
@@ -41,19 +39,11 @@ const infografikiSubItems = [
   { name: "Trends", href: "/trends", icon: TrendingUp },
 ];
 
-const seoSubItems = [
-  { name: "SEO", href: "/seo", icon: Search },
-  { name: "SEO LLM", href: "/seo-llm", icon: Brain },
-];
-
-
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
-  const [seoExpanded, setSeoExpanded] = useState(false);
   const [infografikiExpanded, setInfografikiExpanded] = useState(false);
   const pathname = usePathname();
 
-  const isSeoActive = pathname === "/seo" || pathname === "/seo-llm" || !!pathname?.startsWith("/seo/");
   const isInfografikiActive = pathname === "/infografiki" || pathname === "/trends";
 
   return (
@@ -92,19 +82,6 @@ export function Navigation() {
           >
             <Image className="h-4 w-4" />
             <span>Infografiki</span>
-          </Link>
-
-          <Link
-            href="/seo"
-            className={cn(
-              "flex items-center space-x-2 px-3 py-3 md:py-4 border-b-2 text-xs md:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0",
-              isSeoActive
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-            )}
-          >
-            <Search className="h-4 w-4" />
-            <span>SEO</span>
           </Link>
         </div>
       </nav>
@@ -166,51 +143,6 @@ export function Navigation() {
                     {infografikiSubItems.map((item) => {
                       const Icon = item.icon;
                       const isActive = pathname === item.href;
-                      return (
-                        <Link
-                          key={item.name}
-                          href={item.href}
-                          onClick={() => setIsOpen(false)}
-                          className={cn(
-                            "flex items-center space-x-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                            isActive
-                              ? "bg-primary text-primary-foreground"
-                              : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                          )}
-                        >
-                          <Icon className="h-4 w-4" />
-                          <span className="flex-1">{item.name}</span>
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-
-              {/* SEO Collapsible */}
-              <Collapsible open={seoExpanded || isSeoActive} onOpenChange={setSeoExpanded}>
-                <CollapsibleTrigger
-                  className={cn(
-                    "flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors w-full",
-                    isSeoActive
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
-                >
-                  <Search className="h-5 w-5" />
-                  <span className="flex-1 text-left">SEO</span>
-                  <ChevronDown
-                    className={cn(
-                      "h-4 w-4 transition-transform",
-                      (seoExpanded || isSeoActive) && "rotate-180"
-                    )}
-                  />
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <div className="ml-4 mt-1 space-y-1">
-                    {seoSubItems.map((item) => {
-                      const Icon = item.icon;
-                      const isActive = pathname === item.href || !!pathname?.startsWith(item.href + "/");
                       return (
                         <Link
                           key={item.name}
