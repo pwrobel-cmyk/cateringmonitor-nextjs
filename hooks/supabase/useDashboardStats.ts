@@ -24,12 +24,14 @@ export function useDashboardStats() {
   return useQuery({
     queryKey: ["dashboard-stats", selectedCountry],
     queryFn: async () => {
-      const [priceChanges, brandsCount, packagesCount, discountsCount] =
+      const now = new Date().toISOString();
+
+      const [priceChanges, brandsResult, packagesCount, activeDiscounts] =
         await Promise.all([
           (supabase as any).rpc("get_price_changes"),
           (supabase as any)
             .from("brands")
-            .select("*", { count: "exact", head: true })
+            .select("id", { count: "exact" })
             .eq("is_active", true)
             .eq("country", selectedCountry),
           (supabase as any)
@@ -41,15 +43,23 @@ export function useDashboardStats() {
             .eq("is_active", true)
             .eq("brands.country", selectedCountry)
             .eq("brands.is_active", true),
-          (supabase as any)
-            .from("discounts")
-            .select("id, brand_id, brands!inner(country)", {
-              count: "exact",
-              head: true,
-            })
-            .eq("is_active", true)
-            .eq("brands.country", selectedCountry),
+          Promise.resolve(null), // placeholder, replaced below
         ]);
+
+      const assignedBrandIds: string[] = (brandsResult.data || []).map((b: any) => b.id);
+      const brandsCount = { count: brandsResult.count };
+
+      const { data: discountsData } = assignedBrandIds.length > 0
+        ? await (supabase as any)
+            .from('discounts')
+            .select('id')
+            .in('brand_id', assignedBrandIds)
+            .eq('is_active', true)
+            .lte('valid_from', now)
+            .or(`valid_until.gte.${now},valid_until.is.null`)
+        : { data: [] };
+
+      const activeDiscountsCount = discountsData?.length || 0;
 
       const changes = (priceChanges.data || []).filter(
         (r: any) => r.country === selectedCountry
@@ -81,7 +91,7 @@ export function useDashboardStats() {
         priceChange: 0,
         activeBrands: brandsCount.count ?? 0,
         activePackages: packagesCount.count ?? 0,
-        activeDiscounts: discountsCount.count ?? 0,
+        activeDiscounts: activeDiscountsCount,
       } as DashboardStats;
     },
   });
