@@ -27,7 +27,7 @@ interface BrandScreenshot {
     logo_url: string | null
     website_url: string | null
     country: string
-  }
+  } | null
 }
 
 interface BrandScreenshotCardProps {
@@ -56,7 +56,7 @@ export function BrandScreenshotCard({ screenshot }: BrandScreenshotCardProps) {
             <>
               <img
                 src={screenshot.screenshot_url}
-                alt={`Screenshot ${screenshot.brands.name}`}
+                alt={`Screenshot ${screenshot.brands?.name ?? ''}`}
                 className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
                 loading="lazy"
               />
@@ -79,7 +79,7 @@ export function BrandScreenshotCard({ screenshot }: BrandScreenshotCardProps) {
         <div className="p-4 space-y-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-lg truncate">{screenshot.brands.name}</h3>
+              <h3 className="font-semibold text-lg truncate">{screenshot.brands?.name ?? ''}</h3>
               <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
                 <Calendar className="h-3 w-3" />
                 {format(new Date(screenshot.created_at), 'dd.MM.yyyy HH:mm', {
@@ -87,10 +87,10 @@ export function BrandScreenshotCard({ screenshot }: BrandScreenshotCardProps) {
                 })}
               </p>
             </div>
-            {screenshot.brands.logo_url && (
+            {screenshot.brands?.logo_url && (
               <img
                 src={screenshot.brands.logo_url}
-                alt={screenshot.brands.name}
+                alt={screenshot.brands?.name ?? ''}
                 className="h-10 w-10 object-contain rounded"
               />
             )}
@@ -124,20 +124,20 @@ export function BrandScreenshotCard({ screenshot }: BrandScreenshotCardProps) {
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {screenshot.brands.logo_url && (
+              {screenshot.brands?.logo_url && (
                 <img
                   src={screenshot.brands.logo_url}
-                  alt={screenshot.brands.name}
+                  alt={screenshot.brands?.name ?? ''}
                   className="h-6 w-6 object-contain"
                 />
               )}
-              {screenshot.brands.name}
+              {screenshot.brands?.name ?? ''}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <img
               src={screenshot.screenshot_url}
-              alt={`Screenshot ${screenshot.brands.name}`}
+              alt={`Screenshot ${screenshot.brands?.name ?? ''}`}
               className="w-full h-auto rounded-lg border"
             />
             <div className="flex items-center justify-between text-sm text-muted-foreground">
