@@ -7,17 +7,8 @@ import { useCountry } from "@/contexts/CountryContext";
 import { Button } from "@/components/ui/button";
 import { useBrandsWithLimit } from "@/hooks/supabase/useBrandsWithLimit";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useRouter } from "next/navigation";
 
@@ -27,7 +18,15 @@ export function Header() {
   const { data: brands = [] } = useBrandsWithLimit();
   const { data: profile } = useUserProfile();
   const [isOpen, setIsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => setMenuOpen(false);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
 
   return (
     <header className="bg-card border-b border-border px-4 md:px-6 py-3 md:py-4">
@@ -82,66 +81,55 @@ export function Header() {
 
           {/* User dropdown */}
           {user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="relative h-10 w-10 rounded-full inline-flex items-center justify-center bg-muted hover:bg-muted/80 transition-colors text-sm font-semibold cursor-pointer border-0 p-0 outline-none">
+            <div className="relative flex-shrink-0">
+              <button
+                onClick={() => setMenuOpen(v => !v)}
+                className="relative h-10 w-10 rounded-full overflow-hidden"
+              >
                 <Avatar className="h-10 w-10">
                   <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.full_name || user.email || ""} />
                   <AvatarFallback>{profile?.full_name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "U"}</AvatarFallback>
                 </Avatar>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{profile?.full_name || "Użytkownik"}</p>
-                      <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
-                    </div>
-                  </DropdownMenuLabel>
-                </DropdownMenuGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/pricing')}>
-                  <CreditCard className="mr-2 h-4 w-4" />
-                  <span>Subskrypcja</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/backlog')}>
-                  <ClipboardList className="mr-2 h-4 w-4" />
-                  <span>Backlog zgłoszeń</span>
-                </DropdownMenuItem>
-                {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuGroup>
-                      <DropdownMenuLabel className="flex items-center gap-2">
-                        <Shield className="h-4 w-4" />
-                        Admin
-                      </DropdownMenuLabel>
-                    </DropdownMenuGroup>
-                    <DropdownMenuItem onClick={() => router.push('/admin/scrapers')}>
-                      <Bot className="mr-2 h-4 w-4" />
-                      <span>Scrapery</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push('/admin/discounts')}>
-                      <ClipboardList className="mr-2 h-4 w-4" />
-                      <span>Zarządzanie rabatami</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push('/admin/prices')}>
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      <span>Import cen</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => router.push('/admin/reviews')}>
-                      <MessageSquare className="mr-2 h-4 w-4" />
-                      <span>Import opinii</span>
-                    </DropdownMenuItem>
-                  </>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={signOut}>
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>Wyloguj</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-12 z-[200] w-56 rounded-lg bg-white border border-gray-200 shadow-lg py-1">
+                  <div className="px-3 py-2 border-b border-gray-100">
+                    <p className="text-sm font-medium">{profile?.full_name || "Użytkownik"}</p>
+                    <p className="text-xs text-gray-500">{user.email}</p>
+                  </div>
+                  <button onClick={() => { router.push('/pricing'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                    <CreditCard className="h-4 w-4" /> Subskrypcja
+                  </button>
+                  <button onClick={() => { router.push('/backlog'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                    <ClipboardList className="h-4 w-4" /> Backlog zgłoszeń
+                  </button>
+                  {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
+                    <>
+                      <div className="border-t border-gray-100 my-1" />
+                      <div className="px-3 py-1 flex items-center gap-2 text-xs font-medium text-gray-400">
+                        <Shield className="h-3 w-3" /> Admin
+                      </div>
+                      <button onClick={() => { router.push('/admin/scrapers'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                        <Bot className="h-4 w-4" /> Scrapery
+                      </button>
+                      <button onClick={() => { router.push('/admin/discounts'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                        <ClipboardList className="h-4 w-4" /> Zarządzanie rabatami
+                      </button>
+                      <button onClick={() => { router.push('/admin/prices'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                        <CreditCard className="h-4 w-4" /> Import cen
+                      </button>
+                      <button onClick={() => { router.push('/admin/reviews'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                        <MessageSquare className="h-4 w-4" /> Import opinii
+                      </button>
+                    </>
+                  )}
+                  <div className="border-t border-gray-100 my-1" />
+                  <button onClick={() => { signOut(); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50 text-red-600">
+                    <LogOut className="h-4 w-4" /> Wyloguj
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
