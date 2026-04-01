@@ -213,15 +213,35 @@ function matchKcal(cell: unknown, kcalRanges: KcalRange[]): KcalRange | null {
   const raw = String(cell).replace(/kcal/gi, '').trim();
   const num = parseFloat(raw);
 
+  // 1. Exact label match
   for (const kr of kcalRanges) {
     if (kr.kcal_label.replace(/kcal/gi, '').trim() === raw) return kr;
-    if (!isNaN(num)) {
-      if (kr.kcal_from === num) return kr;
-      if (num >= kr.kcal_from && num <= kr.kcal_to) return kr;
-      if (Math.abs(kr.kcal_from - num) <= 100) return kr;
-    }
   }
-  return null;
+
+  if (isNaN(num)) return null;
+
+  // 2. Punktowy exact (kcal_from === kcal_to === num) — PRIORYTET
+  for (const kr of kcalRanges) {
+    if (kr.kcal_from === num && kr.kcal_to === num) return kr;
+  }
+
+  // 3. Przedziałowy — preferuj najwęższy przedział
+  const rangeMatches = kcalRanges.filter(kr => num >= kr.kcal_from && num <= kr.kcal_to);
+  if (rangeMatches.length > 0) {
+    rangeMatches.sort((a, b) => (a.kcal_to - a.kcal_from) - (b.kcal_to - b.kcal_from));
+    return rangeMatches[0];
+  }
+
+  // 4. Najbliższy (tolerancja ±100) — preferuj punktowy
+  const closeMatches = kcalRanges
+    .filter(kr => Math.abs(kr.kcal_from - num) <= 100)
+    .sort((a, b) => {
+      const aIsPoint = a.kcal_from === a.kcal_to ? 0 : 1;
+      const bIsPoint = b.kcal_from === b.kcal_to ? 0 : 1;
+      if (aIsPoint !== bIsPoint) return aIsPoint - bIsPoint;
+      return Math.abs(a.kcal_from - num) - Math.abs(b.kcal_from - num);
+    });
+  return closeMatches[0] || null;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
