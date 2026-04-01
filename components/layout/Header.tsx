@@ -23,7 +23,12 @@ export function Header() {
 
   useEffect(() => {
     if (!menuOpen) return;
-    const handler = (e: MouseEvent) => setMenuOpen(false);
+    const handler = (e: MouseEvent) => {
+      const menu = document.getElementById('user-menu-dropdown');
+      if (menu && !menu.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [menuOpen]);
@@ -92,7 +97,7 @@ export function Header() {
                 </Avatar>
               </button>
               {menuOpen && (
-                <div className="absolute right-0 top-12 z-[200] w-56 rounded-lg bg-white border border-gray-200 shadow-lg py-1">
+                <div id="user-menu-dropdown" className="absolute right-0 top-12 z-[200] w-56 rounded-lg bg-white border border-gray-200 shadow-lg py-1">
                   <div className="px-3 py-2 border-b border-gray-100">
                     <p className="text-sm font-medium">{profile?.full_name || "Użytkownik"}</p>
                     <p className="text-xs text-gray-500">{user.email}</p>
