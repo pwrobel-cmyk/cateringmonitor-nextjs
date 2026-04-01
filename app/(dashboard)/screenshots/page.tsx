@@ -181,23 +181,20 @@ export default function Screenshots() {
                   {/* Filters */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
                     <Popover>
-                      <PopoverTrigger>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            'w-full sm:w-[240px] md:w-[280px] justify-start text-left font-normal',
-                            !selectedDate && 'text-muted-foreground'
+                      <PopoverTrigger
+                        className={cn(
+                          'inline-flex items-center rounded-md border border-input bg-background px-3 py-2 text-sm font-normal shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground w-full sm:w-[240px] md:w-[280px] justify-start text-left',
+                          !selectedDate && 'text-muted-foreground'
+                        )}
+                      >
+                        <Calendar className="mr-2 h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">
+                          {selectedDate ? (
+                            format(selectedDate, 'dd MMMM yyyy', { locale: pl })
+                          ) : (
+                            'Wybierz datę'
                           )}
-                        >
-                          <Calendar className="mr-2 h-4 w-4 flex-shrink-0" />
-                          <span className="truncate">
-                            {selectedDate ? (
-                              format(selectedDate, 'dd MMMM yyyy', { locale: pl })
-                            ) : (
-                              'Wybierz datę'
-                            )}
-                          </span>
-                        </Button>
+                        </span>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0" align="start">
                         <CalendarComponent
