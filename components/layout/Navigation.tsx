@@ -93,7 +93,7 @@ function NavDropdown({
         <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-50 mt-1 min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
+        <div className="absolute top-full left-0 z-[100] mt-1 min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
           {items.map((item) => {
             const ItemIcon = item.icon;
             const itemActive = pathname === item.href;
@@ -130,8 +130,8 @@ export function Navigation() {
   return (
     <>
       {/* Desktop Navigation */}
-      <nav className="hidden md:block bg-card border-b border-border px-4 md:px-6">
-        <div className="flex space-x-2 lg:space-x-4 overflow-x-auto">
+      <nav className="hidden md:block bg-card border-b border-border px-4 md:px-6 overflow-visible">
+        <div className="flex space-x-2 lg:space-x-4 overflow-x-auto overflow-y-visible">
           {navigation.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
