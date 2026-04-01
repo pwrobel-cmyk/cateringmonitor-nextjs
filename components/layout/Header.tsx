@@ -31,9 +31,9 @@ export function Header() {
 
   return (
     <header className="bg-card border-b border-border px-4 md:px-6 py-3 md:py-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between w-full">
         {/* Logo and Title */}
-        <div className="flex items-center space-x-2 md:space-x-3 min-w-0">
+        <div className="flex items-center space-x-2 md:space-x-3 flex-shrink-0">
           <div className="flex items-center justify-center w-8 h-8 md:w-10 md:h-10 bg-primary rounded-lg flex-shrink-0">
             <TrendingUp className="h-4 w-4 md:h-6 md:w-6 text-primary-foreground" />
           </div>
@@ -44,7 +44,7 @@ export function Header() {
         </div>
 
         {/* Desktop Menu */}
-        <div className="hidden lg:flex items-center space-x-4 flex-shrink-0 min-w-fit">
+        <div className="hidden lg:flex items-center space-x-4 flex-shrink-0 w-auto">
           {/* Country selector */}
           <div className="flex items-center space-x-3 px-3 py-1.5 bg-muted rounded-lg">
             <button
