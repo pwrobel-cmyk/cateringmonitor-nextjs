@@ -18,7 +18,7 @@ import {
   ChevronDown,
   TrendingUp,
 } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   Collapsible,
@@ -46,77 +46,6 @@ const seoSubItems = [
   { name: "SEO LLM", href: "/seo-llm", icon: Brain },
 ];
 
-function NavDropdown({
-  label,
-  icon: Icon,
-  items,
-  isActive,
-}: {
-  label: string;
-  icon: React.ElementType;
-  items: { name: string; href: string; icon: React.ElementType }[];
-  isActive: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const pathname = usePathname();
-
-  // Close on outside click
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
-  // Close on route change
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
-
-  return (
-    <div ref={ref} className="relative flex-shrink-0">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "flex items-center space-x-2 px-3 py-3 md:py-4 border-b-2 text-xs md:text-sm font-medium transition-colors whitespace-nowrap",
-          isActive
-            ? "border-primary text-primary"
-            : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-        )}
-      >
-        <Icon className="h-4 w-4" />
-        <span>{label}</span>
-        <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
-      </button>
-      {open && (
-        <div className="absolute top-full left-0 z-[100] mt-1 min-w-36 rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10">
-          {items.map((item) => {
-            const ItemIcon = item.icon;
-            const itemActive = pathname === item.href;
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
-                  itemActive && "bg-accent text-accent-foreground"
-                )}
-              >
-                <ItemIcon className="h-4 w-4" />
-                <span>{item.name}</span>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -152,19 +81,31 @@ export function Navigation() {
             );
           })}
 
-          <NavDropdown
-            label="Infografiki"
-            icon={Image}
-            items={infografikiSubItems}
-            isActive={isInfografikiActive}
-          />
+          <Link
+            href="/infografiki"
+            className={cn(
+              "flex items-center space-x-2 px-3 py-3 md:py-4 border-b-2 text-xs md:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0",
+              pathname === "/infografiki" || pathname === "/trends"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+            )}
+          >
+            <Image className="h-4 w-4" />
+            <span>Infografiki</span>
+          </Link>
 
-          <NavDropdown
-            label="SEO"
-            icon={Search}
-            items={seoSubItems}
-            isActive={isSeoActive}
-          />
+          <Link
+            href="/seo"
+            className={cn(
+              "flex items-center space-x-2 px-3 py-3 md:py-4 border-b-2 text-xs md:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0",
+              isSeoActive
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+            )}
+          >
+            <Search className="h-4 w-4" />
+            <span>SEO</span>
+          </Link>
         </div>
       </nav>
 
