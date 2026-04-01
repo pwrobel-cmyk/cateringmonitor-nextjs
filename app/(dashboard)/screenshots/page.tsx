@@ -28,19 +28,24 @@ export default function Screenshots() {
 
   const { data: screenshots, isLoading } = useBrandScreenshots(undefined, selectedCountry)
 
+  // Check access for screenshots
   const canAccessScreenshots = hasFullAccess('screenshots')
   const previewLimit = getPreviewLimit('screenshots') || 3
 
   const filteredScreenshots = screenshots?.filter((s) => {
     if (s.status !== 'success') return false
     if (!selectedDate) return true
+
     const screenshotDate = new Date(s.created_at)
     const filterDate = new Date(selectedDate)
+
     screenshotDate.setHours(0, 0, 0, 0)
     filterDate.setHours(0, 0, 0, 0)
+
     return screenshotDate.getTime() === filterDate.getTime()
   })
 
+  // Apply preview if no access
   const displayedScreenshots = canAccessScreenshots
     ? filteredScreenshots
     : filteredScreenshots?.slice(0, previewLimit)
@@ -50,6 +55,7 @@ export default function Screenshots() {
       toast.error('Brak screenshotów do eksportu')
       return
     }
+
     setIsExporting(true)
     try {
       const pdf = new jsPDF('p', 'mm', 'a4')
@@ -60,14 +66,24 @@ export default function Screenshots() {
 
       for (let i = 0; i < filteredScreenshots.length; i++) {
         const screenshot = filteredScreenshots[i]
-        if (i > 0) pdf.addPage()
+
+        if (i > 0) {
+          pdf.addPage()
+        }
+
+        // Add brand name and date
         pdf.setFontSize(14)
         pdf.text(screenshot.brands?.name || 'Unknown', margin, margin + 7)
         pdf.setFontSize(10)
         pdf.text(format(new Date(screenshot.created_at), 'dd.MM.yyyy HH:mm', { locale: pl }), margin, margin + 13)
+
+        // Load and add image using canvas to reduce size
         try {
+          // Fetch image
           const response = await fetch(screenshot.screenshot_url)
           const blob = await response.blob()
+
+          // Create image element
           const img = new Image()
           const imageLoadPromise = new Promise<void>((resolve, reject) => {
             img.onload = () => resolve()
@@ -75,30 +91,47 @@ export default function Screenshots() {
           })
           img.src = URL.createObjectURL(blob)
           await imageLoadPromise
+
+          // Use canvas to resize image (max width for PDF)
           const canvas = document.createElement('canvas')
           const ctx = canvas.getContext('2d')
-          const maxWidth = 800
+
+          // Calculate dimensions - reduce to reasonable size for PDF
+          const maxWidth = 800 // Reduce from 1920 to 800px
           const scale = maxWidth / img.naturalWidth
           canvas.width = maxWidth
           canvas.height = img.naturalHeight * scale
+
+          // Draw resized image on canvas
           ctx?.drawImage(img, 0, 0, canvas.width, canvas.height)
-          const imgData = canvas.toDataURL('image/jpeg', 0.85)
+
+          // Convert canvas to base64
+          const imgData = canvas.toDataURL('image/jpeg', 0.85) // Use JPEG with 85% quality
+
+          // Clean up
           URL.revokeObjectURL(img.src)
+
+          // Calculate dimensions for PDF
           const imgWidth = contentWidth
           const imgHeight = (canvas.height * imgWidth) / canvas.width
           const maxHeight = pageHeight - margin * 3 - 15
+
           const finalHeight = Math.min(imgHeight, maxHeight)
           const finalWidth = (canvas.width * finalHeight) / canvas.height
+
           pdf.addImage(imgData, 'JPEG', margin, margin + 20, finalWidth, finalHeight)
-        } catch {
+        } catch (error) {
+          console.error(`Failed to load image for ${screenshot.brands?.name}:`, error)
           pdf.setFontSize(10)
           pdf.text('Nie udało się załadować obrazu', margin, margin + 25)
         }
       }
+
       const fileName = `screenshots_${format(selectedDate || new Date(), 'yyyy-MM-dd')}.pdf`
       pdf.save(fileName)
       toast.success('PDF został wygenerowany')
-    } catch {
+    } catch (error) {
+      console.error('Error generating PDF:', error)
       toast.error('Błąd podczas generowania PDF')
     } finally {
       setIsExporting(false)
@@ -113,6 +146,7 @@ export default function Screenshots() {
     >
       <main className="container mx-auto px-4 py-4 md:py-8 max-w-full overflow-x-hidden">
         <div className="space-y-6">
+          {/* Header */}
           <div className="flex flex-col space-y-2">
             <h1 className="text-xl md:text-3xl font-bold flex items-center gap-2">
               <Camera className="h-6 w-6 md:h-8 md:w-8" />
@@ -123,6 +157,7 @@ export default function Screenshots() {
             </p>
           </div>
 
+          {/* Tabs */}
           <Tabs defaultValue="gallery" className="space-y-6">
             <TabsList>
               <TabsTrigger value="gallery">Galeria</TabsTrigger>
@@ -130,6 +165,7 @@ export default function Screenshots() {
             </TabsList>
 
             <TabsContent value="gallery" className="space-y-6">
+              {/* Show upgrade prompt if no access */}
               {needsUpgrade('screenshots') ? (
                 <div className="flex justify-center py-12">
                   <div className="w-full max-w-2xl">
@@ -142,6 +178,7 @@ export default function Screenshots() {
                 </div>
               ) : (
                 <>
+                  {/* Filters */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
                     <Popover>
                       <PopoverTrigger>
@@ -154,7 +191,11 @@ export default function Screenshots() {
                         >
                           <Calendar className="mr-2 h-4 w-4 flex-shrink-0" />
                           <span className="truncate">
-                            {selectedDate ? format(selectedDate, 'dd MMMM yyyy', { locale: pl }) : 'Wybierz datę'}
+                            {selectedDate ? (
+                              format(selectedDate, 'dd MMMM yyyy', { locale: pl })
+                            ) : (
+                              'Wybierz datę'
+                            )}
                           </span>
                         </Button>
                       </PopoverTrigger>
@@ -186,6 +227,7 @@ export default function Screenshots() {
                     )}
                   </div>
 
+                  {/* Gallery */}
                   {isLoading ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {[...Array(6)].map((_, i) => (
@@ -199,14 +241,19 @@ export default function Screenshots() {
                   ) : displayedScreenshots && displayedScreenshots.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       {displayedScreenshots.map((screenshot) => (
-                        <BrandScreenshotCard key={screenshot.id} screenshot={screenshot} />
+                        <BrandScreenshotCard
+                          key={screenshot.id}
+                          screenshot={screenshot}
+                        />
                       ))}
                     </div>
                   ) : (
                     <div className="text-center py-12">
                       <Camera className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
                       <h3 className="text-lg font-semibold mb-2">Brak screenshotów</h3>
-                      <p className="text-muted-foreground">Nie znaleziono żadnych zrzutów ekranu dla wybranej daty.</p>
+                      <p className="text-muted-foreground">
+                        Nie znaleziono żadnych zrzutów ekranu dla wybranej daty.
+                      </p>
                     </div>
                   )}
                 </>
