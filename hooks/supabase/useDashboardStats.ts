@@ -61,6 +61,33 @@ export function useDashboardStats() {
 
       const activeDiscountsCount = discountsData?.length || 0;
 
+      const today = new Date();
+      const last7Days = new Date(today);
+      last7Days.setDate(today.getDate() - 7);
+      const last14Days = new Date(today);
+      last14Days.setDate(today.getDate() - 14);
+      const last8Days = new Date(today);
+      last8Days.setDate(today.getDate() - 8);
+
+      const countryFilter = selectedCountry === "Czechy" ? "Czechy" : "Polska";
+
+      const [recentData, previousData] = await Promise.all([
+        (supabase as any).rpc('get_average_price_by_country_range', {
+          p_country: countryFilter,
+          p_start_date: last7Days.toISOString().split('T')[0],
+          p_end_date: today.toISOString().split('T')[0],
+        }),
+        (supabase as any).rpc('get_average_price_by_country_range', {
+          p_country: countryFilter,
+          p_start_date: last14Days.toISOString().split('T')[0],
+          p_end_date: last8Days.toISOString().split('T')[0],
+        }),
+      ]);
+
+      const recentAvg = recentData.data?.[0]?.average_price ? Number(recentData.data[0].average_price) : 0;
+      const previousAvg = previousData.data?.[0]?.average_price ? Number(previousData.data[0].average_price) : 0;
+      const priceChange = previousAvg > 0 ? ((recentAvg - previousAvg) / previousAvg) * 100 : 0;
+
       const changes = (priceChanges.data || []).filter(
         (r: any) => r.country === selectedCountry
       );
@@ -87,8 +114,8 @@ export function useDashboardStats() {
               change_percentage: biggest.change_percent,
             }
           : null,
-        averagePrice,
-        priceChange: 0,
+        averagePrice: recentAvg || averagePrice,
+        priceChange,
         activeBrands: brandsCount.count ?? 0,
         activePackages: packagesCount.count ?? 0,
         activeDiscounts: activeDiscountsCount,
