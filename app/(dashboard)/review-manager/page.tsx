@@ -199,22 +199,17 @@ export default function ReviewManagerPage() {
     if (!review.content) return
     setGeneratingFor(review.id)
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/ai-response', {
         method: 'POST',
-        headers: {
-          'x-api-key': process.env.NEXT_PUBLIC_ANTHROPIC_KEY || '',
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
+        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 300,
-          system: `Jesteś customer success managerem marki ${selectedBrand?.name || 'naszej firmy'}. Klient zostawił negatywną opinię. Napisz profesjonalną, empatyczną odpowiedź po polsku. Przyznaj się do problemu, przeproś, zaproponuj rozwiązanie. Max 4 zdania.`,
-          messages: [{ role: 'user', content: `Opinia (${review.rating}★): ${review.content}` }],
+          brandName: selectedBrand?.name || 'naszej firmy',
+          rating: review.rating,
+          content: review.content,
         }),
       })
       const json = await res.json()
-      setAiResponses(prev => ({ ...prev, [review.id]: json.content?.[0]?.text || 'Błąd.' }))
+      setAiResponses(prev => ({ ...prev, [review.id]: json.text || 'Błąd.' }))
     } catch {
       setAiResponses(prev => ({ ...prev, [review.id]: 'Błąd generowania.' }))
     } finally {
