@@ -695,53 +695,81 @@ export default function ReviewManagerPage() {
         )}
 
         {/* Progress — czy się poprawiamy? */}
-        {progressData && (
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              Czy się poprawiamy?
-            </p>
-            <div className="space-y-2">
-              {[
-                {
-                  label: 'Średnia ocena',
-                  prev: progressData.previousAvg.toFixed(2),
-                  curr: progressData.currentAvg.toFixed(2),
-                  diff: progressData.currentAvg - progressData.previousAvg,
-                  format: (v: number) => v.toFixed(2),
-                },
-                {
-                  label: 'Liczba opinii',
-                  prev: String(progressData.previousCount),
-                  curr: String(progressData.currentCount),
-                  diff: progressData.currentCount - progressData.previousCount,
-                  format: (v: number) => String(v),
-                },
-                {
-                  label: '% pozytywnych',
-                  prev: progressData.previousPosPct.toFixed(0) + '%',
-                  curr: progressData.currentPosPct.toFixed(0) + '%',
-                  diff: progressData.currentPosPct - progressData.previousPosPct,
-                  format: (v: number) => v.toFixed(0) + '%',
-                },
-              ].map(m => (
-                <div key={m.label} className="bg-background rounded-lg p-2.5 border">
-                  <p className="text-[10px] text-muted-foreground mb-1">{m.label}</p>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-muted-foreground">{m.prev} →</span>
-                    <span className="text-sm font-bold">{m.curr}</span>
-                    <span className={`flex items-center gap-0.5 text-xs font-semibold ${m.diff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                      {m.diff >= 0
-                        ? <TrendingUp className="h-3 w-3" />
-                        : <TrendingDown className="h-3 w-3" />
-                      }
-                      {m.diff > 0 ? '+' : ''}{m.format(m.diff)}
+        {progressData && (() => {
+          const now = new Date()
+          const PL_MONTHS = ['sty','lut','mar','kwi','maj','cze','lip','sie','wrz','paź','lis','gru']
+          const currMonth = PL_MONTHS[now.getMonth()]
+          const prevMonth = PL_MONTHS[(now.getMonth() + 11) % 12]
+          const avgDiff = progressData.currentAvg - progressData.previousAvg
+          const summary = Math.abs(avgDiff) < 0.05
+            ? `➡️ Stabilna sytuacja. Kontynuuj dotychczasowe działania.`
+            : avgDiff > 0
+            ? `✅ Dobry trend! Średnia ocena wzrosła o ${avgDiff.toFixed(2)} pkt w ostatnim miesiącu.`
+            : `⚠️ Średnia ocena spadła o ${Math.abs(avgDiff).toFixed(2)} pkt. Sprawdź ostatnie negatywne opinie.`
+
+          const metrics = [
+            {
+              label: 'Średnia ocena',
+              prevVal: progressData.previousAvg.toFixed(2),
+              currVal: progressData.currentAvg.toFixed(2),
+              diff: avgDiff,
+              badge: (v: number) => (v > 0 ? '+' : '') + v.toFixed(2),
+            },
+            {
+              label: 'Liczba opinii',
+              prevVal: String(progressData.previousCount),
+              currVal: String(progressData.currentCount),
+              diff: progressData.currentCount - progressData.previousCount,
+              badge: (v: number) => (v > 0 ? '+' : '') + String(v),
+            },
+            {
+              label: '% pozytywnych',
+              prevVal: progressData.previousPosPct.toFixed(0) + '%',
+              currVal: progressData.currentPosPct.toFixed(0) + '%',
+              diff: progressData.currentPosPct - progressData.previousPosPct,
+              badge: (v: number) => (v > 0 ? '+' : '') + v.toFixed(0) + '%',
+            },
+          ]
+
+          return (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Czy się poprawiamy?
+              </p>
+              <p className="text-[10px] text-muted-foreground mb-3">Ostatnie 30 dni vs poprzednie 30 dni</p>
+
+              <div className="space-y-2 mb-3">
+                {metrics.map(m => (
+                  <div key={m.label} className="bg-background rounded-lg p-2.5 border">
+                    <p className="text-[10px] text-muted-foreground font-medium mb-1.5">{m.label}</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs text-muted-foreground">{m.prevVal} ({prevMonth})</span>
+                      <span className="text-muted-foreground text-xs">→</span>
+                      <span className="text-sm font-bold">{m.currVal} ({currMonth})</span>
+                    </div>
+                    <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                      m.diff > 0.001 ? 'bg-green-100 text-green-700' : m.diff < -0.001 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {m.diff > 0.001 ? <TrendingUp className="h-2.5 w-2.5" /> : m.diff < -0.001 ? <TrendingDown className="h-2.5 w-2.5" /> : null}
+                      {m.badge(m.diff)} vs poprzedni miesiąc
                     </span>
                   </div>
+                ))}
+
+                {/* Czas odpowiedzi — placeholder */}
+                <div className="bg-background rounded-lg p-2.5 border">
+                  <p className="text-[10px] text-muted-foreground font-medium mb-1.5">Czas odpowiedzi</p>
+                  <p className="text-xs text-muted-foreground italic">Brak danych</p>
                 </div>
-              ))}
+              </div>
+
+              {/* AI summary */}
+              <p className="text-[11px] leading-relaxed text-muted-foreground bg-muted/50 rounded-lg p-2.5 border">
+                {summary}
+              </p>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
       </div>
 
