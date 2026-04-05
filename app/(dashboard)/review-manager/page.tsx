@@ -1,68 +1,104 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell,
-  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend,
-} from 'recharts'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { supabase } from '@/lib/supabase/client'
 import { useBrands } from '@/hooks/supabase/useBrands'
 import { useReviewsStatistics } from '@/hooks/supabase/useReviewsStatistics'
-import { useReviewAspects } from '@/hooks/supabase/useReviewAspects'
-import { useMarketReviewAspects } from '@/hooks/supabase/useMarketReviewAspects'
-import {
-  Star, Bot, Copy, AlertTriangle, TrendingUp, TrendingDown,
-  ChevronDown, ChevronUp, Building2, RefreshCw, CheckCircle2,
-} from 'lucide-react'
+import { Star, Bot, Copy, Check, Building2, RefreshCw } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const LS_KEY = 'rm_brand_id'
-const ASPECT_KEYWORDS: Record<string, string[]> = {
-  smak: ['smak', 'smaczn', 'pyszn', 'smaczne', 'pyszne'],
-  jakość: ['jakość', 'jakości', 'quality'],
-  dostawa: ['dostaw', 'kurier', 'przesyłk', 'transport'],
-  cena: ['cen', 'drogie', 'tanie', 'drogo', 'tanio'],
-  obsługa: ['obsług', 'kontakt', 'support', 'klient'],
-  porcje: ['porcj', 'ilość', 'portion', 'wielkość'],
-}
-const ALERT_KEYWORDS = [
-  'dostawa', 'opóźnienie', 'zimne', 'nieświeże', 'zbyt mało', 'za drogo',
-  'brak', 'nie dotarło', 'obsługa', 'reklamacja',
-]
-const PIE_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
-const STAR_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e']
+const PAGE_SIZE = 30
 
-function extractProblems(content: string): string[] {
-  return ALERT_KEYWORDS.filter(kw => content.toLowerCase().includes(kw))
+const TOPIC_REGEXES: Record<string, RegExp> = {
+  smak:    /smak|jedzeni|pyszn|smaczn|niesmaczn/i,
+  dostawa: /dostaw|kurier|paczk|transport|opóźni/i,
+  jakość:  /jakość|jakości|śwież|nieśwież/i,
+  cena:    /cen|drogie|tanie|drogo|tanio/i,
+  obsługa: /obsług|kontakt|support|klient/i,
+  porcje:  /porcj|ilość|mało|dużo|wielkość/i,
 }
+
+const TOPIC_COLORS: Record<string, string> = {
+  smak:    'bg-orange-100 text-orange-700',
+  dostawa: 'bg-blue-100 text-blue-700',
+  jakość:  'bg-purple-100 text-purple-700',
+  cena:    'bg-yellow-100 text-yellow-700',
+  obsługa: 'bg-green-100 text-green-700',
+  porcje:  'bg-pink-100 text-pink-700',
+}
+
+const TONE_LABELS: Record<Tone, string> = {
+  professional: 'Profesjonalny',
+  empathetic:   'Empatyczny',
+  casual:       'Swobodny',
+}
+
+const TONE_PROMPTS: Record<Tone, string> = {
+  professional: 'Ton: profesjonalny, rzeczowy, formalny.',
+  empathetic:   'Ton: empatyczny, ciepły, rozumiejący.',
+  casual:       'Ton: swobodny, przyjazny, nieformalny.',
+}
+
+function detectTopics(text: string): string[] {
+  if (!text) return []
+  return Object.entries(TOPIC_REGEXES)
+    .filter(([, re]) => re.test(text))
+    .map(([topic]) => topic)
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Review = {
+  id: string
+  author_name: string | null
+  content: string | null
+  rating: number
+  review_date: string | null
+  source: string | null
+}
+
+type Status = 'new' | 'draft' | 'done'
+type Filter = 'all' | 'critical' | 'needs-response' | 'positive'
+type Sort   = 'newest' | 'sla' | 'rating'
+type Tone   = 'professional' | 'empathetic' | 'casual'
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function Stars({ rating }: { rating: number }) {
+function Stars({ rating, size = 'sm' }: { rating: number; size?: 'sm' | 'lg' }) {
+  const cls = size === 'lg' ? 'h-5 w-5' : 'h-3 w-3'
   return (
     <span className="flex gap-0.5 items-center">
-      {[1, 2, 3, 4, 5].map(i => (
-        <Star key={i} className={`h-3 w-3 ${i <= rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-200'}`} />
+      {[1,2,3,4,5].map(i => (
+        <Star key={i} className={`${cls} ${i <= rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-200'}`} />
       ))}
     </span>
   )
 }
 
-function HealthBadge({ score }: { score: number }) {
-  const color = score >= 70 ? 'text-green-500' : score >= 50 ? 'text-yellow-500' : 'text-red-500'
-  const label = score >= 70 ? 'Dobry' : score >= 50 ? 'Przeciętny' : 'Wymaga uwagi'
+function ReviewAvatar({ name, rating }: { name: string; rating: number }) {
+  const bg = rating <= 2
+    ? 'bg-red-100 text-red-700'
+    : rating === 3
+    ? 'bg-yellow-100 text-yellow-700'
+    : 'bg-green-100 text-green-700'
   return (
-    <div className="flex flex-col items-center">
-      <span className={`text-5xl font-black tabular-nums ${color}`}>{score}</span>
-      <span className="text-xs text-muted-foreground leading-none">/100 · {label}</span>
+    <div className={`h-9 w-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${bg}`}>
+      {name?.[0]?.toUpperCase() || '?'}
     </div>
   )
+}
+
+function StatusBadge({ status }: { status: Status }) {
+  if (status === 'done')
+    return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">✓ zrobione</span>
+  if (status === 'draft')
+    return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700">draft</span>
+  return <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">nowa</span>
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -70,35 +106,47 @@ function HealthBadge({ score }: { score: number }) {
 export default function ReviewManagerPage() {
   const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
 
-  // Brand selection
-  const [brandId, setBrandId] = useState<string | null>(null)
+  // Brand
+  const [brandId, setBrandId]     = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userEmail, setUserEmail]  = useState<string | null>(null)
 
-  // Alert centrum state
-  const [alertReviews, setAlertReviews] = useState<any[]>([])
-  const [alertLoading, setAlertLoading] = useState(false)
+  // Reviews list
+  const [reviews, setReviews]         = useState<Review[]>([])
+  const [reviewsLoading, setReviewsLoading] = useState(false)
+  const [hasMore, setHasMore]         = useState(false)
+  const [offset, setOffset]           = useState(0)
 
-  // Trend state
-  const [trendData, setTrendData] = useState<{ month: string; avg_rating: number }[]>([])
+  // Filters / sort
+  const [filter, setFilter] = useState<Filter>('all')
+  const [sort, setSort]     = useState<Sort>('newest')
 
-  // AI state
-  const [generatingFor, setGeneratingFor] = useState<string | null>(null)
-  const [aiResponses, setAiResponses] = useState<Record<string, string>>({})
+  // Selected review
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selectedReview = reviews.find(r => r.id === selectedId) ?? null
 
-  // Expanded aspect citations
-  const [expandedAspect, setExpandedAspect] = useState<string | null>(null)
-  const [aspectCitations, setAspectCitations] = useState<Record<string, string[]>>({})
+  // Statuses (localStorage)
+  const [statuses, setStatuses] = useState<Record<string, Status>>({})
 
-  // Brands
-  const { data: brands = [] } = useBrands()
-  const selectedBrand = brands.find(b => b.id === brandId)
-  const isAdmin = userEmail === adminEmail
+  // Composer
+  const [tone, setTone]           = useState<Tone>('professional')
+  const [aiResponse, setAiResponse] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [copied, setCopied]         = useState(false)
 
-  // Stats & aspects
-  const { data: stats } = useReviewsStatistics(brandId, 'all')
-  const { data: aspects } = useReviewAspects(brandId || undefined)
-  const { data: marketAspects } = useMarketReviewAspects()
+  // Context panel
+  const [similarReviews, setSimilarReviews]   = useState<Review[]>([])
+  const [recentResponses, setRecentResponses] = useState<{ id: string; author: string; text: string }[]>([])
+
+  // Hooks
+  const { data: brands = [] }  = useBrands()
+  const selectedBrand          = brands.find(b => b.id === brandId)
+  const isAdmin                = userEmail === adminEmail
+  const { data: stats }        = useReviewsStatistics(brandId, 'all')
+
+  const avgRating    = stats?.overview?.averageRating || 0
+  const positivePct  = stats?.overview?.positivePercentage || 0
+  const totalReviews = stats?.overview?.totalReviews || 0
 
   // ── Init ──
   useEffect(() => {
@@ -108,99 +156,102 @@ export default function ReviewManagerPage() {
     supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email || null))
   }, [])
 
-  // ── Alert centrum fetch ──
-  const fetchAlerts = useCallback(async (bid: string) => {
-    setAlertLoading(true)
-    const fourteenDaysAgo = new Date()
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
-    const { data } = await (supabase as any)
+  // ── Load statuses from localStorage ──
+  useEffect(() => {
+    const loaded: Record<string, Status> = {}
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith('rm_status_')) {
+        loaded[key.replace('rm_status_', '')] = localStorage.getItem(key) as Status
+      }
+    }
+    setStatuses(loaded)
+  }, [brandId])
+
+  // ── Fetch reviews ──
+  const fetchReviews = useCallback(async (
+    bid: string, f: Filter, s: Sort, off: number, append = false
+  ) => {
+    setReviewsLoading(true)
+    let q = (supabase as any)
       .from('reviews')
       .select('id, author_name, content, rating, review_date, source')
       .eq('brand_id', bid)
       .eq('is_approved', true)
-      .lte('rating', 3)
-      .gte('review_date', fourteenDaysAgo.toISOString().split('T')[0])
-      .order('rating', { ascending: true })
-      .order('review_date', { ascending: false })
-      .limit(20)
-    setAlertReviews(data || [])
-    setAlertLoading(false)
-  }, [])
 
-  // ── Trend fetch ──
-  const fetchTrend = useCallback(async (bid: string) => {
-    const twelveMonthsAgo = new Date()
-    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
-    const { data } = await (supabase as any)
-      .from('reviews')
-      .select('rating, review_date')
-      .eq('brand_id', bid)
-      .eq('is_approved', true)
-      .gte('review_date', twelveMonthsAgo.toISOString().split('T')[0])
-      .order('review_date', { ascending: true })
-    if (!data || data.length === 0) { setTrendData([]); return }
-    const byMonth: Record<string, number[]> = {}
-    for (const r of data) {
-      if (!r.review_date) continue
-      const month = r.review_date.slice(0, 7) // YYYY-MM
-      if (!byMonth[month]) byMonth[month] = []
-      byMonth[month].push(Number(r.rating))
-    }
-    const result = Object.entries(byMonth)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, ratings]) => ({
-        month: month.slice(2), // YY-MM for display
-        avg_rating: Math.round((ratings.reduce((s, v) => s + v, 0) / ratings.length) * 100) / 100,
-      }))
-    setTrendData(result)
+    if (f === 'critical')        q = q.lte('rating', 2)
+    else if (f === 'needs-response') q = q.eq('rating', 3)
+    else if (f === 'positive')   q = q.gte('rating', 4)
+
+    if (s === 'rating') q = q.order('rating', { ascending: true }).order('review_date', { ascending: false })
+    else                q = q.order('review_date', { ascending: false })
+
+    q = q.range(off, off + PAGE_SIZE - 1)
+
+    const { data } = await q
+    const rows: Review[] = data || []
+    if (append) setReviews(prev => [...prev, ...rows])
+    else setReviews(rows)
+    setHasMore(rows.length === PAGE_SIZE)
+    setReviewsLoading(false)
   }, [])
 
   useEffect(() => {
     if (!brandId) return
-    fetchAlerts(brandId)
-    fetchTrend(brandId)
-  }, [brandId, fetchAlerts, fetchTrend])
+    setOffset(0)
+    setSelectedId(null)
+    setAiResponse('')
+    fetchReviews(brandId, filter, sort, 0)
+  }, [brandId, filter, sort, fetchReviews])
 
-  // ── Aspect citations ──
-  const loadCitations = async (aspect: string) => {
-    if (aspectCitations[aspect] || !brandId) return
-    const keywords = ASPECT_KEYWORDS[aspect] || []
-    const { data } = await (supabase as any)
-      .from('reviews')
-      .select('content, rating')
-      .eq('brand_id', brandId)
-      .eq('is_approved', true)
-      .not('content', 'is', null)
-      .limit(500)
-    const matched = (data || [])
-      .filter((r: any) => r.content && keywords.some((k: string) => r.content.toLowerCase().includes(k)))
+  // ── Load similar + saved response when review changes ──
+  useEffect(() => {
+    if (!selectedReview) { setSimilarReviews([]); return }
+    const topics = detectTopics(selectedReview.content || '')
+    const similar = reviews
+      .filter(r => r.id !== selectedReview.id && detectTopics(r.content || '').some(t => topics.includes(t)))
       .slice(0, 3)
-      .map((r: any) => r.content as string)
-    setAspectCitations(prev => ({ ...prev, [aspect]: matched }))
-  }
+    setSimilarReviews(similar)
+    const saved = localStorage.getItem(`rm_response_${selectedReview.id}`)
+    setAiResponse(saved || '')
+  }, [selectedId, reviews, selectedReview])
 
-  const toggleAspect = (aspect: string) => {
-    if (expandedAspect === aspect) {
-      setExpandedAspect(null)
-    } else {
-      setExpandedAspect(aspect)
-      loadCitations(aspect)
+  // ── Load recent AI responses ──
+  useEffect(() => {
+    const responses: { id: string; author: string; text: string }[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith('rm_response_')) {
+        const id   = key.replace('rm_response_', '')
+        const text = localStorage.getItem(key) || ''
+        if (!text) continue
+        const review = reviews.find(r => r.id === id)
+        responses.push({ id, author: review?.author_name || 'Anonim', text })
+      }
     }
+    setRecentResponses(responses.slice(-3).reverse())
+  }, [reviews, aiResponse])
+
+  // ── Helpers ──
+  const setStatus = (id: string, status: Status) => {
+    localStorage.setItem(`rm_status_${id}`, status)
+    setStatuses(prev => ({ ...prev, [id]: status }))
   }
 
-  // ── Derived values ──
-  const avgRating = stats?.overview?.averageRating || 0
-  const positivePct = stats?.overview?.positivePercentage || 0
-  const totalReviews = stats?.overview?.totalReviews || 0
-  const healthScore = Math.min(100, Math.round((avgRating / 5) * 40 + (positivePct / 100) * 60))
+  const loadMore = () => {
+    if (!brandId) return
+    const next = offset + PAGE_SIZE
+    setOffset(next)
+    fetchReviews(brandId, filter, sort, next, true)
+  }
 
-  // ── AI generation ──
-  const generateAI = async (review: any) => {
-    if (!review.content) return
-    setGeneratingFor(review.id)
+  // ── Generate AI ──
+  const generateAI = async () => {
+    if (!selectedReview?.content) return
+    setGenerating(true)
     try {
-      const brandName = selectedBrand?.name || 'naszej firmy'
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const topics = detectTopics(selectedReview.content)
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -208,386 +259,368 @@ export default function ReviewManagerPage() {
         },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
+          max_tokens: 500,
           messages: [
-            { role: 'system', content: `Jesteś customer success managerem marki ${brandName}. Napisz profesjonalną empatyczną odpowiedź na negatywną opinię klienta po polsku. Max 4 zdania.` },
-            { role: 'user', content: `Opinia (${review.rating}★): ${review.content}` },
+            {
+              role: 'system',
+              content: `Jesteś customer success managerem marki ${selectedBrand?.name || 'naszej firmy'}. ${TONE_PROMPTS[tone]} Zasady: używaj imienia klienta, max 4096 znaków, jeśli negatywna: empatia→zrozumienie→rozwiązanie→zaproszenie do kontaktu, jeśli pozytywna: podziękowanie→personalizacja→CTA. Nigdy nie pisz że jesteś AI. Język: polski.`,
+            },
+            {
+              role: 'user',
+              content: `Autor: ${selectedReview.author_name || 'Klient'}\nOcena: ${selectedReview.rating}/5\nTreść: ${selectedReview.content}\nWykryte tematy: ${topics.join(', ') || 'brak'}`,
+            },
           ],
-          max_tokens: 300,
         }),
       })
-      const data = await response.json()
-      const text = data.choices?.[0]?.message?.content || 'Błąd.'
-      setAiResponses(prev => ({ ...prev, [review.id]: text }))
+      const data = await res.json()
+      const text = data.choices?.[0]?.message?.content || 'Błąd generowania.'
+      setAiResponse(text)
+      localStorage.setItem(`rm_response_${selectedReview.id}`, text)
+      setStatus(selectedReview.id, 'draft')
     } catch {
-      setAiResponses(prev => ({ ...prev, [review.id]: 'Błąd generowania.' }))
+      setAiResponse('Błąd generowania.')
     } finally {
-      setGeneratingFor(null)
+      setGenerating(false)
     }
   }
 
-  // ── Radar data ──
-  const radarData = (aspects || []).map(a => {
-    const market = (marketAspects || []).find(m => m.aspect === a.aspect)
-    return { aspect: a.aspect, marka: a.positive, rynek: market?.positive || 0 }
-  })
+  const copyResponse = () => {
+    navigator.clipboard.writeText(aiResponse)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   // ── Brand picker ──
   if (showPicker) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+          <CardContent className="pt-6">
+            <h2 className="text-lg font-bold flex items-center gap-2 mb-4">
               <Building2 className="h-5 w-5" /> Wybierz markę
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {brands.map(b => (
-              <button
-                key={b.id}
-                onClick={() => { setBrandId(b.id); localStorage.setItem(LS_KEY, b.id); setShowPicker(false) }}
-                className="flex items-center gap-3 w-full px-4 py-3 rounded-lg border hover:bg-accent transition-colors text-left"
-              >
-                {b.logo_url && <img src={b.logo_url} alt={b.name} className="h-8 w-8 object-contain rounded" />}
-                <span className="font-medium">{b.name}</span>
-              </button>
-            ))}
+            </h2>
+            <div className="space-y-2">
+              {brands.map(b => (
+                <button
+                  key={b.id}
+                  onClick={() => { setBrandId(b.id); localStorage.setItem(LS_KEY, b.id); setShowPicker(false) }}
+                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg border hover:bg-accent transition-colors text-left"
+                >
+                  {b.logo_url && <img src={b.logo_url} alt={b.name} className="h-8 w-8 object-contain rounded" />}
+                  <span className="font-medium">{b.name}</span>
+                </button>
+              ))}
+            </div>
           </CardContent>
         </Card>
       </div>
     )
   }
 
+  const topics = detectTopics(selectedReview?.content || '')
+
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 pb-12">
+    <div className="flex overflow-hidden" style={{ height: 'calc(100vh - 65px)' }}>
 
-      {/* ── HEADER ── */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-6 items-center justify-between">
-            {/* Brand */}
-            <div className="flex items-center gap-4">
-              {selectedBrand?.logo_url && (
-                <img src={selectedBrand.logo_url} alt={selectedBrand.name} className="h-14 w-14 object-contain rounded-xl border" />
-              )}
+      {/* ════ LEFT PANEL — ReviewQueue ════ */}
+      <div className="w-80 flex-shrink-0 border-r flex flex-col bg-background overflow-hidden">
+
+        {/* Brand header */}
+        <div className="p-4 border-b flex items-center gap-3 flex-shrink-0">
+          {selectedBrand?.logo_url && (
+            <img src={selectedBrand.logo_url} alt={selectedBrand.name} className="h-8 w-8 object-contain rounded flex-shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm truncate">{selectedBrand?.name || '—'}</p>
+            <p className="text-xs text-muted-foreground">{reviews.length} opinii</p>
+          </div>
+          {isAdmin && (
+            <button onClick={() => setShowPicker(true)} className="text-xs text-primary hover:underline flex-shrink-0">
+              Zmień
+            </button>
+          )}
+        </div>
+
+        {/* Filters */}
+        <div className="p-3 border-b flex-shrink-0 space-y-2">
+          <div className="grid grid-cols-2 gap-1">
+            {([
+              ['all',             'Wszystkie'],
+              ['critical',        'Krytyczne 1-2★'],
+              ['needs-response',  '3★'],
+              ['positive',        'Pozytywne'],
+            ] as [Filter, string][]).map(([f, label]) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-2 py-1.5 text-xs rounded-md transition-colors ${
+                  filter === f ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            {([
+              ['newest',  'Najnowsze'],
+              ['rating',  'Rating'],
+              ['sla',     'SLA'],
+            ] as [Sort, string][]).map(([s, label]) => (
+              <button
+                key={s}
+                onClick={() => setSort(s)}
+                className={`flex-1 px-2 py-1 text-[11px] rounded transition-colors ${
+                  sort === s ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Review list */}
+        <div className="flex-1 overflow-y-auto">
+          {reviewsLoading && reviews.length === 0 && (
+            <div className="p-6 text-center text-sm text-muted-foreground">Ładowanie…</div>
+          )}
+
+          {reviews.map(r => (
+            <button
+              key={r.id}
+              onClick={() => setSelectedId(r.id)}
+              className={`w-full text-left p-3 border-b hover:bg-accent/50 transition-colors ${
+                selectedId === r.id ? 'bg-accent' : ''
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <ReviewAvatar name={r.author_name || '?'} rating={r.rating} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1 mb-0.5">
+                    <span className="text-xs font-medium truncate">{r.author_name || 'Anonim'}</span>
+                    <Stars rating={r.rating} />
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-1">
+                    {r.review_date ? new Date(r.review_date).toLocaleDateString('pl-PL') : '—'}
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-tight line-clamp-2">
+                    {(r.content || '').slice(0, 60)}{(r.content || '').length > 60 ? '…' : ''}
+                  </p>
+                  <div className="mt-1.5">
+                    <StatusBadge status={statuses[r.id] || 'new'} />
+                  </div>
+                </div>
+              </div>
+            </button>
+          ))}
+
+          {hasMore && (
+            <button
+              onClick={loadMore}
+              disabled={reviewsLoading}
+              className="w-full py-3 text-xs text-primary hover:bg-accent transition-colors border-t"
+            >
+              {reviewsLoading ? 'Ładowanie…' : 'Załaduj więcej'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ════ MIDDLE PANEL — Detail + Composer ════ */}
+      <div className="flex-1 overflow-y-auto p-6 bg-background">
+        {!selectedReview ? (
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              <Star className="h-14 w-14 mx-auto mb-3 opacity-15" />
+              <p className="text-sm">Wybierz opinię z listy</p>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-2xl mx-auto space-y-5">
+
+            {/* Header */}
+            <div className="flex flex-wrap items-center gap-3">
+              <ReviewAvatar name={selectedReview.author_name || '?'} rating={selectedReview.rating} />
               <div>
-                <h1 className="text-2xl font-bold">{selectedBrand?.name || '—'}</h1>
-                <p className="text-sm text-muted-foreground">Review Manager</p>
-                {isAdmin && (
-                  <button onClick={() => setShowPicker(true)} className="text-xs text-primary hover:underline mt-0.5">
-                    Zmień markę
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Health Score */}
-            <HealthBadge score={healthScore} />
-
-            {/* Metrics */}
-            <div className="flex gap-8">
-              <div className="text-center">
-                <p className="text-3xl font-bold tabular-nums">{totalReviews}</p>
-                <p className="text-xs text-muted-foreground">Łącznie opinii</p>
-              </div>
-              <div className="text-center">
-                <p className="text-3xl font-bold tabular-nums">{avgRating.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">Średnia ocena</p>
-              </div>
-              <div className="text-center">
-                <p className="text-3xl font-bold tabular-nums text-green-500">{positivePct.toFixed(0)}%</p>
-                <p className="text-xs text-muted-foreground">Pozytywnych</p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── ROW 1: ALERT CENTRUM ── */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-orange-500" />
-            Opinie wymagające uwagi
-            <span className="text-xs font-normal text-muted-foreground">(ostatnie 14 dni, ocena ≤ 3★)</span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {alertLoading && (
-            <div className="text-center py-6 text-muted-foreground text-sm">Ładowanie…</div>
-          )}
-
-          {!alertLoading && alertReviews.length === 0 && (
-            <div className="flex items-center gap-3 bg-green-50 dark:bg-green-950/20 border border-green-200 rounded-lg px-4 py-3">
-              <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
-              <p className="text-sm text-green-700 dark:text-green-400 font-medium">
-                Świetnie! Brak negatywnych opinii z ostatnich 14 dni.
-              </p>
-            </div>
-          )}
-
-          {!alertLoading && alertReviews.length > 0 && (
-            <div className="space-y-4">
-              {alertReviews.map(r => {
-                const problems = extractProblems(r.content || '')
-                const isRed = r.rating <= 2
-                return (
-                  <div
-                    key={r.id}
-                    className={`border rounded-lg p-4 space-y-3 ${isRed ? 'border-red-200 bg-red-50/50 dark:bg-red-950/10' : 'border-yellow-200 bg-yellow-50/50 dark:bg-yellow-950/10'}`}
-                  >
-                    {/* Header */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge className={`text-xs ${isRed ? 'bg-red-500 hover:bg-red-500' : 'bg-yellow-500 hover:bg-yellow-500'} text-white`}>
-                        {r.rating}★
-                      </Badge>
-                      <span className="font-medium text-sm">{r.author_name || 'Anonim'}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {r.review_date ? new Date(r.review_date).toLocaleDateString('pl-PL') : '—'}
-                      </span>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{r.source || 'inne'}</Badge>
-                      <Stars rating={r.rating} />
-                    </div>
-
-                    {/* Full content */}
-                    {r.content && (
-                      <p className="text-sm leading-relaxed">{r.content}</p>
-                    )}
-
-                    {/* Główne problemy */}
-                    {problems.length > 0 && (
-                      <div className="flex flex-wrap gap-1 items-center">
-                        <span className="text-xs text-muted-foreground font-medium">Główne problemy:</span>
-                        {problems.map(p => (
-                          <Badge key={p} variant="outline" className="text-[10px] px-1.5 py-0 border-orange-300 text-orange-600">
-                            {p}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* AI button */}
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" className="h-8 text-xs"
-                        onClick={() => generateAI(r)} disabled={generatingFor === r.id || !r.content}>
-                        <Bot className="h-3.5 w-3.5 mr-1" />
-                        {generatingFor === r.id
-                          ? <><RefreshCw className="h-3 w-3 animate-spin mr-1" />Generuję…</>
-                          : 'Generuj odpowiedź AI'
-                        }
-                      </Button>
-                    </div>
-
-                    {/* AI response */}
-                    {aiResponses[r.id] && (
-                      <div className="space-y-1.5">
-                        <textarea
-                          className="w-full text-sm border rounded-md p-2.5 min-h-[80px] bg-white dark:bg-background resize-none"
-                          value={aiResponses[r.id]}
-                          onChange={e => setAiResponses(prev => ({ ...prev, [r.id]: e.target.value }))}
-                        />
-                        <Button size="sm" variant="ghost" className="h-6 text-xs"
-                          onClick={() => navigator.clipboard.writeText(aiResponses[r.id])}>
-                          <Copy className="h-3 w-3 mr-1" /> Kopiuj
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── ROW 2: TREND + ROZKŁAD ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Trend */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Trend ocen (12 miesięcy)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} />
-                <Tooltip />
-                <Line type="monotone" dataKey="avg_rating" stroke="#6366f1" strokeWidth={2} dot={false} name="Ocena" />
-                <Line dataKey={() => 4} stroke="#f59e0b" strokeDasharray="4 2" strokeWidth={1} dot={false} name="Benchmark 4.0" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Rating distribution */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Rozkład ocen</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 pt-2">
-            {[5, 4, 3, 2, 1].map((star, idx) => {
-              const entry = (stats?.ratingDistribution || []).find((r: any) => r.rating === star)
-              const count = entry?.count || 0
-              const pct = totalReviews > 0 ? Math.round((count / totalReviews) * 100) : 0
-              return (
-                <div key={star} className="flex items-center gap-3">
-                  <span className="text-xs w-4 text-right font-medium">{star}★</span>
-                  <Progress value={pct} className="flex-1 h-3" style={{ '--progress-color': STAR_COLORS[idx] } as any} />
-                  <span className="text-xs text-muted-foreground w-10 text-right">{pct}% ({count})</span>
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── ROW 3: KATEGORIE ── */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Co mówią klienci</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {(aspects || []).map(a => {
-              const market = (marketAspects || []).find(m => m.aspect === a.aspect)
-              const diff = market ? a.positive - market.positive : null
-              const barColor = a.positive >= 80 ? '#22c55e' : a.positive >= 60 ? '#f59e0b' : '#ef4444'
-              const isExpanded = expandedAspect === a.aspect
-              return (
-                <div
-                  key={a.aspect}
-                  className="border rounded-lg p-3 cursor-pointer hover:bg-accent/50 transition-colors"
-                  onClick={() => toggleAspect(a.aspect)}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold capitalize">{a.aspect}</span>
-                    {diff !== null && (
-                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${diff >= 0 ? 'text-green-600 border-green-300' : 'text-red-500 border-red-300'}`}>
-                        {diff >= 0 ? '↑' : '↓'} {diff > 0 ? '+' : ''}{diff}% vs rynek
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-2xl font-bold" style={{ color: barColor }}>{a.positive}%</p>
-                  <Progress value={a.positive} className="h-1.5 mt-1" />
-                  <p className="text-[10px] text-muted-foreground mt-1">{a.mentions} wzmianek</p>
-
-                  {isExpanded && (
-                    <div className="mt-3 space-y-2 border-t pt-2" onClick={e => e.stopPropagation()}>
-                      {(aspectCitations[a.aspect] || []).length === 0
-                        ? <p className="text-xs text-muted-foreground italic">Brak cytatów</p>
-                        : (aspectCitations[a.aspect] || []).map((c, i) => (
-                          <p key={i} className="text-xs text-muted-foreground italic leading-relaxed">„{c.slice(0, 120)}{c.length > 120 ? '…' : ''}"</p>
-                        ))
-                      }
-                    </div>
+                <p className="font-semibold">{selectedReview.author_name || 'Anonim'}</p>
+                <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                  <Stars rating={selectedReview.rating} size="lg" />
+                  <span className="text-sm text-muted-foreground">
+                    {selectedReview.review_date ? new Date(selectedReview.review_date).toLocaleDateString('pl-PL') : '—'}
+                  </span>
+                  <Badge variant="outline" className="text-xs">{selectedReview.source || 'inne'}</Badge>
+                  {selectedReview.rating <= 2 && (
+                    <Badge className="bg-red-500 hover:bg-red-500 text-white text-xs">Krytyczna</Badge>
                   )}
+                  {selectedReview.rating === 3 && (
+                    <Badge className="bg-yellow-500 hover:bg-yellow-500 text-white text-xs">Wymaga uwagi</Badge>
+                  )}
+                </div>
+              </div>
+            </div>
 
-                  <div className="flex justify-center mt-1">
-                    {isExpanded ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+            {/* Content */}
+            <Card>
+              <CardContent className="pt-4 pb-4">
+                <p className="text-sm leading-relaxed">{selectedReview.content || '(brak treści)'}</p>
+              </CardContent>
+            </Card>
+
+            {/* Topics */}
+            {topics.length > 0 && (
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs text-muted-foreground font-medium">Wykryte tematy:</span>
+                {topics.map(t => (
+                  <span
+                    key={t}
+                    className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${TOPIC_COLORS[t] || 'bg-gray-100 text-gray-600'}`}
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <hr />
+
+            {/* Composer */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-sm">Odpowiedź</p>
+                <div className="flex gap-1">
+                  {(['professional', 'empathetic', 'casual'] as Tone[]).map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setTone(t)}
+                      className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                        tone === t ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+                      }`}
+                    >
+                      {TONE_LABELS[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Button
+                className="w-full"
+                onClick={generateAI}
+                disabled={generating || !selectedReview.content}
+              >
+                {generating ? (
+                  <><RefreshCw className="h-4 w-4 mr-2 animate-spin" />Generuję…</>
+                ) : (
+                  <><Bot className="h-4 w-4 mr-2" />Generuj odpowiedź AI</>
+                )}
+              </Button>
+
+              <div className="space-y-1.5">
+                <textarea
+                  className="w-full text-sm border rounded-lg p-3 min-h-[150px] bg-background resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Tu pojawi się wygenerowana odpowiedź…"
+                  value={aiResponse}
+                  onChange={e => {
+                    setAiResponse(e.target.value)
+                    localStorage.setItem(`rm_response_${selectedReview.id}`, e.target.value)
+                    if (statuses[selectedReview.id] !== 'done') setStatus(selectedReview.id, 'draft')
+                  }}
+                />
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs ${aiResponse.length > 4096 ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}>
+                    {aiResponse.length} / 4096 znaków
+                  </span>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={copyResponse} disabled={!aiResponse}>
+                      {copied
+                        ? <><Check className="h-3.5 w-3.5 mr-1" />Skopiowano</>
+                        : <><Copy className="h-3.5 w-3.5 mr-1" />Kopiuj</>
+                      }
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setStatus(selectedReview.id, 'done')}
+                      disabled={statuses[selectedReview.id] === 'done'}
+                    >
+                      {statuses[selectedReview.id] === 'done' ? '✓ Zrobione' : 'Oznacz jako zrobione'}
+                    </Button>
                   </div>
                 </div>
-              )
-            })}
+              </div>
+            </div>
+
           </div>
-        </CardContent>
-      </Card>
-
-      {/* ── ROW 4: VS RYNEK ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Twoja marka vs Rynek</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={260}>
-              <RadarChart data={radarData}>
-                <PolarGrid />
-                <PolarAngleAxis dataKey="aspect" tick={{ fontSize: 11 }} />
-                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 9 }} />
-                <Radar name={selectedBrand?.name || 'Marka'} dataKey="marka" stroke="#6366f1" fill="#6366f1" fillOpacity={0.35} />
-                <Radar name="Rynek" dataKey="rynek" stroke="#9ca3af" fill="#9ca3af" fillOpacity={0.2} />
-                <Legend />
-                <Tooltip />
-              </RadarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Porównanie parametrów</CardTitle></CardHeader>
-          <CardContent>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-muted-foreground border-b">
-                  <th className="text-left py-1.5 font-medium">Parametr</th>
-                  <th className="text-right py-1.5 font-medium">Twoja</th>
-                  <th className="text-right py-1.5 font-medium">Rynek</th>
-                  <th className="text-right py-1.5 font-medium">Różnica</th>
-                </tr>
-              </thead>
-              <tbody>
-                {radarData.map(row => {
-                  const diff = row.marka - row.rynek
-                  return (
-                    <tr key={row.aspect} className="border-b last:border-0">
-                      <td className="py-2 capitalize">{row.aspect}</td>
-                      <td className="py-2 text-right font-medium">{row.marka}%</td>
-                      <td className="py-2 text-right text-muted-foreground">{row.rynek}%</td>
-                      <td className="py-2 text-right">
-                        <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${diff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                          {diff >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                          {diff > 0 ? '+' : ''}{diff}%
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+        )}
       </div>
 
-      {/* ── ROW 5: ŹRÓDŁA + AKTYWNOŚĆ ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Źródła opinii</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={stats?.sourceBreakdown || []}
-                  dataKey="count"
-                  nameKey="source"
-                  cx="50%" cy="50%"
-                  outerRadius={80}
-                  label={(props: any) => `${props.source} ${((props.percent || 0) * 100).toFixed(0)}%`}
-                >
-                  {(stats?.sourceBreakdown || []).map((_: any, i: number) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+      {/* ════ RIGHT PANEL — Context ════ */}
+      <div className="w-72 flex-shrink-0 border-l overflow-y-auto p-4 bg-muted/30">
 
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Aktywność wg dnia tygodnia</CardTitle></CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={stats?.dayOfWeekActivity || []}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        {/* Brand stats */}
+        <div className="mb-6">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+            Statystyki marki
+          </p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="bg-background rounded-lg p-2 border">
+              <p className="text-lg font-bold tabular-nums">{avgRating.toFixed(1)}</p>
+              <p className="text-[10px] text-muted-foreground">Avg ★</p>
+            </div>
+            <div className="bg-background rounded-lg p-2 border">
+              <p className="text-lg font-bold tabular-nums">{totalReviews}</p>
+              <p className="text-[10px] text-muted-foreground">Opinii</p>
+            </div>
+            <div className="bg-background rounded-lg p-2 border">
+              <p className="text-lg font-bold tabular-nums text-green-600">{positivePct.toFixed(0)}%</p>
+              <p className="text-[10px] text-muted-foreground">Pozyt.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Similar reviews */}
+        {similarReviews.length > 0 && (
+          <div className="mb-6">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Podobne opinie
+            </p>
+            <div className="space-y-2">
+              {similarReviews.map(r => (
+                <button
+                  key={r.id}
+                  onClick={() => setSelectedId(r.id)}
+                  className="w-full text-left bg-background rounded-lg p-3 border hover:bg-accent/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <Stars rating={r.rating} />
+                    <span className="text-[10px] text-muted-foreground truncate">{r.author_name || 'Anonim'}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground line-clamp-2 leading-tight">
+                    {(r.content || '').slice(0, 80)}{(r.content || '').length > 80 ? '…' : ''}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent AI responses */}
+        {recentResponses.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Ostatnie odpowiedzi AI
+            </p>
+            <div className="space-y-2">
+              {recentResponses.map(r => (
+                <div key={r.id} className="bg-background rounded-lg p-3 border">
+                  <p className="text-[10px] text-muted-foreground mb-1 font-medium">{r.author}</p>
+                  <p className="text-xs leading-tight line-clamp-3 text-muted-foreground">{r.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
       </div>
 
     </div>
