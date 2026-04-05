@@ -82,6 +82,9 @@ export default function ReviewManagerPage() {
   const [expandedAspect, setExpandedAspect] = useState<string | null>(null)
   const [aspectCitations, setAspectCitations] = useState<Record<string, string[]>>({})
 
+  // Expanded inbox review content
+  const [expandedReviews, setExpandedReviews] = useState<Record<string, boolean>>({})
+
   // Brands
   const { data: brands = [] } = useBrands()
   const selectedBrand = brands.find(b => b.id === brandId)
@@ -414,7 +417,8 @@ export default function ReviewManagerPage() {
         <CardContent className="space-y-3">
           {inboxReviews.map(r => {
             const initials = r.author_name?.[0]?.toUpperCase() || '?'
-            const [expanded, setExpanded] = useState(false)
+            const expanded = expandedReviews[r.id] ?? false
+            const setExpanded = (v: boolean) => setExpandedReviews(prev => ({ ...prev, [r.id]: v }))
             const content = r.content || ''
             const isLong = content.length > 180
             return (
@@ -438,7 +442,7 @@ export default function ReviewManagerPage() {
                       <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
                         {isLong && !expanded ? content.slice(0, 180) + '…' : content}
                         {isLong && (
-                          <button className="ml-1 text-primary text-xs hover:underline" onClick={() => setExpanded(v => !v)}>
+                          <button className="ml-1 text-primary text-xs hover:underline" onClick={() => setExpanded(!expanded)}>
                             {expanded ? 'zwiń' : 'więcej'}
                           </button>
                         )}
