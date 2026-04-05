@@ -18,65 +18,8 @@ import {
 import { useMonthlyTrends } from "@/hooks/supabase/useMonthlyTrends";
 import { useAveragePrice } from "@/hooks/supabase/useAveragePrice";
 import { useReviewsCount } from "@/hooks/supabase/useReviewsCount";
+import { useBrandFinancialData } from "@/hooks/useBrandFinancialData";
 
-const brandPerformanceByYear: Record<string, Array<{
-  brand: string;
-  revenue: number;
-  growth: number;
-  customers: number;
-  satisfaction: number;
-  logo: string;
-}>> = {
-  "2018": [
-    { brand: "Body Chief", revenue: 39972.6, growth: 0, customers: 3500, satisfaction: 4.3, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139894630-5hauxe.png" },
-    { brand: "Gastro Magazyn", revenue: 3981.0, growth: 0, customers: 800, satisfaction: 4.5, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140677042-8oep0f.jpg" },
-  ],
-  "2019": [
-    { brand: "MaczFit", revenue: 79727.3, growth: 0, customers: 4200, satisfaction: 4.4, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139797514-fnz11.webp" },
-    { brand: "Body Chief", revenue: 50364.7, growth: 26.0, customers: 3800, satisfaction: 4.3, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139894630-5hauxe.png" },
-  ],
-  "2020": [
-    { brand: "MaczFit", revenue: 99710.3, growth: 25.1, customers: 5200, satisfaction: 4.5, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139797514-fnz11.webp" },
-    { brand: "Dieta od Brokula", revenue: 76726.2, growth: 0, customers: 1800, satisfaction: 4.5, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140593877-r0snpen.jpeg" },
-    { brand: "Body Chief", revenue: 68337.2, growth: 35.6, customers: 4100, satisfaction: 4.3, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139894630-5hauxe.png" },
-    { brand: "SuperMenu", revenue: 13756.4, growth: 0, customers: 650, satisfaction: 4.4, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140646846-93a7f.png" },
-    { brand: "Pomelo", revenue: 6721.3, growth: 0, customers: 580, satisfaction: 3.8, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139868878-xe7bdj.webp" },
-    { brand: "Gastro Magazyn", revenue: 5815.7, growth: 46.0, customers: 920, satisfaction: 4.5, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140677042-8oep0f.jpg" },
-  ],
-  "2021": [
-    { brand: "MaczFit", revenue: 174214.0, growth: 74.7, customers: 5500, satisfaction: 4.6, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139797514-fnz11.webp" },
-    { brand: "Dieta od Brokula", revenue: 155031.1, growth: 102.1, customers: 2100, satisfaction: 4.5, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140593877-r0snpen.jpeg" },
-    { brand: "Body Chief", revenue: 76292.2, growth: 11.7, customers: 4300, satisfaction: 4.3, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139894630-5hauxe.png" },
-    { brand: "Kuchnia Vikinga", revenue: 46693.0, growth: 0, customers: 3800, satisfaction: 4.5, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139828363-253v6o.png" },
-    { brand: "SuperMenu", revenue: 37169.5, growth: 170.2, customers: 780, satisfaction: 4.4, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140646846-93a7f.png" },
-    { brand: "Pomelo", revenue: 11850.1, growth: 76.3, customers: 720, satisfaction: 3.9, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139868878-xe7bdj.webp" },
-    { brand: "Gastro Magazyn", revenue: 11572.0, growth: 99.0, customers: 1050, satisfaction: 4.6, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140677042-8oep0f.jpg" },
-  ],
-  "2022": [
-    { brand: "Dieta od Brokula", revenue: 239169.0, growth: 54.3, customers: 2300, satisfaction: 4.6, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140593877-r0snpen.jpeg" },
-    { brand: "MaczFit", revenue: 230537.0, growth: 32.3, customers: 5700, satisfaction: 4.6, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139797514-fnz11.webp" },
-    { brand: "Kuchnia Vikinga", revenue: 78696.0, growth: 68.5, customers: 4500, satisfaction: 4.7, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139828363-253v6o.png" },
-    { brand: "Body Chief", revenue: 72987.8, growth: -4.3, customers: 4200, satisfaction: 4.3, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139894630-5hauxe.png" },
-    { brand: "Gastro Magazyn", revenue: 62843.1, growth: 443.1, customers: 1800, satisfaction: 4.7, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140677042-8oep0f.jpg" },
-    { brand: "SuperMenu", revenue: 41234.2, growth: 10.9, customers: 850, satisfaction: 4.4, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140646846-93a7f.png" },
-    { brand: "Pomelo", revenue: 11838.9, growth: -0.1, customers: 810, satisfaction: 3.9, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139868878-xe7bdj.webp" },
-  ],
-  "2023": [
-    { brand: "MaczFit", revenue: 331703.2, growth: 43.9, customers: 5800, satisfaction: 4.7, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139797514-fnz11.webp" },
-    { brand: "Dieta od Brokula", revenue: 271015.6, growth: 13.3, customers: 2400, satisfaction: 4.6, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140593877-r0snpen.jpeg" },
-    { brand: "Kuchnia Vikinga", revenue: 267311.7, growth: 239.6, customers: 5400, satisfaction: 4.8, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139828363-253v6o.png" },
-    { brand: "Gastro Magazyn", revenue: 105934.4, growth: 68.6, customers: 3200, satisfaction: 4.8, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140677042-8oep0f.jpg" },
-    { brand: "Body Chief", revenue: 82591.1, growth: 13.2, customers: 4400, satisfaction: 4.4, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139894630-5hauxe.png" },
-    { brand: "SuperMenu", revenue: 32279.5, growth: -21.7, customers: 890, satisfaction: 4.6, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140646846-93a7f.png" },
-    { brand: "Pomelo", revenue: 17509.5, growth: 47.9, customers: 980, satisfaction: 4.0, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139868878-xe7bdj.webp" },
-  ],
-  "2024": [
-    { brand: "MaczFit", revenue: 411217.7, growth: 24.0, customers: 5800, satisfaction: 4.7, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139797514-fnz11.webp" },
-    { brand: "Dieta od Brokula", revenue: 327233.7, growth: 20.7, customers: 2450, satisfaction: 4.7, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759140593877-r0snpen.jpeg" },
-    { brand: "Body Chief", revenue: 95072.7, growth: 15.1, customers: 3800, satisfaction: 4.3, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139894630-5hauxe.png" },
-    { brand: "Pomelo", revenue: 26704.7, growth: 52.5, customers: 1200, satisfaction: 3.9, logo: "https://jpwabrhowkjmuaxnnfhk.supabase.co/storage/v1/object/public/brand-logos/logos/1759139868878-xe7bdj.webp" },
-  ],
-};
 
 const marketYearlyData = [
   { year: "2021", value: 2000000000 },
@@ -109,7 +52,9 @@ export default function Reports() {
   const { data: monthlyTrends, isLoading: trendsLoading } = useMonthlyTrends();
   const { data: avgPriceData } = useAveragePrice();
   const { data: reviewsCount } = useReviewsCount();
+  const { data: brandFinancialData } = useBrandFinancialData();
 
+  const brandPerformanceByYear = brandFinancialData || {};
   const brandPerformance = brandPerformanceByYear[selectedYear] || [];
 
   const brandYearlyTrends: Record<string, Array<{ year: string; marketShare: number }>> = {
@@ -482,7 +427,7 @@ export default function Reports() {
                       <div className="text-right">
                         <div className="font-bold">przychody: {(brand.revenue / 1000).toFixed(1)}M zł</div>
                         <div className="text-sm text-muted-foreground">
-                          średnia ocena: {brand.satisfaction}/5 ★
+                          {(brand as any).satisfaction != null && <>średnia ocena: {(brand as any).satisfaction}/5 ★</>}
                         </div>
                       </div>
                       {brandDetailPaths[brand.brand] && (
