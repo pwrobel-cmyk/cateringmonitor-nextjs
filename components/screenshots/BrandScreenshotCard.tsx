@@ -49,7 +49,7 @@ export function BrandScreenshotCard({ screenshot }: BrandScreenshotCardProps) {
     <>
       <Card className="overflow-hidden group hover:shadow-lg transition-all duration-300">
         <div
-          className="relative aspect-video bg-muted cursor-pointer"
+          className="relative aspect-video bg-muted cursor-pointer overflow-hidden max-h-[250px]"
           onClick={() => screenshot.status === 'success' && setIsDialogOpen(true)}
         >
           {screenshot.status === 'success' ? (
@@ -57,7 +57,7 @@ export function BrandScreenshotCard({ screenshot }: BrandScreenshotCardProps) {
               <img
                 src={screenshot.screenshot_url}
                 alt={`Screenshot ${screenshot.brands?.name ?? ''}`}
-                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300 max-h-[250px]"
                 loading="lazy"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
