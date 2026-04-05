@@ -199,17 +199,25 @@ export default function ReviewManagerPage() {
     if (!review.content) return
     setGeneratingFor(review.id)
     try {
-      const res = await fetch('/api/ai-response', {
+      const brandName = selectedBrand?.name || 'naszej firmy'
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
+        },
         body: JSON.stringify({
-          brandName: selectedBrand?.name || 'naszej firmy',
-          rating: review.rating,
-          content: review.content,
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: `Jesteś customer success managerem marki ${brandName}. Napisz profesjonalną empatyczną odpowiedź na negatywną opinię klienta po polsku. Max 4 zdania.` },
+            { role: 'user', content: `Opinia (${review.rating}★): ${review.content}` },
+          ],
+          max_tokens: 300,
         }),
       })
-      const json = await res.json()
-      setAiResponses(prev => ({ ...prev, [review.id]: json.text || 'Błąd.' }))
+      const data = await response.json()
+      const text = data.choices?.[0]?.message?.content || 'Błąd.'
+      setAiResponses(prev => ({ ...prev, [review.id]: text }))
     } catch {
       setAiResponses(prev => ({ ...prev, [review.id]: 'Błąd generowania.' }))
     } finally {
