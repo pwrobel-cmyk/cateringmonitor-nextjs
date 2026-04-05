@@ -17,7 +17,7 @@ import { useReviewAspects } from '@/hooks/supabase/useReviewAspects'
 import { useMarketReviewAspects } from '@/hooks/supabase/useMarketReviewAspects'
 import {
   Star, Bot, Copy, AlertTriangle, TrendingUp, TrendingDown,
-  ChevronDown, ChevronUp, Building2, RefreshCw,
+  ChevronDown, ChevronUp, Building2, RefreshCw, CheckCircle2,
 } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -31,8 +31,16 @@ const ASPECT_KEYWORDS: Record<string, string[]> = {
   obsługa: ['obsług', 'kontakt', 'support', 'klient'],
   porcje: ['porcj', 'ilość', 'portion', 'wielkość'],
 }
+const ALERT_KEYWORDS = [
+  'dostawa', 'opóźnienie', 'zimne', 'nieświeże', 'zbyt mało', 'za drogo',
+  'brak', 'nie dotarło', 'obsługa', 'reklamacja',
+]
 const PIE_COLORS = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6']
 const STAR_COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e']
+
+function extractProblems(content: string): string[] {
+  return ALERT_KEYWORDS.filter(kw => content.toLowerCase().includes(kw))
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -67,12 +75,12 @@ export default function ReviewManagerPage() {
   const [showPicker, setShowPicker] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
 
-  // Inbox state
-  const [inboxPage, setInboxPage] = useState(0)
-  const [inboxFilter, setInboxFilter] = useState<'all' | 'negative' | 'neutral' | 'positive'>('all')
-  const [inboxReviews, setInboxReviews] = useState<any[]>([])
-  const [inboxTotal, setInboxTotal] = useState(0)
-  const [inboxLoading, setInboxLoading] = useState(false)
+  // Alert centrum state
+  const [alertReviews, setAlertReviews] = useState<any[]>([])
+  const [alertLoading, setAlertLoading] = useState(false)
+
+  // Trend state
+  const [trendData, setTrendData] = useState<{ month: string; avg_rating: number }[]>([])
 
   // AI state
   const [generatingFor, setGeneratingFor] = useState<string | null>(null)
@@ -81,9 +89,6 @@ export default function ReviewManagerPage() {
   // Expanded aspect citations
   const [expandedAspect, setExpandedAspect] = useState<string | null>(null)
   const [aspectCitations, setAspectCitations] = useState<Record<string, string[]>>({})
-
-  // Expanded inbox review content
-  const [expandedReviews, setExpandedReviews] = useState<Record<string, boolean>>({})
 
   // Brands
   const { data: brands = [] } = useBrands()
@@ -100,36 +105,61 @@ export default function ReviewManagerPage() {
     const saved = localStorage.getItem(LS_KEY)
     if (saved) setBrandId(saved)
     else setShowPicker(true)
-    // get email from supabase session
     supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email || null))
   }, [])
 
-  // ── Inbox fetch ──
-  const fetchInbox = useCallback(async (page: number, filter: typeof inboxFilter, bid: string) => {
-    setInboxLoading(true)
-    const from = page * 10
-    const to = from + 9
-    let q = (supabase as any)
+  // ── Alert centrum fetch ──
+  const fetchAlerts = useCallback(async (bid: string) => {
+    setAlertLoading(true)
+    const fourteenDaysAgo = new Date()
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
+    const { data } = await (supabase as any)
       .from('reviews')
-      .select('id, content, rating, author_name, source, review_date', { count: 'exact' })
+      .select('id, author_name, content, rating, review_date, source')
       .eq('brand_id', bid)
       .eq('is_approved', true)
-    if (filter === 'negative') q = q.lte('rating', 2)
-    else if (filter === 'neutral') q = q.eq('rating', 3)
-    else if (filter === 'positive') q = q.gte('rating', 4)
-    const { data, count } = await q.order('review_date', { ascending: false }).range(from, to)
-    if (page === 0) setInboxReviews(data || [])
-    else setInboxReviews(prev => [...prev, ...(data || [])])
-    setInboxTotal(count || 0)
-    setInboxLoading(false)
+      .lte('rating', 3)
+      .gte('review_date', fourteenDaysAgo.toISOString().split('T')[0])
+      .order('rating', { ascending: true })
+      .order('review_date', { ascending: false })
+      .limit(20)
+    setAlertReviews(data || [])
+    setAlertLoading(false)
+  }, [])
+
+  // ── Trend fetch ──
+  const fetchTrend = useCallback(async (bid: string) => {
+    const twelveMonthsAgo = new Date()
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12)
+    const { data } = await (supabase as any)
+      .from('reviews')
+      .select('rating, review_date')
+      .eq('brand_id', bid)
+      .eq('is_approved', true)
+      .gte('review_date', twelveMonthsAgo.toISOString().split('T')[0])
+      .order('review_date', { ascending: true })
+    if (!data || data.length === 0) { setTrendData([]); return }
+    const byMonth: Record<string, number[]> = {}
+    for (const r of data) {
+      if (!r.review_date) continue
+      const month = r.review_date.slice(0, 7) // YYYY-MM
+      if (!byMonth[month]) byMonth[month] = []
+      byMonth[month].push(Number(r.rating))
+    }
+    const result = Object.entries(byMonth)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, ratings]) => ({
+        month: month.slice(2), // YY-MM for display
+        avg_rating: Math.round((ratings.reduce((s, v) => s + v, 0) / ratings.length) * 100) / 100,
+      }))
+    setTrendData(result)
   }, [])
 
   useEffect(() => {
     if (!brandId) return
-    setInboxPage(0)
-    setInboxReviews([])
-    fetchInbox(0, inboxFilter, brandId)
-  }, [brandId, inboxFilter, fetchInbox])
+    fetchAlerts(brandId)
+    fetchTrend(brandId)
+  }, [brandId, fetchAlerts, fetchTrend])
 
   // ── Aspect citations ──
   const loadCitations = async (aspect: string) => {
@@ -164,9 +194,6 @@ export default function ReviewManagerPage() {
   const totalReviews = stats?.overview?.totalReviews || 0
   const healthScore = Math.min(100, Math.round((avgRating / 5) * 40 + (positivePct / 100) * 60))
 
-  // Recent 7-day negative reviews (from inbox if filter=all)
-  const recentNegative = inboxReviews.filter(r => r.rating <= 2).slice(0, 3)
-
   // ── AI generation ──
   const generateAI = async (review: any) => {
     if (!review.content) return
@@ -182,8 +209,8 @@ export default function ReviewManagerPage() {
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 300,
-          system: `Jesteś menedżerem ds. obsługi klienta marki ${selectedBrand?.name || 'naszej firmy'}. Napisz profesjonalną, empatyczną odpowiedź na tę opinię. Odpowiedź powinna być po polsku, maks 3 zdania.`,
-          messages: [{ role: 'user', content: `Ocena: ${review.rating}/5\nTreść: ${review.content}` }],
+          system: `Jesteś customer success managerem marki ${selectedBrand?.name || 'naszej firmy'}. Klient zostawił negatywną opinię. Napisz profesjonalną, empatyczną odpowiedź po polsku. Przyznaj się do problemu, przeproś, zaproponuj rozwiązanie. Max 4 zdania.`,
+          messages: [{ role: 'user', content: `Opinia (${review.rating}★): ${review.content}` }],
         }),
       })
       const json = await res.json()
@@ -274,32 +301,102 @@ export default function ReviewManagerPage() {
         </CardContent>
       </Card>
 
-      {/* ── ROW 1: ALERTY ── */}
-      {recentNegative.length > 0 && (
-        <Card className="border-red-200 bg-red-50 dark:bg-red-950/20">
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="h-4 w-4 text-red-500" />
-              <span className="font-semibold text-red-600 text-sm">
-                {recentNegative.length} negatywnych opinii wymaga uwagi
-              </span>
+      {/* ── ROW 1: ALERT CENTRUM ── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-orange-500" />
+            Opinie wymagające uwagi
+            <span className="text-xs font-normal text-muted-foreground">(ostatnie 14 dni, ocena ≤ 3★)</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {alertLoading && (
+            <div className="text-center py-6 text-muted-foreground text-sm">Ładowanie…</div>
+          )}
+
+          {!alertLoading && alertReviews.length === 0 && (
+            <div className="flex items-center gap-3 bg-green-50 dark:bg-green-950/20 border border-green-200 rounded-lg px-4 py-3">
+              <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+              <p className="text-sm text-green-700 dark:text-green-400 font-medium">
+                Świetnie! Brak negatywnych opinii z ostatnich 14 dni.
+              </p>
             </div>
-            <div className="space-y-2">
-              {recentNegative.map(r => (
-                <div key={r.id} className="flex items-center gap-3 bg-white dark:bg-background rounded-lg px-3 py-2 border border-red-100">
-                  <Stars rating={r.rating} />
-                  <p className="text-sm text-muted-foreground flex-1 truncate">{r.content || '(brak treści)'}</p>
-                  <Button size="sm" variant="outline" className="flex-shrink-0 h-7 text-xs"
-                    onClick={() => generateAI(r)} disabled={generatingFor === r.id || !r.content}>
-                    <Bot className="h-3 w-3 mr-1" />
-                    {generatingFor === r.id ? '...' : 'Odpowiedz AI'}
-                  </Button>
-                </div>
-              ))}
+          )}
+
+          {!alertLoading && alertReviews.length > 0 && (
+            <div className="space-y-4">
+              {alertReviews.map(r => {
+                const problems = extractProblems(r.content || '')
+                const isRed = r.rating <= 2
+                return (
+                  <div
+                    key={r.id}
+                    className={`border rounded-lg p-4 space-y-3 ${isRed ? 'border-red-200 bg-red-50/50 dark:bg-red-950/10' : 'border-yellow-200 bg-yellow-50/50 dark:bg-yellow-950/10'}`}
+                  >
+                    {/* Header */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className={`text-xs ${isRed ? 'bg-red-500 hover:bg-red-500' : 'bg-yellow-500 hover:bg-yellow-500'} text-white`}>
+                        {r.rating}★
+                      </Badge>
+                      <span className="font-medium text-sm">{r.author_name || 'Anonim'}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {r.review_date ? new Date(r.review_date).toLocaleDateString('pl-PL') : '—'}
+                      </span>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{r.source || 'inne'}</Badge>
+                      <Stars rating={r.rating} />
+                    </div>
+
+                    {/* Full content */}
+                    {r.content && (
+                      <p className="text-sm leading-relaxed">{r.content}</p>
+                    )}
+
+                    {/* Główne problemy */}
+                    {problems.length > 0 && (
+                      <div className="flex flex-wrap gap-1 items-center">
+                        <span className="text-xs text-muted-foreground font-medium">Główne problemy:</span>
+                        {problems.map(p => (
+                          <Badge key={p} variant="outline" className="text-[10px] px-1.5 py-0 border-orange-300 text-orange-600">
+                            {p}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* AI button */}
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="outline" className="h-8 text-xs"
+                        onClick={() => generateAI(r)} disabled={generatingFor === r.id || !r.content}>
+                        <Bot className="h-3.5 w-3.5 mr-1" />
+                        {generatingFor === r.id
+                          ? <><RefreshCw className="h-3 w-3 animate-spin mr-1" />Generuję…</>
+                          : 'Generuj odpowiedź AI'
+                        }
+                      </Button>
+                    </div>
+
+                    {/* AI response */}
+                    {aiResponses[r.id] && (
+                      <div className="space-y-1.5">
+                        <textarea
+                          className="w-full text-sm border rounded-md p-2.5 min-h-[80px] bg-white dark:bg-background resize-none"
+                          value={aiResponses[r.id]}
+                          onChange={e => setAiResponses(prev => ({ ...prev, [r.id]: e.target.value }))}
+                        />
+                        <Button size="sm" variant="ghost" className="h-6 text-xs"
+                          onClick={() => navigator.clipboard.writeText(aiResponses[r.id])}>
+                          <Copy className="h-3 w-3 mr-1" /> Kopiuj
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
       {/* ── ROW 2: TREND + ROZKŁAD ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -310,12 +407,11 @@ export default function ReviewManagerPage() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={stats?.monthlyTrends || []}>
+              <LineChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                 <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} />
                 <Tooltip />
-                {/* benchmark 4.0 */}
                 <Line type="monotone" dataKey="avg_rating" stroke="#6366f1" strokeWidth={2} dot={false} name="Ocena" />
                 <Line dataKey={() => 4} stroke="#f59e0b" strokeDasharray="4 2" strokeWidth={1} dot={false} name="Benchmark 4.0" />
               </LineChart>
@@ -396,100 +492,7 @@ export default function ReviewManagerPage() {
         </CardContent>
       </Card>
 
-      {/* ── ROW 4: INBOX ── */}
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-2">
-              Opinie wymagające odpowiedzi
-              <Badge variant="secondary">{inboxTotal}</Badge>
-            </CardTitle>
-            <div className="flex gap-1">
-              {(['all', 'negative', 'neutral', 'positive'] as const).map(f => (
-                <Button key={f} size="sm" variant={inboxFilter === f ? 'default' : 'ghost'}
-                  className="h-7 text-xs px-2" onClick={() => setInboxFilter(f)}>
-                  {f === 'all' ? 'Wszystkie' : f === 'negative' ? '1-2★' : f === 'neutral' ? '3★' : '4-5★'}
-                </Button>
-              ))}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {inboxReviews.map(r => {
-            const initials = r.author_name?.[0]?.toUpperCase() || '?'
-            const expanded = expandedReviews[r.id] ?? false
-            const setExpanded = (v: boolean) => setExpandedReviews(prev => ({ ...prev, [r.id]: v }))
-            const content = r.content || ''
-            const isLong = content.length > 180
-            return (
-              <div key={r.id} className="border rounded-lg p-4 space-y-2">
-                <div className="flex items-start gap-3">
-                  {/* Avatar */}
-                  <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary flex-shrink-0">
-                    {initials}
-                  </div>
-                  {/* Main */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-sm">{r.author_name || 'Anonim'}</span>
-                      <Stars rating={r.rating} />
-                      <span className="text-xs text-muted-foreground">
-                        {r.review_date ? new Date(r.review_date).toLocaleDateString('pl-PL') : '—'}
-                      </span>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{r.source || 'inne'}</Badge>
-                    </div>
-                    {content && (
-                      <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                        {isLong && !expanded ? content.slice(0, 180) + '…' : content}
-                        {isLong && (
-                          <button className="ml-1 text-primary text-xs hover:underline" onClick={() => setExpanded(!expanded)}>
-                            {expanded ? 'zwiń' : 'więcej'}
-                          </button>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                  {/* AI button */}
-                  <Button size="sm" variant="outline" className="flex-shrink-0 h-8 text-xs"
-                    onClick={() => generateAI(r)} disabled={generatingFor === r.id || !content}>
-                    <Bot className="h-3.5 w-3.5 mr-1" />
-                    {generatingFor === r.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : 'AI'}
-                  </Button>
-                </div>
-                {aiResponses[r.id] && (
-                  <div className="ml-12 space-y-1">
-                    <textarea
-                      className="w-full text-sm border rounded-md p-2.5 min-h-[70px] bg-muted/30 resize-none"
-                      value={aiResponses[r.id]}
-                      onChange={e => setAiResponses(prev => ({ ...prev, [r.id]: e.target.value }))}
-                    />
-                    <Button size="sm" variant="ghost" className="h-6 text-xs"
-                      onClick={() => navigator.clipboard.writeText(aiResponses[r.id])}>
-                      <Copy className="h-3 w-3 mr-1" /> Kopiuj
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-
-          {inboxLoading && (
-            <div className="text-center py-4 text-muted-foreground text-sm">Ładowanie…</div>
-          )}
-
-          {!inboxLoading && inboxReviews.length < inboxTotal && (
-            <Button variant="outline" className="w-full" onClick={() => {
-              const next = inboxPage + 1
-              setInboxPage(next)
-              fetchInbox(next, inboxFilter, brandId!)
-            }}>
-              Załaduj więcej ({inboxTotal - inboxReviews.length} pozostałych)
-            </Button>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── ROW 5: VS RYNEK ── */}
+      {/* ── ROW 4: VS RYNEK ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Twoja marka vs Rynek</CardTitle></CardHeader>
@@ -543,7 +546,7 @@ export default function ReviewManagerPage() {
         </Card>
       </div>
 
-      {/* ── ROW 6: ŹRÓDŁA + AKTYWNOŚĆ ── */}
+      {/* ── ROW 5: ŹRÓDŁA + AKTYWNOŚĆ ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Źródła opinii</CardTitle></CardHeader>
