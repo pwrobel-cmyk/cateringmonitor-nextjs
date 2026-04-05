@@ -1,13 +1,18 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import {
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer,
+} from 'recharts'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase/client'
 import { useBrands } from '@/hooks/supabase/useBrands'
 import { useReviewsStatistics } from '@/hooks/supabase/useReviewsStatistics'
-import { Star, Bot, Copy, Check, Building2, RefreshCw } from 'lucide-react'
+import { useReviewAspects } from '@/hooks/supabase/useReviewAspects'
+import { useMarketReviewAspects } from '@/hooks/supabase/useMarketReviewAspects'
+import { Star, Bot, Copy, Check, Building2, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -138,11 +143,21 @@ export default function ReviewManagerPage() {
   const [similarReviews, setSimilarReviews]   = useState<Review[]>([])
   const [recentResponses, setRecentResponses] = useState<{ id: string; author: string; text: string }[]>([])
 
+  // Progress state
+  type ProgressData = {
+    currentAvg: number; previousAvg: number
+    currentCount: number; previousCount: number
+    currentPosPct: number; previousPosPct: number
+  }
+  const [progressData, setProgressData] = useState<ProgressData | null>(null)
+
   // Hooks
-  const { data: brands = [] }  = useBrands()
-  const selectedBrand          = brands.find(b => b.id === brandId)
-  const isAdmin                = userEmail === adminEmail
-  const { data: stats }        = useReviewsStatistics(brandId, 'all')
+  const { data: brands = [] }   = useBrands()
+  const selectedBrand           = brands.find(b => b.id === brandId)
+  const isAdmin                 = userEmail === adminEmail
+  const { data: stats }         = useReviewsStatistics(brandId, 'all')
+  const { data: aspects = [] }  = useReviewAspects(brandId || undefined)
+  const { data: marketAspects = [] } = useMarketReviewAspects()
 
   const avgRating    = stats?.overview?.averageRating || 0
   const positivePct  = stats?.overview?.positivePercentage || 0
@@ -155,6 +170,35 @@ export default function ReviewManagerPage() {
     else setShowPicker(true)
     supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email || null))
   }, [])
+
+  // ── Fetch progress data ──
+  useEffect(() => {
+    if (!brandId) return
+    const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const sixtyDaysAgo  = new Date(); sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60)
+    const t30 = thirtyDaysAgo.toISOString().split('T')[0]
+    const t60 = sixtyDaysAgo.toISOString().split('T')[0]
+    const today = new Date().toISOString().split('T')[0]
+
+    Promise.all([
+      (supabase as any).from('reviews').select('rating').eq('brand_id', brandId).eq('is_approved', true).gte('review_date', t30).lte('review_date', today),
+      (supabase as any).from('reviews').select('rating').eq('brand_id', brandId).eq('is_approved', true).gte('review_date', t60).lt('review_date', t30),
+    ]).then(([curr, prev]) => {
+      const calc = (rows: { rating: number }[]) => {
+        if (!rows.length) return { avg: 0, count: 0, posPct: 0 }
+        const avg = rows.reduce((s, r) => s + r.rating, 0) / rows.length
+        const pos = rows.filter(r => r.rating >= 4).length
+        return { avg, count: rows.length, posPct: (pos / rows.length) * 100 }
+      }
+      const c = calc(curr.data || [])
+      const p = calc(prev.data || [])
+      setProgressData({
+        currentAvg: c.avg, previousAvg: p.avg,
+        currentCount: c.count, previousCount: p.count,
+        currentPosPct: c.posPct, previousPosPct: p.posPct,
+      })
+    })
+  }, [brandId])
 
   // ── Load statuses from localStorage ──
   useEffect(() => {
@@ -606,7 +650,7 @@ export default function ReviewManagerPage() {
 
         {/* Recent AI responses */}
         {recentResponses.length > 0 && (
-          <div>
+          <div className="mb-6">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
               Ostatnie odpowiedzi AI
             </p>
@@ -615,6 +659,84 @@ export default function ReviewManagerPage() {
                 <div key={r.id} className="bg-background rounded-lg p-3 border">
                   <p className="text-[10px] text-muted-foreground mb-1 font-medium">{r.author}</p>
                   <p className="text-xs leading-tight line-clamp-3 text-muted-foreground">{r.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Radar — parametry marki */}
+        {aspects.length > 0 && (
+          <div className="mb-6">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Radar — parametry marki
+            </p>
+            <ResponsiveContainer width="100%" height={220}>
+              <RadarChart data={aspects.map(a => {
+                const market = marketAspects.find((m: any) => m.aspect === a.aspect)
+                return { aspect: a.aspect, marka: a.positive, rynek: market?.positive || 0 }
+              })}>
+                <PolarGrid />
+                <PolarAngleAxis dataKey="aspect" tick={{ fontSize: 10 }} />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} />
+                <Radar name="Twoja marka" dataKey="marka" stroke="#6366f1" fill="#6366f1" fillOpacity={0.4} />
+                <Radar name="Rynek" dataKey="rynek" stroke="#9ca3af" fill="#9ca3af" fillOpacity={0.2} />
+              </RadarChart>
+            </ResponsiveContainer>
+            <div className="flex justify-center gap-4 mt-1">
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-indigo-500" />Twoja marka
+              </span>
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 rounded-full border border-gray-400" />Rynek
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Progress — czy się poprawiamy? */}
+        {progressData && (
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Czy się poprawiamy?
+            </p>
+            <div className="space-y-2">
+              {[
+                {
+                  label: 'Średnia ocena',
+                  prev: progressData.previousAvg.toFixed(2),
+                  curr: progressData.currentAvg.toFixed(2),
+                  diff: progressData.currentAvg - progressData.previousAvg,
+                  format: (v: number) => v.toFixed(2),
+                },
+                {
+                  label: 'Liczba opinii',
+                  prev: String(progressData.previousCount),
+                  curr: String(progressData.currentCount),
+                  diff: progressData.currentCount - progressData.previousCount,
+                  format: (v: number) => String(v),
+                },
+                {
+                  label: '% pozytywnych',
+                  prev: progressData.previousPosPct.toFixed(0) + '%',
+                  curr: progressData.currentPosPct.toFixed(0) + '%',
+                  diff: progressData.currentPosPct - progressData.previousPosPct,
+                  format: (v: number) => v.toFixed(0) + '%',
+                },
+              ].map(m => (
+                <div key={m.label} className="bg-background rounded-lg p-2.5 border">
+                  <p className="text-[10px] text-muted-foreground mb-1">{m.label}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground">{m.prev} →</span>
+                    <span className="text-sm font-bold">{m.curr}</span>
+                    <span className={`flex items-center gap-0.5 text-xs font-semibold ${m.diff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                      {m.diff >= 0
+                        ? <TrendingUp className="h-3 w-3" />
+                        : <TrendingDown className="h-3 w-3" />
+                      }
+                      {m.diff > 0 ? '+' : ''}{m.format(m.diff)}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
