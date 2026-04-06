@@ -24,7 +24,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
-const navigation = [
+const navigation: { name: string; href: string; icon: any; beta?: boolean }[] = [
   { name: "Przegląd", href: "/dashboard", icon: Home },
   { name: "Porównywarka", href: "/compare", icon: ArrowLeftRight },
   { name: "Pakiety & Diety", href: "/packages", icon: Package },
@@ -32,6 +32,7 @@ const navigation = [
   { name: "Opinie", href: "/reviews", icon: MessageSquare },
   { name: "Raporty", href: "/reports", icon: BarChart3 },
   { name: "Screenshots", href: "/screenshots", icon: Camera },
+  { name: "Review Manager", href: "/review-manager", icon: MessageSquare, beta: true },
 ];
 
 const infografikiSubItems = [
@@ -67,6 +68,9 @@ export function Navigation() {
               >
                 <Icon className="h-4 w-4" />
                 <span>{item.name}</span>
+                {item.beta && (
+                  <span className="bg-primary/20 text-primary px-1 py-0.5 rounded font-medium ml-1" style={{ fontSize: '9px' }}>BETA</span>
+                )}
               </Link>
             );
           })}
@@ -112,6 +116,9 @@ export function Navigation() {
                   >
                     <Icon className="h-5 w-5" />
                     <span className="flex-1">{item.name}</span>
+                    {item.beta && (
+                      <span className="bg-primary/20 text-primary px-1 py-0.5 rounded font-medium" style={{ fontSize: '9px' }}>BETA</span>
+                    )}
                   </Link>
                 );
               })}
