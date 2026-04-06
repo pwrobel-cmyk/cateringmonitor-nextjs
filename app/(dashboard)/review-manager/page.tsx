@@ -78,7 +78,9 @@ function fmtDate(d: Date) {
 type Review = {
   id: string; author_name: string | null; content: string | null
   rating: number; review_date: string | null; source: string | null
+  status: Status; priority: string | null
 }
+type ReviewResponse = { id: string; body: string; status: string; tone: string }
 type Status = 'new' | 'draft' | 'done'
 type Filter = 'all' | 'critical' | 'needs-response' | 'positive'
 type Sort   = 'newest' | 'sla' | 'rating'
@@ -145,7 +147,10 @@ export default function ReviewManagerPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selectedReview = reviews.find(r => r.id === selectedId) ?? null
 
-  const [statuses, setStatuses] = useState<Record<string, Status>>({})
+  // Responses from Supabase
+  const [responses, setResponses]   = useState<Record<string, ReviewResponse>>({})
+  const [userId, setUserId]         = useState<string | null>(null)
+  const [publishing, setPublishing] = useState(false)
 
   // Composer
   const [tone, setTone]             = useState<Tone>('professional')
@@ -182,18 +187,11 @@ export default function ReviewManagerPage() {
     const saved = localStorage.getItem(LS_KEY)
     if (saved) setBrandId(saved)
     else setShowPicker(true)
-    supabase.auth.getUser().then(({ data }) => setUserEmail(data.user?.email || null))
+    supabase.auth.getUser().then(({ data }) => {
+      setUserEmail(data.user?.email || null)
+      setUserId(data.user?.id || null)
+    })
   }, [])
-
-  // ── Load statuses ──
-  useEffect(() => {
-    const loaded: Record<string, Status> = {}
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key?.startsWith('rm_status_')) loaded[key.replace('rm_status_', '')] = localStorage.getItem(key) as Status
-    }
-    setStatuses(loaded)
-  }, [brandId])
 
   // ── Fetch progress + trend + sourceStats on brandId ──
   useEffect(() => {
@@ -282,19 +280,26 @@ export default function ReviewManagerPage() {
   }, [brandId])
 
   // ── Fetch reviews ──
+  const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 }
+
   const fetchReviews = useCallback(async (bid: string, f: Filter, s: Sort, off: number, append = false) => {
     setReviewsLoading(true)
     let q = (supabase as any).from('reviews')
-      .select('id, author_name, content, rating, review_date, source')
+      .select('id, author_name, content, rating, review_date, source, status, priority')
       .eq('brand_id', bid).eq('is_approved', true)
-    if (f === 'critical')        q = q.lte('rating', 2)
+    if (f === 'critical')            q = q.lte('rating', 2)
     else if (f === 'needs-response') q = q.eq('rating', 3)
-    else if (f === 'positive')   q = q.gte('rating', 4)
+    else if (f === 'positive')       q = q.gte('rating', 4)
     if (s === 'rating') q = q.order('rating', { ascending: true }).order('review_date', { ascending: false })
     else                q = q.order('review_date', { ascending: false })
     q = q.range(off, off + PAGE_SIZE - 1)
     const { data } = await q
-    const rows: Review[] = data || []
+    let rows: Review[] = data || []
+    if (s === 'sla') {
+      rows = [...rows].sort((a, b) =>
+        (PRIORITY_ORDER[a.priority || 'low'] ?? 3) - (PRIORITY_ORDER[b.priority || 'low'] ?? 3)
+      )
+    }
     if (append) setReviews(prev => [...prev, ...rows])
     else setReviews(rows)
     setHasMore(rows.length === PAGE_SIZE)
@@ -307,34 +312,66 @@ export default function ReviewManagerPage() {
     fetchReviews(brandId, filter, sort, 0)
   }, [brandId, filter, sort, fetchReviews])
 
-  // ── Load similar + saved response ──
+  // ── Load similar reviews ──
   useEffect(() => {
     if (!selectedReview) { setSimilarReviews([]); return }
     const topics = detectTopics(selectedReview.content || '')
     setSimilarReviews(reviews.filter(r => r.id !== selectedReview.id && detectTopics(r.content || '').some(t => topics.includes(t))).slice(0, 3))
-    setAiResponse(localStorage.getItem(`rm_response_${selectedReview.id}`) || '')
   }, [selectedId, reviews, selectedReview])
 
-  // ── Load recent AI responses ──
+  // ── Load response from Supabase when review selected ──
   useEffect(() => {
-    const responses: { id: string; author: string; text: string }[] = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i)
-      if (key?.startsWith('rm_response_')) {
-        const id = key.replace('rm_response_', '')
-        const text = localStorage.getItem(key) || ''
-        if (!text) continue
-        responses.push({ id, author: reviews.find(r => r.id === id)?.author_name || 'Anonim', text })
-      }
-    }
-    setRecentResponses(responses.slice(-3).reverse())
-  }, [reviews, aiResponse])
+    if (!selectedId) { setAiResponse(''); return }
+    const cached = responses[selectedId]
+    if (cached) { setAiResponse(cached.body); setTone((cached.tone as Tone) || 'professional'); return }
+    ;(supabase as any).from('review_responses')
+      .select('id, body, status, tone')
+      .eq('review_id', selectedId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data }: { data: ReviewResponse[] }) => {
+        if (data?.[0]) {
+          setResponses(prev => ({ ...prev, [selectedId]: data[0] }))
+          setAiResponse(data[0].body)
+          setTone((data[0].tone as Tone) || 'professional')
+        } else {
+          setAiResponse('')
+        }
+      })
+  }, [selectedId])
+
+  // ── Recent AI responses (from responses state) ──
+  useEffect(() => {
+    const recent = Object.entries(responses)
+      .filter(([, r]) => r.body)
+      .slice(-3)
+      .reverse()
+      .map(([reviewId, r]) => ({
+        id: reviewId,
+        author: reviews.find(rv => rv.id === reviewId)?.author_name || 'Anonim',
+        text: r.body,
+      }))
+    setRecentResponses(recent)
+  }, [responses, reviews])
 
   // ── Helpers ──
-  const setStatus = (id: string, status: Status) => {
-    localStorage.setItem(`rm_status_${id}`, status)
-    setStatuses(prev => ({ ...prev, [id]: status }))
+  const setStatus = async (id: string, status: Status) => {
+    await (supabase as any).from('reviews').update({ status }).eq('id', id)
+    setReviews(prev => prev.map(r => r.id === id ? { ...r, status } : r))
   }
+
+  const publishResponse = async (reviewId: string) => {
+    const resp = responses[reviewId]
+    if (!resp) return
+    setPublishing(true)
+    await (supabase as any).from('review_responses')
+      .update({ status: 'published', published_at: new Date().toISOString() })
+      .eq('id', resp.id)
+    setResponses(prev => ({ ...prev, [reviewId]: { ...resp, status: 'published' } }))
+    await setStatus(reviewId, 'done')
+    setPublishing(false)
+  }
+
   const loadMore = () => {
     if (!brandId) return
     const next = offset + PAGE_SIZE; setOffset(next)
@@ -361,8 +398,23 @@ export default function ReviewManagerPage() {
       const data = await res.json()
       const text = data.choices?.[0]?.message?.content || 'Błąd generowania.'
       setAiResponse(text)
-      localStorage.setItem(`rm_response_${selectedReview.id}`, text)
-      setStatus(selectedReview.id, 'draft')
+      // Save to Supabase review_responses
+      const existing = responses[selectedReview.id]
+      let saved: ReviewResponse | null = null
+      if (existing?.id) {
+        const { data: upd } = await (supabase as any).from('review_responses')
+          .update({ body: text, tone, status: 'draft' })
+          .eq('id', existing.id)
+          .select('id, body, status, tone').single()
+        saved = upd
+      } else {
+        const { data: ins } = await (supabase as any).from('review_responses')
+          .insert({ review_id: selectedReview.id, brand_id: brandId, body: text, tone, source: 'ai_generated', status: 'draft', created_by: userId })
+          .select('id, body, status, tone').single()
+        saved = ins
+      }
+      if (saved) setResponses(prev => ({ ...prev, [selectedReview.id]: saved! }))
+      await setStatus(selectedReview.id, 'draft')
     } catch { setAiResponse('Błąd generowania.') }
     finally { setGenerating(false) }
   }
@@ -753,7 +805,7 @@ export default function ReviewManagerPage() {
                   <p className="text-xs text-muted-foreground leading-tight line-clamp-2">
                     {(r.content || '').slice(0, 60)}{(r.content || '').length > 60 ? '…' : ''}
                   </p>
-                  <div className="mt-1.5"><StatusBadge status={statuses[r.id] || 'new'} /></div>
+                  <div className="mt-1.5"><StatusBadge status={r.status || 'new'} /></div>
                 </div>
               </div>
             </button>
@@ -849,8 +901,9 @@ export default function ReviewManagerPage() {
                   value={aiResponse}
                   onChange={e => {
                     setAiResponse(e.target.value)
-                    localStorage.setItem(`rm_response_${selectedReview.id}`, e.target.value)
-                    if (statuses[selectedReview.id] !== 'done') setStatus(selectedReview.id, 'draft')
+                    if (responses[selectedReview.id]) {
+                      setResponses(prev => ({ ...prev, [selectedReview.id]: { ...prev[selectedReview.id], body: e.target.value } }))
+                    }
                   }}
                 />
                 <div className="flex items-center justify-between">
@@ -861,8 +914,16 @@ export default function ReviewManagerPage() {
                     <Button size="sm" variant="outline" onClick={copyResponse} disabled={!aiResponse}>
                       {copied ? <><Check className="h-3.5 w-3.5 mr-1" />Skopiowano</> : <><Copy className="h-3.5 w-3.5 mr-1" />Kopiuj</>}
                     </Button>
-                    <Button size="sm" onClick={() => setStatus(selectedReview.id, 'done')} disabled={statuses[selectedReview.id] === 'done'}>
-                      {statuses[selectedReview.id] === 'done' ? '✓ Zrobione' : 'Oznacz jako zrobione'}
+                    {responses[selectedReview.id]?.status === 'published' ? (
+                      <span className="text-xs text-green-600 font-medium px-2">✓ Opublikowano</span>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => publishResponse(selectedReview.id)} disabled={publishing || !responses[selectedReview.id]}>
+                        {publishing ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : null}
+                        Opublikuj
+                      </Button>
+                    )}
+                    <Button size="sm" onClick={() => setStatus(selectedReview.id, 'done')} disabled={selectedReview.status === 'done'}>
+                      {selectedReview.status === 'done' ? '✓ Zrobione' : 'Oznacz jako zrobione'}
                     </Button>
                   </div>
                 </div>
