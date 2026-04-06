@@ -1,40 +1,45 @@
 
 export async function POST(request: Request) {
-  const { brandId, email, brandName: clientBrandName, userName: clientUserName } = await request.json()
+  const { brandId, email, brandName: clientBrandName, fullName } = await request.json()
 
   if (!brandId || !email) {
     return Response.json({ error: 'Missing brandId or email' }, { status: 400 })
   }
 
   const brandName = clientBrandName || 'Twoja marka'
-  const userName = clientUserName || 'Pawle'
+  const userName = fullName?.split(' ')[0] || 'Pawle'
   const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const headers = {
     'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!,
     'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
   }
 
-  // 1. Opinie z ostatnich 7 dni (negatywne — alerty + KPI)
   const sevenDaysAgo = new Date()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+  // 1. Negatywne z ostatnich 7 dni (wszystkie — bez limitu)
   const negativeRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source,review_date,status&brand_id=eq.${brandId}&rating=lte.3&review_date=gte.${sevenDaysAgo.toISOString()}&order=review_date.desc&limit=10`,
+    `${SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source,review_date,status&brand_id=eq.${brandId}&rating=lte.3&review_date=gte.${sevenDaysAgo.toISOString()}&order=review_date.desc`,
     { headers }
   )
   const negativeReviews: any[] = await negativeRes.json().then(d => Array.isArray(d) ? d : [])
 
-  // 2. Opinie z ostatnich 7 dni (wszystkie — dla trendu)
+  // 2. Pozytywne z ostatnich 7 dni (top 3)
+  const positiveRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source,review_date&brand_id=eq.${brandId}&rating=gte.4&review_date=gte.${sevenDaysAgo.toISOString()}&order=review_date.desc&limit=3`,
+    { headers }
+  )
+  const positiveReviews: any[] = await positiveRes.json().then(d => Array.isArray(d) ? d : [])
+
+  // 3. Wszystkie z 7 dni — dla trendu
   const reviews7dRes = await fetch(
     `${SUPABASE_URL}/rest/v1/reviews?select=rating,content&brand_id=eq.${brandId}&review_date=gte.${sevenDaysAgo.toISOString()}`,
     { headers }
   )
   const reviews7d: any[] = await reviews7dRes.json().then(d => Array.isArray(d) ? d : [])
 
-  // 3. Liczba bez odpowiedzi (z ostatnich 7 dni, status != done/skipped)
+  // 4. Metryki
   const unansweredCount = negativeReviews.filter((r: any) => r.status !== 'done' && r.status !== 'skipped').length
-
-  // 4. Oblicz metryki
-  const newCount = negativeReviews.length
   const avgRating7d = reviews7d.length > 0
     ? (reviews7d.reduce((s: number, r: any) => s + r.rating, 0) / reviews7d.length).toFixed(1)
     : 'brak'
@@ -42,7 +47,7 @@ export async function POST(request: Request) {
     ? Math.round(reviews7d.filter((r: any) => r.rating >= 4).length / reviews7d.length * 100)
     : 0
 
-  // Główny problem w negatywnych opiniach
+  // 5. Główny problem (z negatywnych)
   const TOPICS: Record<string, string[]> = {
     dostawa: ['dostaw', 'kurier'],
     smak: ['smak', 'pyszn', 'smaczn'],
@@ -66,10 +71,10 @@ export async function POST(request: Request) {
   }))
   const mainProblem = topicCounts.sort((a, b) => b.count - a.count)[0]
 
-  // 5. HTML szablonu
+  // 6. HTML
   const dateStr = new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
-  const reviewCards = negativeReviews.slice(0, 3).map((r: any) => {
+  const reviewCards = negativeReviews.map((r: any) => {
     const color = r.rating === 1 ? '#ef4444' : r.rating === 2 ? '#f97316' : '#f59e0b'
     const bg = r.rating === 1 ? '#fff8f8' : r.rating === 2 ? '#fff7f3' : '#fffbf0'
     const border = r.rating === 1 ? '#fca5a5' : r.rating === 2 ? '#fdba74' : '#fcd34d'
@@ -94,6 +99,23 @@ export async function POST(request: Request) {
       </div>`
   }).join('')
 
+  const positiveCards = positiveReviews.map((r: any) => {
+    const reviewDate = r.review_date ? new Date(r.review_date).toLocaleDateString('pl-PL') : ''
+    return `
+      <div style="border:1px solid #86efac;border-left:4px solid #16a34a;border-radius:8px;padding:12px 14px;margin-bottom:8px;background:#f0fdf4;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:6px;">
+          <tr>
+            <td>
+              <span style="background:#16a34a;color:#fff;font-size:11px;padding:2px 7px;border-radius:20px;margin-right:8px;">${r.rating}★</span>
+              <span style="font-size:13px;font-weight:500;color:#111827;">${r.author_name || 'Anonim'}</span>
+            </td>
+            <td align="right" style="font-size:11px;color:#6b7280;">${r.source || ''}${reviewDate ? ' · ' + reviewDate : ''}</td>
+          </tr>
+        </table>
+        <p style="font-size:13px;color:#374151;margin:0;line-height:1.5;">"${(r.content || '').slice(0, 150)}${(r.content || '').length > 150 ? '…' : ''}"</p>
+      </div>`
+  }).join('')
+
   const attentionSection = negativeReviews.length > 0 ? `
     <div style="margin-bottom:24px;">
       <div style="font-size:12px;font-weight:500;color:#6b7280;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:12px;">Wymagają Twojej uwagi</div>
@@ -102,6 +124,12 @@ export async function POST(request: Request) {
     <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px;margin-bottom:24px;text-align:center;">
       <p style="color:#166534;font-size:14px;margin:0;">Brak negatywnych opinii z ostatnich 7 dni</p>
     </div>`
+
+  const positiveSection = positiveReviews.length > 0 ? `
+    <div style="margin-bottom:24px;">
+      <div style="font-size:12px;font-weight:500;color:#6b7280;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:12px;">Pozytywne — warto podziękować</div>
+      ${positiveCards}
+    </div>` : ''
 
   const trendSection = `
     <div style="background:#f9fafb;border-radius:8px;padding:16px;margin-bottom:24px;">
@@ -141,8 +169,8 @@ export async function POST(request: Request) {
       <tr>
         <td width="25%" style="padding:4px;">
           <div style="background:#f9fafb;border-radius:8px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">Negatywne (7d)</div>
-            <div style="font-size:22px;font-weight:500;color:${newCount > 0 ? '#b91c1c' : '#16a34a'};">${newCount}</div>
+            <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">Wszystkie (7d)</div>
+            <div style="font-size:22px;font-weight:500;color:#111827;">${reviews7d.length}</div>
           </div>
         </td>
         <td width="25%" style="padding:4px;">
@@ -153,7 +181,7 @@ export async function POST(request: Request) {
         </td>
         <td width="25%" style="padding:4px;">
           <div style="background:${negativeReviews.length > 0 ? '#fff0f0' : '#f0fdf4'};border:1px solid ${negativeReviews.length > 0 ? '#fca5a5' : '#86efac'};border-radius:8px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:${negativeReviews.length > 0 ? '#991b1b' : '#166534'};margin-bottom:4px;">Negatywne</div>
+            <div style="font-size:11px;color:${negativeReviews.length > 0 ? '#991b1b' : '#166534'};margin-bottom:4px;">Negatywne (7d)</div>
             <div style="font-size:22px;font-weight:500;color:${negativeReviews.length > 0 ? '#b91c1c' : '#16a34a'};">${negativeReviews.length}</div>
           </div>
         </td>
@@ -167,6 +195,8 @@ export async function POST(request: Request) {
     </table>
 
     ${attentionSection}
+
+    ${positiveSection}
 
     ${trendSection}
 

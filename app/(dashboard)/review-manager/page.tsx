@@ -169,6 +169,7 @@ export default function ReviewManagerPage() {
   const [brandId, setBrandId]       = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   const [userEmail, setUserEmail]   = useState<string | null>(null)
+  const [fullName, setFullName]     = useState<string | null>(null)
   const [showAnalytics, setShowAnalytics] = useState(false)
 
   // Reviews list
@@ -253,11 +254,11 @@ export default function ReviewManagerPage() {
       setUserEmail(user?.email || null)
       setUserId(user?.id || null)
       if (!user) { setShowPicker(true); return }
-      const { data: assignment } = await (supabase as any)
-        .from('user_brand_assignments')
-        .select('brand_id')
-        .eq('user_id', user.id)
-        .single()
+      const [{ data: assignment }, { data: profile }] = await Promise.all([
+        (supabase as any).from('user_brand_assignments').select('brand_id').eq('user_id', user.id).single(),
+        (supabase as any).from('profiles').select('full_name').eq('id', user.id).single(),
+      ])
+      if (profile?.full_name) setFullName(profile.full_name)
       if (assignment?.brand_id) setBrandId(assignment.brand_id)
       else setShowPicker(true)
     })
@@ -471,7 +472,7 @@ export default function ReviewManagerPage() {
           brandId,
           brandName: selectedBrand?.name,
           email: notifSettings.email || userEmail,
-          userName: userEmail?.split('@')[0] || 'Pawle',
+          fullName: fullName || userEmail,
         }),
       })
       if (res.ok) toast.success('Testowy email wysłany!')
