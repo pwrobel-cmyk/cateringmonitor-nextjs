@@ -473,14 +473,6 @@ export default function ReviewManagerPage() {
           brandId,
           brandName: selectedBrand?.name,
           email: notifSettings.email || userEmail,
-          stats: {
-            totalNew: reviews.filter(r => {
-              const d = new Date(r.review_date || ''); const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); return d >= yesterday
-            }).length,
-            avgRating,
-            negativeCount: reviews.filter(r => r.rating <= 3).length,
-            unanswered: reviews.filter(r => r.rating <= 3 && r.status !== 'done').length,
-          },
         }),
       })
       if (res.ok) toast.success('Testowy email wysłany!')
