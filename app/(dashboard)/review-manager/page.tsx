@@ -22,7 +22,6 @@ import { toast } from 'sonner'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const LS_KEY = 'rm_brand_id'
 const PAGE_SIZE = 30
 const PIE_COLORS = ['#6366f1','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4']
 
@@ -249,25 +248,25 @@ export default function ReviewManagerPage() {
 
   // ── Init ──
   useEffect(() => {
-    const saved = localStorage.getItem(LS_KEY)
-    if (saved) setBrandId(saved)
-    else setShowPicker(true)
-    supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email || null)
-      setUserId(data.user?.id || null)
+    supabase.auth.getUser().then(async ({ data }) => {
+      const user = data.user
+      setUserEmail(user?.email || null)
+      setUserId(user?.id || null)
+      if (!user) { setShowPicker(true); return }
+      const { data: assignment } = await (supabase as any)
+        .from('user_brand_assignments')
+        .select('brand_id')
+        .eq('user_id', user.id)
+        .single()
+      if (assignment?.brand_id) setBrandId(assignment.brand_id)
+      else setShowPicker(true)
     })
   }, [])
 
-  // ── Load notification settings when brandId changes ──
+  // ── Set default email in notification settings when user loaded ──
   useEffect(() => {
-    if (!brandId) return
-    const raw = localStorage.getItem(`rm_notification_settings_${brandId}`)
-    if (raw) {
-      try { setNotifSettings({ ...DEFAULT_NOTIF, ...JSON.parse(raw) }) } catch { /* ignore */ }
-    } else {
-      setNotifSettings({ ...DEFAULT_NOTIF, email: userEmail || '' })
-    }
-  }, [brandId, userEmail])
+    if (userEmail) setNotifSettings(s => s.email ? s : { ...s, email: userEmail })
+  }, [userEmail])
 
   // ── Fetch progress + trend + sourceStats on brandId ──
   useEffect(() => {
@@ -458,7 +457,6 @@ export default function ReviewManagerPage() {
   const saveNotifSettings = (patch?: Partial<NotificationSettings>) => {
     const updated = patch ? { ...notifSettings, ...patch } : notifSettings
     if (patch) setNotifSettings(updated)
-    if (brandId) localStorage.setItem(`rm_notification_settings_${brandId}`, JSON.stringify(updated))
     toast.success('Ustawienia zapisane')
   }
 
@@ -589,7 +587,13 @@ export default function ReviewManagerPage() {
             <h2 className="text-lg font-bold flex items-center gap-2 mb-4"><Building2 className="h-5 w-5" /> Wybierz markę</h2>
             <div className="space-y-2">
               {brands.map(b => (
-                <button key={b.id} onClick={() => { setBrandId(b.id); localStorage.setItem(LS_KEY, b.id); setShowPicker(false) }}
+                <button key={b.id} onClick={async () => {
+                  setBrandId(b.id); setShowPicker(false)
+                  if (userId) {
+                    await (supabase as any).from('user_brand_assignments')
+                      .upsert({ user_id: userId, brand_id: b.id }, { onConflict: 'user_id' })
+                  }
+                }}
                   className="flex items-center gap-3 w-full px-4 py-3 rounded-lg border hover:bg-accent transition-colors text-left">
                   {b.logo_url && <img src={b.logo_url} alt={b.name} className="h-8 w-8 object-contain rounded" />}
                   <span className="font-medium">{b.name}</span>
