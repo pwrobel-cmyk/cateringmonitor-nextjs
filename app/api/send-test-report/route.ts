@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   const brandName = clientBrandName || 'Twoja marka'
   const kpi = stats || { totalNew: 0, avgRating: 0, negativeCount: 0, unanswered: 0 }
 
+  // Negative reviews
   const { data: negativeReviews } = await supabase
     .from('reviews')
     .select('id, author_name, rating, content, source')
@@ -23,12 +24,38 @@ export async function POST(request: Request) {
     .order('review_date', { ascending: false })
     .limit(5)
 
-  const reviews = negativeReviews || []
+  // Positive reviews from last 24h
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const { data: positiveReviews } = await supabase
+    .from('reviews')
+    .select('id, author_name, rating, content, source')
+    .eq('brand_id', brandId)
+    .gte('rating', 4)
+    .gte('review_date', yesterday.toISOString())
+    .order('review_date', { ascending: false })
+    .limit(2)
 
-  const reviewCards = reviews.slice(0, 3).map(r => {
-    const color = r.rating <= 1 ? '#ef4444' : r.rating === 2 ? '#f97316' : '#f59e0b'
-    const bg    = r.rating <= 1 ? '#fff8f8' : r.rating === 2 ? '#fff7f3' : '#fffbf0'
-    const border = r.rating <= 1 ? '#fca5a5' : r.rating === 2 ? '#fdba74' : '#fcd34d'
+  const reviews = negativeReviews || []
+  const posReviews = positiveReviews || []
+
+  // Detect main problem keyword
+  const allContent = reviews.map((r: any) => r.content || '').join(' ').toLowerCase()
+  const problemKeywords = ['dostawa', 'smak', 'porcje', 'cena', 'obsługa', 'jakość']
+  const mainProblem = problemKeywords.reduce((best, kw) => {
+    const count = (allContent.match(new RegExp(kw, 'g')) || []).length
+    return count > best.count ? { word: kw, count } : best
+  }, { word: 'brak', count: 0 }).word
+
+  const posPct = kpi.negativeCount >= 0 && kpi.totalNew > 0
+    ? Math.round(((kpi.totalNew - kpi.negativeCount) / kpi.totalNew) * 100)
+    : 0
+
+  // Review card builder
+  const makeCard = (r: any, isPositive = false) => {
+    const color  = isPositive ? '#22c55e' : r.rating <= 1 ? '#ef4444' : r.rating === 2 ? '#f97316' : '#f59e0b'
+    const bg     = isPositive ? '#f0fdf4' : r.rating <= 1 ? '#fff8f8' : r.rating === 2 ? '#fff7f3' : '#fffbf0'
+    const border = isPositive ? '#86efac' : r.rating <= 1 ? '#fca5a5' : r.rating === 2 ? '#fdba74' : '#fcd34d'
     return `
       <div style="border:1px solid ${border};border-left:4px solid ${color};border-radius:8px;padding:14px 16px;margin-bottom:10px;background:${bg};">
         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
@@ -42,7 +69,10 @@ export async function POST(request: Request) {
         </table>
         <p style="font-size:13px;color:#374151;margin:0;line-height:1.6;font-style:italic;">"${(r.content || '').slice(0, 150)}${(r.content || '').length > 150 ? '…' : ''}"</p>
       </div>`
-  }).join('')
+  }
+
+  const negativeCards = reviews.slice(0, 3).map((r: any) => makeCard(r, false)).join('')
+  const positiveCards = posReviews.map((r: any) => makeCard(r, true)).join('')
 
   const negBg     = kpi.negativeCount > 0 ? '#fff0f0' : '#f0fdf4'
   const negBorder = kpi.negativeCount > 0 ? '#fca5a5' : '#86efac'
@@ -70,10 +100,7 @@ export async function POST(request: Request) {
       <p style="font-size:13px;color:#713f12;margin:0;">⚡ To jest <strong>testowy email</strong>. Dane poniżej pochodzą z aktualnego stanu Review Manager dla marki <strong>${brandName}</strong>.</p>
     </div>
 
-    <!-- Intro -->
-    <p style="font-size:14px;color:#6b7280;margin:0 0 22px;">Poniżej przegląd opinii z bieżącego okresu.</p>
-
-    <!-- KPI grid (table-based for email clients) -->
+    <!-- KPI grid -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:26px;">
       <tr>
         <td width="24%" style="padding:0 4px 0 0;">
@@ -103,15 +130,41 @@ export async function POST(request: Request) {
       </tr>
     </table>
 
-    <!-- Review cards -->
+    <!-- Trend tygodniowy -->
+    <div style="margin-bottom:26px;">
+      <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">Trend tygodniowy</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+        <tr style="background:#f9fafb;">
+          <td style="padding:10px 14px;font-size:12px;color:#374151;border-bottom:1px solid #f3f4f6;">Główny problem w opiniach</td>
+          <td align="right" style="padding:10px 14px;font-size:12px;font-weight:600;color:#111827;border-bottom:1px solid #f3f4f6;">${mainProblem !== 'brak' ? mainProblem : '—'}</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 14px;font-size:12px;color:#374151;border-bottom:1px solid #f3f4f6;">Średnia ocena (bieżący tydzień)</td>
+          <td align="right" style="padding:10px 14px;font-size:12px;font-weight:600;color:#111827;border-bottom:1px solid #f3f4f6;">${Number(kpi.avgRating).toFixed(1)} ★</td>
+        </tr>
+        <tr style="background:#f9fafb;">
+          <td style="padding:10px 14px;font-size:12px;color:#374151;">% pozytywnych opinii</td>
+          <td align="right" style="padding:10px 14px;font-size:12px;font-weight:600;color:${posPct >= 70 ? '#16a34a' : posPct >= 50 ? '#d97706' : '#b91c1c'};">${posPct}%</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Negative review cards -->
     ${reviews.length > 0 ? `
     <div style="margin-bottom:26px;">
       <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Wymagają Twojej uwagi</div>
-      ${reviewCards}
+      ${negativeCards}
     </div>` : `
     <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:18px;margin-bottom:26px;text-align:center;">
       <p style="color:#166534;font-size:14px;margin:0;">✓ Brak negatywnych opinii do pokazania</p>
     </div>`}
+
+    <!-- Positive review cards -->
+    ${posReviews.length > 0 ? `
+    <div style="margin-bottom:26px;">
+      <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;">Pozytywne — możesz podziękować</div>
+      ${positiveCards}
+    </div>` : ''}
 
     <!-- CTA -->
     <div style="text-align:center;margin-bottom:24px;">
