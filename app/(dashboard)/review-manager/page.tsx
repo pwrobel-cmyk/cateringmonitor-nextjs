@@ -469,7 +469,19 @@ export default function ReviewManagerPage() {
       const res = await fetch('/api/send-test-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId, brandName: selectedBrand?.name, email: notifSettings.email || userEmail }),
+        body: JSON.stringify({
+          brandId,
+          brandName: selectedBrand?.name,
+          email: notifSettings.email || userEmail,
+          stats: {
+            totalNew: reviews.filter(r => {
+              const d = new Date(r.review_date || ''); const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1); return d >= yesterday
+            }).length,
+            avgRating,
+            negativeCount: reviews.filter(r => r.rating <= 3).length,
+            unanswered: reviews.filter(r => r.rating <= 3 && r.status !== 'done').length,
+          },
+        }),
       })
       if (res.ok) toast.success('Testowy email wysłany!')
       else toast.error('Błąd wysyłki testowego emaila')
