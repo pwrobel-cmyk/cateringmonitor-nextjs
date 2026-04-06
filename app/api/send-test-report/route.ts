@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 )
 
 export async function POST(request: Request) {
@@ -14,7 +14,8 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Missing brandId or email' }, { status: 400 })
   }
 
-  const { data: brand } = await supabase.from('brands').select('name').eq('id', brandId).single()
+  const { data: brand, error: brandError } = await supabase.from('brands').select('name, id').eq('id', brandId).single()
+  console.log('brand query result:', JSON.stringify(brand), 'error:', JSON.stringify(brandError), 'brandId used:', brandId)
   const brandName = brand?.name || 'Twoja marka'
 
   const { data: negativeReviews, error: reviewsError } = await supabase
