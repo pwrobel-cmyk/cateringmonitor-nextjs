@@ -254,11 +254,24 @@ export default function ReviewManagerPage() {
       setUserEmail(user?.email || null)
       setUserId(user?.id || null)
       if (!user) { setShowPicker(true); return }
-      const [{ data: assignment }, { data: profile }] = await Promise.all([
+      const [{ data: assignment }, { data: profile }, { data: savedSettings }] = await Promise.all([
         (supabase as any).from('user_brand_assignments').select('brand_id').eq('user_id', user.id).single(),
         (supabase as any).from('profiles').select('full_name').eq('id', user.id).single(),
+        (supabase as any).from('review_notification_settings').select('*').eq('user_id', user.id).single(),
       ])
       if (profile?.full_name) setFullName(profile.full_name)
+      if (savedSettings) {
+        setNotifSettings({
+          email: savedSettings.email,
+          dailyEnabled: savedSettings.daily_enabled,
+          dailyHour: savedSettings.daily_hour,
+          weeklyEnabled: savedSettings.weekly_enabled,
+          weeklyDay: savedSettings.weekly_day,
+          weeklyHour: savedSettings.weekly_hour,
+          alertEnabled: savedSettings.alert_enabled,
+          alertThreshold: savedSettings.alert_threshold,
+        })
+      }
       if (assignment?.brand_id) setBrandId(assignment.brand_id)
       else setShowPicker(true)
     })
@@ -455,9 +468,24 @@ export default function ReviewManagerPage() {
   }, [brandId])
 
   // ── Settings helpers ──
-  const saveNotifSettings = (patch?: Partial<NotificationSettings>) => {
+  const saveNotifSettings = async (patch?: Partial<NotificationSettings>) => {
     const updated = patch ? { ...notifSettings, ...patch } : notifSettings
     if (patch) setNotifSettings(updated)
+    if (userId && brandId) {
+      await (supabase as any).from('review_notification_settings').upsert({
+        user_id: userId,
+        brand_id: brandId,
+        email: updated.email,
+        daily_enabled: updated.dailyEnabled,
+        daily_hour: updated.dailyHour,
+        weekly_enabled: updated.weeklyEnabled,
+        weekly_day: updated.weeklyDay,
+        weekly_hour: updated.weeklyHour,
+        alert_enabled: updated.alertEnabled,
+        alert_threshold: updated.alertThreshold,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+    }
     toast.success('Ustawienia zapisane')
   }
 
