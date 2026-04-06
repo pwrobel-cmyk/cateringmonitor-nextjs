@@ -14,18 +14,16 @@ export async function POST(request: Request) {
     'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
   }
 
-  // 1. Opinie z ostatnich 24h
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const reviewsRes24h = await fetch(
-    `${SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source,review_date&brand_id=eq.${brandId}&review_date=gte.${yesterday.toISOString()}&order=review_date.desc`,
-    { headers }
-  )
-  const reviews24h: any[] = await reviewsRes24h.json().then(d => Array.isArray(d) ? d : [])
-
-  // 2. Opinie z ostatnich 7 dni (dla trendu)
+  // 1. Opinie z ostatnich 7 dni (negatywne — alerty + KPI)
   const sevenDaysAgo = new Date()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+  const negativeRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source,review_date&brand_id=eq.${brandId}&rating=lte.3&review_date=gte.${sevenDaysAgo.toISOString()}&order=review_date.desc&limit=10`,
+    { headers }
+  )
+  const negativeReviews: any[] = await negativeRes.json().then(d => Array.isArray(d) ? d : [])
+
+  // 2. Opinie z ostatnich 7 dni (wszystkie — dla trendu)
   const reviews7dRes = await fetch(
     `${SUPABASE_URL}/rest/v1/reviews?select=rating,content&brand_id=eq.${brandId}&review_date=gte.${sevenDaysAgo.toISOString()}`,
     { headers }
@@ -40,8 +38,7 @@ export async function POST(request: Request) {
   const unansweredCount = parseInt(unansweredRes.headers.get('content-range')?.split('/')[1] || '0', 10)
 
   // 4. Oblicz metryki
-  const newCount = reviews24h.length
-  const negativeReviews = reviews24h.filter((r: any) => r.rating <= 3)
+  const newCount = negativeReviews.length
   const avgRating7d = reviews7d.length > 0
     ? (reviews7d.reduce((s: number, r: any) => s + r.rating, 0) / reviews7d.length).toFixed(1)
     : 'brak'
@@ -107,7 +104,7 @@ export async function POST(request: Request) {
       ${reviewCards}
     </div>` : `
     <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px;margin-bottom:24px;text-align:center;">
-      <p style="color:#166534;font-size:14px;margin:0;">Brak negatywnych opinii z ostatnich 24h</p>
+      <p style="color:#166534;font-size:14px;margin:0;">Brak negatywnych opinii z ostatnich 7 dni</p>
     </div>`
 
   const trendSection = `
@@ -142,14 +139,14 @@ export async function POST(request: Request) {
 
   <div style="background:#fff;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;padding:24px;">
 
-    <p style="font-size:14px;color:#6b7280;margin:0 0 20px;">Dzień dobry ${userName}, oto przegląd opinii z ostatnich 24 godzin.</p>
+    <p style="font-size:14px;color:#6b7280;margin:0 0 20px;">Dzień dobry ${userName}, oto przegląd opinii z ostatnich 7 dni.</p>
 
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
       <tr>
         <td width="25%" style="padding:4px;">
           <div style="background:#f9fafb;border-radius:8px;padding:12px;text-align:center;">
-            <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">Nowe opinie</div>
-            <div style="font-size:22px;font-weight:500;color:#111827;">${newCount}</div>
+            <div style="font-size:11px;color:#6b7280;margin-bottom:4px;">Negatywne (7d)</div>
+            <div style="font-size:22px;font-weight:500;color:${newCount > 0 ? '#b91c1c' : '#16a34a'};">${newCount}</div>
           </div>
         </td>
         <td width="25%" style="padding:4px;">
