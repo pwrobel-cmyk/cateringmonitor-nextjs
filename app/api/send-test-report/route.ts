@@ -1,7 +1,6 @@
 
 export async function POST(request: Request) {
   const { brandId, email, brandName: clientBrandName } = await request.json()
-  console.log('[email] brandId:', brandId, 'brandName:', clientBrandName)
 
   if (!brandId || !email) {
     return Response.json({ error: 'Missing brandId or email' }, { status: 400 })
@@ -19,8 +18,6 @@ export async function POST(request: Request) {
     }
   )
   const reviews = await reviewsRes.json()
-  console.log('[test-email] reviews:', Array.isArray(reviews) ? reviews.length : JSON.stringify(reviews).slice(0, 100))
-  console.log('[email] reviews result:', JSON.stringify(reviews).slice(0, 200))
 
   const html = `<!DOCTYPE html>
 <html>
