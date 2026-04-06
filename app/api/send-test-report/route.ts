@@ -1,13 +1,24 @@
 
 export async function POST(request: Request) {
-  const { brandId, email, brandName: clientBrandName, reviews: clientReviews } = await request.json()
+  const { brandId, email, brandName: clientBrandName } = await request.json()
 
   if (!brandId || !email) {
     return Response.json({ error: 'Missing brandId or email' }, { status: 400 })
   }
 
   const brandName = clientBrandName || 'Twoja marka'
-  const reviews = clientReviews || []
+
+  const reviewsRes = await fetch(
+    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source&brand_id=eq.${brandId}&rating=lte.3&order=review_date.desc&limit=5`,
+    {
+      headers: {
+        'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+      }
+    }
+  )
+  const reviews = await reviewsRes.json()
+  console.log('[send-test-report] reviews count:', Array.isArray(reviews) ? reviews.length : reviews)
 
   const reviewCards = reviews.slice(0, 3).map((r: any) => {
     const color  = r.rating <= 1 ? '#ef4444' : r.rating === 2 ? '#f97316' : '#f59e0b'
