@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   const sevenDaysAgo = new Date()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
   const negativeRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source,review_date&brand_id=eq.${brandId}&rating=lte.3&review_date=gte.${sevenDaysAgo.toISOString()}&order=review_date.desc&limit=10`,
+    `${SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source,review_date,status&brand_id=eq.${brandId}&rating=lte.3&review_date=gte.${sevenDaysAgo.toISOString()}&order=review_date.desc&limit=10`,
     { headers }
   )
   const negativeReviews: any[] = await negativeRes.json().then(d => Array.isArray(d) ? d : [])
@@ -30,12 +30,8 @@ export async function POST(request: Request) {
   )
   const reviews7d: any[] = await reviews7dRes.json().then(d => Array.isArray(d) ? d : [])
 
-  // 3. Liczba bez odpowiedzi (status != done/skipped, rating <= 3)
-  const unansweredRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/reviews?select=id&brand_id=eq.${brandId}&rating=lte.3&status=not.in.(done,skipped)`,
-    { headers: { ...headers, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' } }
-  )
-  const unansweredCount = parseInt(unansweredRes.headers.get('content-range')?.split('/')[1] || '0', 10)
+  // 3. Liczba bez odpowiedzi (z ostatnich 7 dni, status != done/skipped)
+  const unansweredCount = negativeReviews.filter((r: any) => r.status !== 'done' && r.status !== 'skipped').length
 
   // 4. Oblicz metryki
   const newCount = negativeReviews.length
