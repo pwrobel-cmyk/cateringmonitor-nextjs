@@ -473,6 +473,10 @@ export default function ReviewManagerPage() {
           brandId,
           brandName: selectedBrand?.name,
           email: notifSettings.email || userEmail,
+          reviews: reviews
+            .filter(r => r.rating <= 3)
+            .slice(0, 5)
+            .map(r => ({ author_name: r.author_name, rating: r.rating, content: r.content, source: r.source })),
         }),
       })
       if (res.ok) toast.success('Testowy email wysłany!')

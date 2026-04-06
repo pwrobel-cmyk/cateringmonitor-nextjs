@@ -1,28 +1,13 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-)
 
 export async function POST(request: Request) {
-  const { brandId, email, brandName: clientBrandName } = await request.json()
+  const { brandId, email, brandName: clientBrandName, reviews: clientReviews } = await request.json()
 
   if (!brandId || !email) {
     return Response.json({ error: 'Missing brandId or email' }, { status: 400 })
   }
 
   const brandName = clientBrandName || 'Twoja marka'
-
-  const { data: negativeReviews } = await supabase
-    .from('reviews')
-    .select('id, author_name, rating, content, source')
-    .eq('brand_id', brandId)
-    .lte('rating', 3)
-    .order('review_date', { ascending: false })
-    .limit(5)
-
-  const reviews = negativeReviews || []
+  const reviews = clientReviews || []
 
   const reviewCards = reviews.slice(0, 3).map((r: any) => {
     const color  = r.rating <= 1 ? '#ef4444' : r.rating === 2 ? '#f97316' : '#f59e0b'
