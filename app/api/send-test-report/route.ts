@@ -8,6 +8,8 @@ const supabase = createClient(
 export async function POST(request: Request) {
   const { brandId, email } = await request.json()
 
+  console.log('brandId:', brandId, 'email:', email)
+
   if (!brandId || !email) {
     return Response.json({ error: 'Missing brandId or email' }, { status: 400 })
   }
@@ -15,14 +17,14 @@ export async function POST(request: Request) {
   const { data: brand } = await supabase.from('brands').select('name').eq('id', brandId).single()
   const brandName = brand?.name || 'Twoja marka'
 
-  const { data: negativeReviews } = await supabase
+  const { data: negativeReviews, error: reviewsError } = await supabase
     .from('reviews')
     .select('id, author_name, rating, content, source')
     .eq('brand_id', brandId)
-    .eq('is_approved', true)
     .lte('rating', 3)
     .order('review_date', { ascending: false })
     .limit(5)
+  console.log('reviews:', negativeReviews?.length, 'error:', reviewsError)
 
   const reviews = negativeReviews || []
 
