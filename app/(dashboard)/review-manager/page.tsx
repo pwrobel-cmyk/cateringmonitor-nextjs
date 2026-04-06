@@ -63,6 +63,7 @@ const TONE_PROMPTS: Record<Tone, string> = {
 }
 
 const PL_MONTHS = ['sty','lut','mar','kwi','maj','cze','lip','sie','wrz','paź','lis','gru']
+const PL_MONTHS_FULL = ['styczeń','luty','marzec','kwiecień','maj','czerwiec','lipiec','sierpień','wrzesień','październik','listopad','grudzień']
 
 function detectTopics(text: string): string[] {
   if (!text) return []
@@ -90,6 +91,8 @@ type ProgressData = {
   currentCount: number; previousCount: number
   currentPosPct: number; previousPosPct: number
   currentNeg: number
+  currentMonthLabel: string; previousMonthLabel: string
+  currentPeriod: string; previousPeriod: string
 }
 type SourceStat = { source: string; count: number; avgRating: number; posPct: number }
 
@@ -197,18 +200,22 @@ export default function ReviewManagerPage() {
   useEffect(() => {
     if (!brandId) return
     const now = new Date()
-    const t30 = new Date(now); t30.setDate(t30.getDate() - 30)
-    const t60 = new Date(now); t60.setDate(t60.getDate() - 60)
     const t12m = new Date(now); t12m.setMonth(t12m.getMonth() - 12)
     const today = now.toISOString().split('T')[0]
-    const d30 = t30.toISOString().split('T')[0]
-    const d60 = t60.toISOString().split('T')[0]
     const d12m = t12m.toISOString().split('T')[0]
+
+    // Calendar months for progress
+    const currMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const prevMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0) // last day of prev month
+    const dCurrStart = currMonthStart.toISOString().split('T')[0]
+    const dPrevStart = prevMonthStart.toISOString().split('T')[0]
+    const dPrevEnd   = prevMonthEnd.toISOString().split('T')[0]
 
     // Progress
     Promise.all([
-      (supabase as any).from('reviews').select('rating').eq('brand_id', brandId).eq('is_approved', true).gte('review_date', d30).lte('review_date', today),
-      (supabase as any).from('reviews').select('rating').eq('brand_id', brandId).eq('is_approved', true).gte('review_date', d60).lt('review_date', d30),
+      (supabase as any).from('reviews').select('rating').eq('brand_id', brandId).eq('is_approved', true).gte('review_date', dCurrStart).lte('review_date', today),
+      (supabase as any).from('reviews').select('rating').eq('brand_id', brandId).eq('is_approved', true).gte('review_date', dPrevStart).lte('review_date', dPrevEnd),
     ]).then(([curr, prev]) => {
       const calc = (rows: { rating: number }[]) => {
         if (!rows.length) return { avg: 0, count: 0, posPct: 0, neg: 0 }
@@ -224,6 +231,10 @@ export default function ReviewManagerPage() {
         currentCount: c.count, previousCount: p.count,
         currentPosPct: c.posPct, previousPosPct: p.posPct,
         currentNeg: c.neg,
+        currentMonthLabel: PL_MONTHS_FULL[now.getMonth()],
+        previousMonthLabel: PL_MONTHS_FULL[(now.getMonth() + 11) % 12],
+        currentPeriod: `${fmtDate(currMonthStart)} – ${fmtDate(now)}`,
+        previousPeriod: `${fmtDate(prevMonthStart)} – ${fmtDate(prevMonthEnd)}`,
       })
     })
 
@@ -651,22 +662,20 @@ export default function ReviewManagerPage() {
 
       {/* BLOK 5: Progress */}
       {progressData && (() => {
-        const now = new Date()
-        const t30 = new Date(now); t30.setDate(t30.getDate() - 30)
-        const t60 = new Date(now); t60.setDate(t60.getDate() - 60)
         const avgDiff = progressData.currentAvg - progressData.previousAvg
+        const countDiff = progressData.currentCount - progressData.previousCount
         const countDiffPct = progressData.previousCount > 0
-          ? Math.round(((progressData.currentCount - progressData.previousCount) / progressData.previousCount) * 100)
+          ? Math.round((countDiff / progressData.previousCount) * 100)
           : 0
         const posDiff = progressData.currentPosPct - progressData.previousPosPct
 
         return (
           <section>
-            <SectionTitle>📊 Czy się poprawiamy? Ostatnie 30 dni vs poprzednie 30 dni</SectionTitle>
+            <SectionTitle>📊 Czy się poprawiamy? {progressData.previousMonthLabel} vs {progressData.currentMonthLabel}</SectionTitle>
             <p className="text-xs text-muted-foreground mb-4">
-              <span className="font-medium">{fmtDate(t30)} – {fmtDate(now)}</span>
+              <span className="font-medium">{progressData.previousPeriod}</span>
               {' '}vs{' '}
-              <span className="font-medium">{fmtDate(t60)} – {fmtDate(t30)}</span>
+              <span className="font-medium">{progressData.currentPeriod}</span>
             </p>
             <div className="grid grid-cols-2 gap-3 mb-4">
               {[
@@ -676,6 +685,7 @@ export default function ReviewManagerPage() {
                   prev: progressData.previousAvg.toFixed(2),
                   curr: progressData.currentAvg.toFixed(2),
                   diff: avgDiff, badge: (avgDiff > 0 ? '+' : '') + avgDiff.toFixed(2),
+                  note: null,
                 },
                 {
                   label: 'Liczba opinii',
@@ -683,6 +693,7 @@ export default function ReviewManagerPage() {
                   prev: String(progressData.previousCount),
                   curr: String(progressData.currentCount),
                   diff: countDiffPct, badge: (countDiffPct > 0 ? '+' : '') + countDiffPct + '%',
+                  note: 'Miesiąc jeszcze trwa — niepełne dane',
                 },
                 {
                   label: '% pozytywnych',
@@ -690,6 +701,7 @@ export default function ReviewManagerPage() {
                   prev: progressData.previousPosPct.toFixed(0) + '%',
                   curr: progressData.currentPosPct.toFixed(0) + '%',
                   diff: posDiff, badge: (posDiff > 0 ? '+' : '') + posDiff.toFixed(0) + 'pp',
+                  note: 'Miesiąc jeszcze trwa — niepełne dane',
                 },
                 {
                   label: 'Negatywne bez odpowiedzi',
@@ -698,6 +710,7 @@ export default function ReviewManagerPage() {
                   curr: String(progressData.currentNeg),
                   diff: -progressData.currentNeg,
                   badge: progressData.currentNeg === 0 ? '✓ Brak' : `${progressData.currentNeg} oczekuje`,
+                  note: null,
                 },
               ].map(m => (
                 <Card key={m.label}>
@@ -714,6 +727,7 @@ export default function ReviewManagerPage() {
                       {m.diff > 0 ? <TrendingUp className="h-2.5 w-2.5" /> : m.diff < 0 ? <TrendingDown className="h-2.5 w-2.5" /> : null}
                       {m.badge}
                     </span>
+                    {m.note && <p className="text-[10px] text-muted-foreground mt-1 italic">{m.note}</p>}
                   </CardContent>
                 </Card>
               ))}
@@ -723,7 +737,7 @@ export default function ReviewManagerPage() {
             <Card className="bg-muted/30">
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold">Na podstawie danych z ostatnich 30 dni:</p>
+                  <p className="text-xs font-semibold">Na podstawie danych z {progressData.currentMonthLabel}:</p>
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={generateAnalyticsSummary} disabled={generatingSummary}>
                     {generatingSummary ? <><RefreshCw className="h-3 w-3 mr-1 animate-spin" />Generuję…</> : <><Bot className="h-3 w-3 mr-1" />Generuj AI</>}
                   </Button>
@@ -1017,10 +1031,9 @@ export default function ReviewManagerPage() {
 
         {/* Progress */}
         {progressData && (() => {
-          const now = new Date()
-          const currMonth = PL_MONTHS[now.getMonth()]
-          const prevMonth = PL_MONTHS[(now.getMonth() + 11) % 12]
           const avgDiff = progressData.currentAvg - progressData.previousAvg
+          const countDiff = progressData.currentCount - progressData.previousCount
+          const posDiff = progressData.currentPosPct - progressData.previousPosPct
           const summary = Math.abs(avgDiff) < 0.05
             ? '➡️ Stabilna sytuacja. Kontynuuj dotychczasowe działania.'
             : avgDiff > 0
@@ -1030,26 +1043,28 @@ export default function ReviewManagerPage() {
           return (
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Czy się poprawiamy?</p>
-              <p className="text-[10px] text-muted-foreground mb-3">Ostatnie 30 dni vs poprzednie 30 dni</p>
+              <p className="text-[10px] text-muted-foreground mb-1">{progressData.previousMonthLabel} vs {progressData.currentMonthLabel}</p>
+              <p className="text-[10px] text-muted-foreground mb-3 italic">{progressData.currentPeriod}</p>
               <div className="space-y-2 mb-3">
                 {[
-                  { label: 'Średnia ocena', prevVal: progressData.previousAvg.toFixed(2), currVal: progressData.currentAvg.toFixed(2), diff: avgDiff, badge: (avgDiff > 0 ? '+' : '') + avgDiff.toFixed(2) },
-                  { label: 'Liczba opinii', prevVal: String(progressData.previousCount), currVal: String(progressData.currentCount), diff: progressData.currentCount - progressData.previousCount, badge: (progressData.currentCount - progressData.previousCount > 0 ? '+' : '') + String(progressData.currentCount - progressData.previousCount) },
-                  { label: '% pozytywnych', prevVal: progressData.previousPosPct.toFixed(0) + '%', currVal: progressData.currentPosPct.toFixed(0) + '%', diff: progressData.currentPosPct - progressData.previousPosPct, badge: (progressData.currentPosPct - progressData.previousPosPct > 0 ? '+' : '') + (progressData.currentPosPct - progressData.previousPosPct).toFixed(0) + '%' },
+                  { label: 'Średnia ocena', prevVal: progressData.previousAvg.toFixed(2), currVal: progressData.currentAvg.toFixed(2), diff: avgDiff, badge: (avgDiff > 0 ? '+' : '') + avgDiff.toFixed(2), note: null },
+                  { label: 'Liczba opinii', prevVal: String(progressData.previousCount), currVal: String(progressData.currentCount), diff: countDiff, badge: (countDiff > 0 ? '+' : '') + String(countDiff), note: 'Miesiąc jeszcze trwa — niepełne dane' },
+                  { label: '% pozytywnych', prevVal: progressData.previousPosPct.toFixed(0) + '%', currVal: progressData.currentPosPct.toFixed(0) + '%', diff: posDiff, badge: (posDiff > 0 ? '+' : '') + posDiff.toFixed(0) + '%', note: 'Miesiąc jeszcze trwa — niepełne dane' },
                 ].map(m => (
                   <div key={m.label} className="bg-background rounded-lg p-2.5 border">
                     <p className="text-[10px] text-muted-foreground font-medium mb-1.5">{m.label}</p>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs text-muted-foreground">{m.prevVal} ({prevMonth})</span>
+                      <span className="text-xs text-muted-foreground">{m.prevVal} ({progressData.previousMonthLabel})</span>
                       <span className="text-muted-foreground text-xs">→</span>
-                      <span className="text-sm font-bold">{m.currVal} ({currMonth})</span>
+                      <span className="text-sm font-bold">{m.currVal} ({progressData.currentMonthLabel})</span>
                     </div>
                     <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
                       m.diff > 0.001 ? 'bg-green-100 text-green-700' : m.diff < -0.001 ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'
                     }`}>
                       {m.diff > 0.001 ? <TrendingUp className="h-2.5 w-2.5" /> : m.diff < -0.001 ? <TrendingDown className="h-2.5 w-2.5" /> : null}
-                      {m.badge} vs poprzedni miesiąc
+                      {m.badge} vs {progressData.previousMonthLabel}
                     </span>
+                    {m.note && <p className="text-[10px] text-muted-foreground mt-1 italic">{m.note}</p>}
                   </div>
                 ))}
                 <div className="bg-background rounded-lg p-2.5 border">
