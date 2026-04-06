@@ -291,15 +291,15 @@ export async function POST(request: Request) {
       </tr>
     </table>
 
-    ${attentionSection}
-
-    ${positiveSection}
-
     ${problemsSection}
 
     ${sentimentSection}
 
     ${summarySection}
+
+    ${attentionSection}
+
+    ${positiveSection}
 
     <div style="text-align:center;margin-bottom:20px;">
       <a href="https://cateringmonitor.pl/review-manager" style="display:inline-block;background:#1a3a5c;color:#fff;font-size:14px;font-weight:500;padding:12px 28px;border-radius:8px;text-decoration:none;">Otwórz Review Manager</a>
