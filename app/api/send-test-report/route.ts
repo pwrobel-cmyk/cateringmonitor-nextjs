@@ -12,13 +12,13 @@ export async function POST(request: Request) {
     `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/reviews?select=id,author_name,rating,content,source&brand_id=eq.${brandId}&rating=lte.3&order=review_date.desc&limit=5`,
     {
       headers: {
-        'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!}`,
+        'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
       }
     }
   )
   const reviews = await reviewsRes.json()
-  console.log('[send-test-report] reviews count:', Array.isArray(reviews) ? reviews.length : reviews)
+  console.log('[test-email] reviews:', Array.isArray(reviews) ? reviews.length : JSON.stringify(reviews).slice(0, 100))
 
   const reviewCards = reviews.slice(0, 3).map((r: any) => {
     const color  = r.rating <= 1 ? '#ef4444' : r.rating === 2 ? '#f97316' : '#f59e0b'
