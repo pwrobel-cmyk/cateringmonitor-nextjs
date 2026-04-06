@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   LineChart, Line, PieChart, Pie, Cell,
@@ -16,8 +16,9 @@ import { useReviewsStatistics } from '@/hooks/supabase/useReviewsStatistics'
 import { useReviewAspects } from '@/hooks/supabase/useReviewAspects'
 import { useMarketReviewAspects } from '@/hooks/supabase/useMarketReviewAspects'
 import {
-  Star, Bot, Copy, Check, Building2, RefreshCw, TrendingUp, TrendingDown, BarChart2,
+  Star, Bot, Copy, Check, Building2, RefreshCw, TrendingUp, TrendingDown, BarChart2, X,
 } from 'lucide-react'
+import { toast } from 'sonner'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,15 @@ export default function ReviewManagerPage() {
   const [analyticsSummary, setAnalyticsSummary] = useState('')
   const [generatingSummary, setGeneratingSummary] = useState(false)
 
+  // Search
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Realtime unread
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set())
+
   // Hooks
   const { data: brands = [] }            = useBrands()
   const selectedBrand                    = brands.find(b => b.id === brandId)
@@ -202,6 +212,20 @@ export default function ReviewManagerPage() {
   const avgRating    = stats?.overview?.averageRating || 0
   const positivePct  = stats?.overview?.positivePercentage || 0
   const totalReviews = stats?.overview?.totalReviews || 0
+
+  // ── Debounce search ──
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => setDebouncedSearch(searchQuery), 300)
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
+  }, [searchQuery])
+
+  const displayedReviews = debouncedSearch
+    ? reviews.filter(r => {
+        const q = debouncedSearch.toLowerCase()
+        return (r.content || '').toLowerCase().includes(q) || (r.author_name || '').toLowerCase().includes(q)
+      })
+    : reviews
 
   // ── Init ──
   useEffect(() => {
@@ -375,6 +399,29 @@ export default function ReviewManagerPage() {
       }))
     setRecentResponses(recent)
   }, [responses, reviews])
+
+  // ── Realtime: new reviews ──
+  useEffect(() => {
+    if (!brandId) return
+    const channel = supabase
+      .channel('new-reviews-' + brandId)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'reviews',
+        filter: `brand_id=eq.${brandId}`,
+      }, (payload: any) => {
+        const review = payload.new
+        if (review.rating <= 3) {
+          toast.error(`🚨 Nowa negatywna opinia (${review.rating}★) od ${review.author_name}`)
+          setReviews(prev => [{ ...review, status: review.status || 'new' } as Review, ...prev])
+          setUnreadCount(prev => prev + 1)
+          setUnreadIds(prev => new Set([...prev, review.id]))
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [brandId])
 
   // ── Helpers ──
   const setStatus = async (id: string, status: Status) => {
@@ -778,7 +825,14 @@ export default function ReviewManagerPage() {
             <img src={selectedBrand.logo_url} alt={selectedBrand.name} className="h-8 w-8 object-contain rounded flex-shrink-0" />
           )}
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm truncate">{selectedBrand?.name || '—'}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="font-semibold text-sm truncate">{selectedBrand?.name || '—'}</p>
+              {unreadCount > 0 && (
+                <span className="flex-shrink-0 inline-flex items-center justify-center h-4 min-w-[1rem] px-1 text-[10px] font-bold rounded-full bg-red-500 text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">{reviews.length} opinii</p>
           </div>
           {isAdmin && (
@@ -809,19 +863,49 @@ export default function ReviewManagerPage() {
           </div>
         </div>
 
+        {/* Search */}
+        <div className="px-3 pb-2 flex-shrink-0">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Szukaj w opiniach..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs rounded-md border bg-background pr-7 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          {debouncedSearch && (
+            <p className="text-[10px] text-muted-foreground mt-1">{displayedReviews.length} wyników</p>
+          )}
+        </div>
+
         {/* Review list */}
         <div className="flex-1 overflow-y-auto">
           {reviewsLoading && reviews.length === 0 && (
             <div className="p-6 text-center text-sm text-muted-foreground">Ładowanie…</div>
           )}
-          {reviews.map(r => (
-            <button key={r.id} onClick={() => { setSelectedId(r.id); setShowAnalytics(false) }}
-              className={`w-full text-left p-3 border-b hover:bg-accent/50 transition-colors ${selectedId === r.id && !showAnalytics ? 'bg-accent' : ''}`}>
+          {displayedReviews.map(r => (
+            <button key={r.id} onClick={() => {
+              setSelectedId(r.id); setShowAnalytics(false)
+              if (unreadIds.has(r.id)) {
+                setUnreadCount(prev => Math.max(0, prev - 1))
+                setUnreadIds(prev => { const s = new Set(prev); s.delete(r.id); return s })
+              }
+            }}
+              className={`w-full text-left p-3 border-b hover:bg-accent/50 transition-colors ${selectedId === r.id && !showAnalytics ? 'bg-accent' : ''} ${unreadIds.has(r.id) ? 'bg-red-50/60' : ''}`}>
               <div className="flex items-start gap-2">
                 <ReviewAvatar name={r.author_name || '?'} rating={r.rating} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1 mb-0.5">
-                    <span className="text-xs font-medium truncate">{r.author_name || 'Anonim'}</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-medium truncate">{r.author_name || 'Anonim'}</span>
+                      {unreadIds.has(r.id) && <span className="flex-shrink-0 h-1.5 w-1.5 rounded-full bg-red-500" />}
+                    </div>
                     <Stars rating={r.rating} />
                   </div>
                   <p className="text-xs text-muted-foreground mb-1">
