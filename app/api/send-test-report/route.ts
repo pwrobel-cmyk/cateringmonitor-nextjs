@@ -82,7 +82,7 @@ export async function POST(request: Request) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: 'CateringMonitor <raporty@cateringmonitor.pl>',
+      from: 'CateringMonitor <onboarding@resend.dev>',
       to: [email],
       subject: `[TEST] ${brandName} — testowy raport CateringMonitor`,
       html,
