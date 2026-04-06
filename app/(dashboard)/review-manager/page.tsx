@@ -16,7 +16,7 @@ import { useReviewsStatistics } from '@/hooks/supabase/useReviewsStatistics'
 import { useReviewAspects } from '@/hooks/supabase/useReviewAspects'
 import { useMarketReviewAspects } from '@/hooks/supabase/useMarketReviewAspects'
 import {
-  Star, Bot, Copy, Check, Building2, RefreshCw, TrendingUp, TrendingDown, BarChart2, X,
+  Star, Bot, Copy, Check, Building2, RefreshCw, TrendingUp, TrendingDown, BarChart2, X, Settings,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -114,6 +114,21 @@ type ProgressData = {
   currentPeriod: string; previousPeriod: string
 }
 type SourceStat = { source: string; count: number; avgRating: number; posPct: number }
+type NotificationSettings = {
+  email: string
+  dailyEnabled: boolean; dailyHour: string
+  weeklyEnabled: boolean; weeklyDay: string; weeklyHour: string
+  alertEnabled: boolean; alertThreshold: string
+}
+
+const DEFAULT_NOTIF: NotificationSettings = {
+  email: '', dailyEnabled: false, dailyHour: '7',
+  weeklyEnabled: false, weeklyDay: '1', weeklyHour: '8',
+  alertEnabled: false, alertThreshold: '3',
+}
+
+const WEEK_DAYS = ['Poniedziałek','Wtorek','Środa','Czwartek','Piątek','Sobota','Niedziela']
+const HOURS = ['6','7','8','9']
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -201,6 +216,11 @@ export default function ReviewManagerPage() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set())
 
+  // Settings
+  const [showSettings, setShowSettings] = useState(false)
+  const [notifSettings, setNotifSettings] = useState<NotificationSettings>(DEFAULT_NOTIF)
+  const [sendingTest, setSendingTest] = useState(false)
+
   // Hooks
   const { data: brands = [] }            = useBrands()
   const selectedBrand                    = brands.find(b => b.id === brandId)
@@ -237,6 +257,17 @@ export default function ReviewManagerPage() {
       setUserId(data.user?.id || null)
     })
   }, [])
+
+  // ── Load notification settings when brandId changes ──
+  useEffect(() => {
+    if (!brandId) return
+    const raw = localStorage.getItem(`rm_notification_settings_${brandId}`)
+    if (raw) {
+      try { setNotifSettings({ ...DEFAULT_NOTIF, ...JSON.parse(raw) }) } catch { /* ignore */ }
+    } else {
+      setNotifSettings({ ...DEFAULT_NOTIF, email: userEmail || '' })
+    }
+  }, [brandId, userEmail])
 
   // ── Fetch progress + trend + sourceStats on brandId ──
   useEffect(() => {
@@ -423,6 +454,32 @@ export default function ReviewManagerPage() {
     return () => { supabase.removeChannel(channel) }
   }, [brandId])
 
+  // ── Settings helpers ──
+  const saveNotifSettings = (patch?: Partial<NotificationSettings>) => {
+    const updated = patch ? { ...notifSettings, ...patch } : notifSettings
+    if (patch) setNotifSettings(updated)
+    if (brandId) localStorage.setItem(`rm_notification_settings_${brandId}`, JSON.stringify(updated))
+    toast.success('Ustawienia zapisane')
+  }
+
+  const sendTestReport = async () => {
+    if (!brandId) return
+    setSendingTest(true)
+    try {
+      const res = await fetch('/api/send-test-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brandId, email: notifSettings.email || userEmail, settings: notifSettings }),
+      })
+      if (res.ok) toast.success('Testowy email wysłany!')
+      else toast.error('Błąd wysyłki testowego emaila')
+    } catch {
+      toast.error('Błąd wysyłki testowego emaila')
+    } finally {
+      setSendingTest(false)
+    }
+  }
+
   // ── Helpers ──
   const setStatus = async (id: string, status: Status) => {
     await (supabase as any).from('reviews').update({ status }).eq('id', id)
@@ -542,6 +599,130 @@ export default function ReviewManagerPage() {
     const market = (marketAspects as any[]).find(m => m.aspect === a.aspect)
     return { aspect: a.aspect, marka: a.positive, rynek: market?.positive || 0 }
   })
+
+  // ── Settings view ──
+  const settingsView = (
+    <div className="max-w-xl mx-auto space-y-6 py-2">
+      <div>
+        <h1 className="text-xl font-bold">Ustawienia powiadomień</h1>
+        <p className="text-sm text-muted-foreground">Skonfiguruj raporty email dla marki {selectedBrand?.name}</p>
+      </div>
+
+      {/* S1: Email */}
+      <Card>
+        <CardContent className="pt-5 pb-5 space-y-3">
+          <p className="text-sm font-semibold">Adres email do raportów</p>
+          <input
+            type="email"
+            value={notifSettings.email}
+            onChange={e => setNotifSettings(s => ({ ...s, email: e.target.value }))}
+            placeholder="twoj@email.pl"
+            className="w-full px-3 py-2 text-sm rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <p className="text-xs text-muted-foreground">Raporty będą wysyłane na ten adres</p>
+          <Button size="sm" onClick={() => saveNotifSettings()}>Zapisz</Button>
+        </CardContent>
+      </Card>
+
+      {/* S2: Daily */}
+      <Card>
+        <CardContent className="pt-5 pb-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Raport dzienny</p>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={notifSettings.dailyEnabled}
+                onChange={e => setNotifSettings(s => ({ ...s, dailyEnabled: e.target.checked }))} />
+              <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+            </label>
+          </div>
+          {notifSettings.dailyEnabled && (
+            <div className="space-y-2">
+              <select value={notifSettings.dailyHour}
+                onChange={e => setNotifSettings(s => ({ ...s, dailyHour: e.target.value }))}
+                className="px-3 py-1.5 text-sm rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-primary">
+                {HOURS.map(h => <option key={h} value={h}>{h}:00</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">Będziesz otrzymywać raport codziennie o {notifSettings.dailyHour}:00</p>
+            </div>
+          )}
+          <Button size="sm" onClick={() => saveNotifSettings()}>Zapisz</Button>
+        </CardContent>
+      </Card>
+
+      {/* S3: Weekly */}
+      <Card>
+        <CardContent className="pt-5 pb-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Raport tygodniowy</p>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={notifSettings.weeklyEnabled}
+                onChange={e => setNotifSettings(s => ({ ...s, weeklyEnabled: e.target.checked }))} />
+              <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+            </label>
+          </div>
+          {notifSettings.weeklyEnabled && (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <select value={notifSettings.weeklyDay}
+                  onChange={e => setNotifSettings(s => ({ ...s, weeklyDay: e.target.value }))}
+                  className="flex-1 px-3 py-1.5 text-sm rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-primary">
+                  {WEEK_DAYS.map((d, i) => <option key={i} value={String(i + 1)}>{d}</option>)}
+                </select>
+                <select value={notifSettings.weeklyHour}
+                  onChange={e => setNotifSettings(s => ({ ...s, weeklyHour: e.target.value }))}
+                  className="px-3 py-1.5 text-sm rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-primary">
+                  {HOURS.map(h => <option key={h} value={h}>{h}:00</option>)}
+                </select>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Będziesz otrzymywać raport w każdy {WEEK_DAYS[Number(notifSettings.weeklyDay) - 1]} o {notifSettings.weeklyHour}:00
+              </p>
+            </div>
+          )}
+          <Button size="sm" onClick={() => saveNotifSettings()}>Zapisz</Button>
+        </CardContent>
+      </Card>
+
+      {/* S4: Alert */}
+      <Card>
+        <CardContent className="pt-5 pb-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Alert: nowa negatywna opinia</p>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" checked={notifSettings.alertEnabled}
+                onChange={e => setNotifSettings(s => ({ ...s, alertEnabled: e.target.checked }))} />
+              <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+            </label>
+          </div>
+          {notifSettings.alertEnabled && (
+            <div className="space-y-2">
+              <select value={notifSettings.alertThreshold}
+                onChange={e => setNotifSettings(s => ({ ...s, alertThreshold: e.target.value }))}
+                className="px-3 py-1.5 text-sm rounded-md border bg-background focus:outline-none focus:ring-1 focus:ring-primary">
+                <option value="2">1★ i 2★</option>
+                <option value="3">1★, 2★ i 3★</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                Otrzymasz email gdy pojawi się opinia 1–{notifSettings.alertThreshold}★
+              </p>
+            </div>
+          )}
+          <Button size="sm" onClick={() => saveNotifSettings()}>Zapisz</Button>
+        </CardContent>
+      </Card>
+
+      {/* S5: Test */}
+      <Card className="bg-muted/30">
+        <CardContent className="pt-5 pb-5 space-y-3">
+          <p className="text-sm font-semibold">Testowy email</p>
+          <p className="text-xs text-muted-foreground">Wyślij testowy raport na {notifSettings.email || userEmail || '—'} aby sprawdzić wygląd.</p>
+          <Button size="sm" variant="outline" onClick={sendTestReport} disabled={sendingTest}>
+            {sendingTest ? <><RefreshCw className="h-3 w-3 mr-1.5 animate-spin" />Wysyłam…</> : 'Wyślij testowy raport teraz'}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
 
   // ── Analytics view ──
   const analyticsView = (
@@ -891,7 +1072,7 @@ export default function ReviewManagerPage() {
           )}
           {displayedReviews.map(r => (
             <button key={r.id} onClick={() => {
-              setSelectedId(r.id); setShowAnalytics(false)
+              setSelectedId(r.id); setShowAnalytics(false); setShowSettings(false)
               if (unreadIds.has(r.id)) {
                 setUnreadCount(prev => Math.max(0, prev - 1))
                 setUnreadIds(prev => { const s = new Set(prev); s.delete(r.id); return s })
@@ -927,10 +1108,10 @@ export default function ReviewManagerPage() {
           )}
         </div>
 
-        {/* Analytics button */}
-        <div className="p-3 border-t flex-shrink-0">
+        {/* Analytics + Settings buttons */}
+        <div className="p-3 border-t flex-shrink-0 space-y-1.5">
           <button
-            onClick={() => { setShowAnalytics(v => !v); setSelectedId(null) }}
+            onClick={() => { setShowAnalytics(v => !v); setShowSettings(false); setSelectedId(null) }}
             className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
               showAnalytics ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
             }`}
@@ -938,12 +1119,21 @@ export default function ReviewManagerPage() {
             <BarChart2 className="h-4 w-4" />
             📊 Pełna analityka
           </button>
+          <button
+            onClick={() => { setShowSettings(v => !v); setShowAnalytics(false); setSelectedId(null) }}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showSettings ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
+            }`}
+          >
+            <Settings className="h-4 w-4" />
+            Ustawienia
+          </button>
         </div>
       </div>
 
       {/* ════ MIDDLE PANEL ════ */}
       <div className="flex-1 overflow-y-auto p-6 bg-background">
-        {showAnalytics ? analyticsView : !selectedReview ? (
+        {showSettings ? settingsView : showAnalytics ? analyticsView : !selectedReview ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center text-muted-foreground">
               <Star className="h-14 w-14 mx-auto mb-3 opacity-15" />
