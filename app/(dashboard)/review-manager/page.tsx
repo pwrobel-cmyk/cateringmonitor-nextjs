@@ -469,7 +469,7 @@ export default function ReviewManagerPage() {
       const res = await fetch('/api/send-test-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brandId, email: notifSettings.email || userEmail, settings: notifSettings }),
+        body: JSON.stringify({ brandId, brandName: selectedBrand?.name, email: notifSettings.email || userEmail }),
       })
       if (res.ok) toast.success('Testowy email wysłany!')
       else toast.error('Błąd wysyłki testowego emaila')

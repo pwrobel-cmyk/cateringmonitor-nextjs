@@ -6,7 +6,7 @@ const supabase = createClient(
 )
 
 export async function POST(request: Request) {
-  const { brandId, email } = await request.json()
+  const { brandId, email, brandName: clientBrandName } = await request.json()
 
   console.log('brandId:', brandId, 'email:', email)
 
@@ -14,9 +14,7 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Missing brandId or email' }, { status: 400 })
   }
 
-  const { data: brand, error: brandError } = await supabase.from('brands').select('name, id').eq('id', brandId).single()
-  console.log('brand query result:', JSON.stringify(brand), 'error:', JSON.stringify(brandError), 'brandId used:', brandId)
-  const brandName = brand?.name || 'Twoja marka'
+  const brandName = clientBrandName || 'Twoja marka'
 
   const { data: negativeReviews, error: reviewsError } = await supabase
     .from('reviews')
