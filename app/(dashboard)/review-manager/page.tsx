@@ -74,6 +74,24 @@ function fmtDate(d: Date) {
   return `${d.getDate()} ${PL_MONTHS[d.getMonth()]} ${d.getFullYear()}`
 }
 
+function groupByMonth(reviews: Array<{ rating: number; review_date: string }>) {
+  const map: Record<string, number[]> = {}
+  reviews.forEach(r => {
+    if (!r.review_date) return
+    const d = new Date(r.review_date)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    if (!map[key]) map[key] = []
+    map[key].push(r.rating)
+  })
+  return Object.entries(map)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, ratings]) => ({
+      month,
+      avg_rating: Math.round((ratings.reduce((s, v) => s + v, 0) / ratings.length) * 100) / 100,
+      count: ratings.length,
+    }))
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Review = {
@@ -204,56 +222,49 @@ export default function ReviewManagerPage() {
     const today = now.toISOString().split('T')[0]
     const d12m = t12m.toISOString().split('T')[0]
 
-    // Calendar months for progress
+    // Calendar month labels (for display only)
     const currMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const prevMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0) // last day of prev month
-    const dCurrStart = currMonthStart.toISOString().split('T')[0]
-    const dPrevStart = prevMonthStart.toISOString().split('T')[0]
-    const dPrevEnd   = prevMonthEnd.toISOString().split('T')[0]
+    const currKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const prevKey = `${prevMonthStart.getFullYear()}-${String(prevMonthStart.getMonth() + 1).padStart(2, '0')}`
 
-    // Progress
-    Promise.all([
-      (supabase as any).from('reviews').select('rating').eq('brand_id', brandId).eq('is_approved', true).gte('review_date', dCurrStart).lte('review_date', today),
-      (supabase as any).from('reviews').select('rating').eq('brand_id', brandId).eq('is_approved', true).gte('review_date', dPrevStart).lte('review_date', dPrevEnd),
-    ]).then(([curr, prev]) => {
-      const calc = (rows: { rating: number }[]) => {
-        if (!rows.length) return { avg: 0, count: 0, posPct: 0, neg: 0 }
-        const avg = rows.reduce((s, r) => s + r.rating, 0) / rows.length
-        const pos = rows.filter(r => r.rating >= 4).length
-        const neg = rows.filter(r => r.rating <= 2).length
-        return { avg, count: rows.length, posPct: (pos / rows.length) * 100, neg }
-      }
-      const c = calc(curr.data || [])
-      const p = calc(prev.data || [])
-      setProgressData({
-        currentAvg: c.avg, previousAvg: p.avg,
-        currentCount: c.count, previousCount: p.count,
-        currentPosPct: c.posPct, previousPosPct: p.posPct,
-        currentNeg: c.neg,
-        currentMonthLabel: PL_MONTHS_FULL[now.getMonth()],
-        previousMonthLabel: PL_MONTHS_FULL[(now.getMonth() + 11) % 12],
-        currentPeriod: `${fmtDate(currMonthStart)} – ${fmtDate(now)}`,
-        previousPeriod: `${fmtDate(prevMonthStart)} – ${fmtDate(prevMonthEnd)}`,
-      })
-    })
-
-    // Trend
+    // Single query for trend + progress (last 12 months)
     ;(supabase as any).from('reviews').select('rating, review_date')
       .eq('brand_id', brandId).eq('is_approved', true)
       .gte('review_date', d12m).order('review_date', { ascending: true })
       .then(({ data }: { data: any[] }) => {
-        const byMonth: Record<string, number[]> = {}
-        for (const r of (data || [])) {
-          if (!r.review_date) continue
-          const m = r.review_date.slice(0, 7)
-          if (!byMonth[m]) byMonth[m] = []
-          byMonth[m].push(Number(r.rating))
+        const rows = (data || []).map((r: any) => ({ rating: Number(r.rating), review_date: r.review_date as string }))
+
+        // Trend chart — uses groupByMonth
+        const grouped = groupByMonth(rows)
+        setTrendData(grouped.map(g => ({ month: g.month.slice(2), avg_rating: g.avg_rating })))
+
+        // Progress — derived from same raw data, same month-key logic as groupByMonth
+        const calcMonth = (key: string) => {
+          const monthRows = rows.filter(r => {
+            if (!r.review_date) return false
+            const d = new Date(r.review_date)
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === key
+          })
+          if (!monthRows.length) return { avg: 0, count: 0, posPct: 0, neg: 0 }
+          const avg = monthRows.reduce((s, r) => s + r.rating, 0) / monthRows.length
+          const pos = monthRows.filter(r => r.rating >= 4).length
+          const neg = monthRows.filter(r => r.rating <= 2).length
+          return { avg, count: monthRows.length, posPct: (pos / monthRows.length) * 100, neg }
         }
-        setTrendData(Object.entries(byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([month, ratings]) => ({
-          month: month.slice(2),
-          avg_rating: Math.round((ratings.reduce((s, v) => s + v, 0) / ratings.length) * 100) / 100,
-        })))
+        const c = calcMonth(currKey)
+        const p = calcMonth(prevKey)
+        setProgressData({
+          currentAvg: c.avg, previousAvg: p.avg,
+          currentCount: c.count, previousCount: p.count,
+          currentPosPct: c.posPct, previousPosPct: p.posPct,
+          currentNeg: c.neg,
+          currentMonthLabel: PL_MONTHS_FULL[now.getMonth()],
+          previousMonthLabel: PL_MONTHS_FULL[(now.getMonth() + 11) % 12],
+          currentPeriod: `${fmtDate(currMonthStart)} – ${fmtDate(now)}`,
+          previousPeriod: `${fmtDate(prevMonthStart)} – ${fmtDate(prevMonthEnd)}`,
+        })
       })
 
     // Source stats
