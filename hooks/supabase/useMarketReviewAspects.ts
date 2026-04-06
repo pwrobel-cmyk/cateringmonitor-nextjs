@@ -17,42 +17,30 @@ const ASPECT_KEYWORDS: Record<string, string[]> = {
   porcje: ['porcj', 'ilość', 'portion', 'wielkość', 'ilości'],
 };
 
-// Fetch all reviews for all Polish brands with recursive pagination
 async function fetchAllPolishReviews() {
-  const allReviews: Array<{ content: string | null; rating: number | null; brand_id: string }> = [];
-  let page = 0;
-  const pageSize = 1000;
-  let hasMore = true;
+  // Try RPC first
+  const { data: rpcData, error: rpcError } = await (supabase as any).rpc('get_market_average_parameters')
+  if (!rpcError && rpcData) return rpcData as Array<{ content: string | null; rating: number | null; brand_id: string }>
 
-  // First get all Polish brand IDs
+  // Fallback: last 3000 reviews for Polish brands
   const { data: polishBrands } = await supabase
     .from('brands')
     .select('id')
-    .neq('country', 'Czechy');
+    .neq('country', 'Czechy')
 
-  const polishBrandIds = (polishBrands || []).map(b => b.id);
+  const polishBrandIds = (polishBrands || []).map(b => b.id)
+  if (polishBrandIds.length === 0) return []
 
-  if (polishBrandIds.length === 0) return allReviews;
+  const { data, error } = await supabase
+    .from('reviews')
+    .select('content, rating, brand_id')
+    .in('brand_id', polishBrandIds)
+    .eq('is_approved', true)
+    .order('review_date', { ascending: false })
+    .limit(3000)
 
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from('reviews')
-      .select('content, rating, brand_id')
-      .in('brand_id', polishBrandIds)
-      .range(page * pageSize, (page + 1) * pageSize - 1);
-
-    if (error) throw error;
-
-    if (data && data.length > 0) {
-      allReviews.push(...data);
-      hasMore = data.length === pageSize;
-      page++;
-    } else {
-      hasMore = false;
-    }
-  }
-
-  return allReviews;
+  if (error) throw error
+  return data || []
 }
 
 function analyzeAspects(reviews: Array<{ content: string | null; rating: number | null }>): AspectData[] {
