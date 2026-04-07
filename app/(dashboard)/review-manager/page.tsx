@@ -256,7 +256,7 @@ export default function ReviewManagerPage() {
       if (!user) { setShowPicker(true); return }
       const [{ data: assignment }, { data: profile }, { data: savedSettings }] = await Promise.all([
         (supabase as any).from('user_brand_assignments').select('brand_id').eq('user_id', user.id).single(),
-        (supabase as any).from('profiles').select('full_name').eq('id', user.id).single(),
+        (supabase as any).from('profiles').select('full_name').eq('user_id', user.id).single(),
         (supabase as any).from('review_notification_settings').select('*').eq('user_id', user.id).single(),
       ])
       if (profile?.full_name) setFullName(profile.full_name)
