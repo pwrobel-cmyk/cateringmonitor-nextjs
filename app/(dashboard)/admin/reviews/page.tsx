@@ -138,7 +138,7 @@ export default function AdminReviewsPage() {
     const seenFingerprints = new Set<string>()
     const dedupedParsed: ParsedReview[] = []
     for (const review of parsed) {
-      const fp = `${review.brand_id}|${review.author_name.toLowerCase()}|${review.content.slice(0, 80).toLowerCase()}`
+      const fp = `${review.brand_id}|${review.author_name.trim().toLowerCase()}|${review.content.trim().slice(0, 80).toLowerCase()}`
       if (!seenFingerprints.has(fp)) {
         seenFingerprints.add(fp)
         dedupedParsed.push(review)
@@ -153,7 +153,6 @@ export default function AdminReviewsPage() {
         .select('id')
         .eq('brand_id', review.brand_id)
         .eq('author_name', review.author_name)
-        .eq('is_approved', true)
         .ilike('content', review.content.slice(0, 80).replace(/[%_]/g, '') + '%')
         .limit(1)
 
