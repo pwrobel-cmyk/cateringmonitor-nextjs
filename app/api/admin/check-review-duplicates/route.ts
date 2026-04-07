@@ -14,8 +14,8 @@ export async function POST(request: Request) {
       .from('reviews')
       .select('id')
       .eq('brand_id', review.brand_id)
-      .eq('author_name', review.author_name)
-      .ilike('content', review.content.slice(0, 80).replace(/[%_]/g, '') + '%')
+      .ilike('author_name', review.author_name.trim())
+      .ilike('content', review.content.slice(0, 40).replace(/[%_\\]/g, '').trim() + '%')
       .limit(1)
 
     if (data && data.length > 0) {
