@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare } from "lucide-react";
+import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare, Users } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCountry } from "@/contexts/CountryContext";
 import { Button } from "@/components/ui/button";
@@ -125,6 +125,9 @@ export function Header() {
                       </button>
                       <button onClick={() => { router.push('/admin/reviews'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
                         <MessageSquare className="h-4 w-4" /> Import opinii
+                      </button>
+                      <button onClick={() => { router.push('/admin/users'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                        <Users className="h-4 w-4" /> Użytkownicy
                       </button>
                     </>
                   )}
