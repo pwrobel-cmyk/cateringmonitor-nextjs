@@ -144,8 +144,6 @@ export default function AdminReviewsPage() {
     setPending([])
 
     const parsed = await parseFile(file)
-    const newReviews: ParsedReview[] = []
-    let duplicates = 0
 
     // Deduplicate within the file first
     const seenFingerprints = new Set<string>()
@@ -155,28 +153,18 @@ export default function AdminReviewsPage() {
       if (!seenFingerprints.has(fp)) {
         seenFingerprints.add(fp)
         dedupedParsed.push(review)
-      } else {
-        duplicates++
       }
     }
 
-    for (const review of dedupedParsed) {
-      console.log('[dedup] checking:', review.author_name, '| brand_id:', review.brand_id, '| content[:40]:', review.content.slice(0, 40))
-      const { data: existing } = await supabase
-        .from('reviews')
-        .select('id')
-        .eq('brand_id', review.brand_id)
-        .eq('author_name', review.author_name)
-        .ilike('content', review.content.slice(0, 80).replace(/[%_]/g, '') + '%')
-        .limit(1)
-
-      console.log('[dedup] existing:', existing?.length, JSON.stringify(existing))
-      if (existing && existing.length > 0) {
-        duplicates++
-      } else {
-        newReviews.push(review)
-      }
-    }
+    const res = await fetch('/api/admin/check-review-duplicates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviews: dedupedParsed.map(r => ({ ...r, _fp: `${r.brand_id}|${r.author_name}|${r.content.slice(0, 80)}` })) }),
+    })
+    const { duplicateIds } = await res.json()
+    const dupSet = new Set(duplicateIds)
+    const newReviews = dedupedParsed.filter(r => !dupSet.has(`${r.brand_id}|${r.author_name}|${r.content.slice(0, 80)}`))
+    const duplicates = parsed.length - newReviews.length
 
     setPending(newReviews)
     setStats({ imported: newReviews.length, duplicates })
