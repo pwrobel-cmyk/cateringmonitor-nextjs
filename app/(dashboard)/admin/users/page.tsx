@@ -4,71 +4,53 @@ import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Shield, Users, BarChart3, Pencil, RefreshCw } from 'lucide-react'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-} from 'recharts'
+import { Shield, Users, BarChart3, Pencil, RefreshCw, X } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 
 const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
 
 type User = {
-  id: string
-  email: string
-  created_at: string
-  last_sign_in_at: string | null
-  full_name: string
-  avatar_url: string
-  status: string
-  trial_ends_at: string | null
-  company_name: string
-  brand_name: string
-  last_activity: string | null
+  id: string; email: string; created_at: string; last_sign_in_at: string | null
+  full_name: string; avatar_url: string; status: string; trial_ends_at: string | null
+  company_name: string; brand_name: string; last_activity: string | null
 }
 
-type UserListItem = { id: string; email: string; name: string }
+type SummaryRow = {
+  userId: string; name: string; email: string; avatar: string
+  visits: number; topPage: string; last: string | null; spark: number[]
+}
 
 type UserDetail = {
   totalVisits: number
   byDay: Record<string, { time: string; page: string }[]>
   topPages: { page: string; count: number }[]
   hourly: { hour: number; count: number }[]
-  firstVisit: string | null
-  lastVisit: string | null
-}
-
-type ComparisonRow = {
-  userId: string
-  name: string
-  email: string
-  visits: number
-  topPage: string
-  last: string
-  spark: number[]
+  firstVisit: string | null; lastVisit: string | null
 }
 
 export default function AdminUsersPage() {
   const { user } = useAuth()
   const router = useRouter()
 
+  // Users tab
   const [users, setUsers] = useState<User[]>([])
   const [filter, setFilter] = useState<'all' | 'active' | 'trial'>('all')
-  const [loading, setLoading] = useState(true)
+  const [usersLoading, setUsersLoading] = useState(true)
   const [editUser, setEditUser] = useState<User | null>(null)
   const [editForm, setEditForm] = useState({ full_name: '', status: '', trial_ends_at: '' })
   const [saving, setSaving] = useState(false)
 
-  // Analytics state
-  const [userList, setUserList] = useState<UserListItem[]>([])
-  const [selectedUserId, setSelectedUserId] = useState<string>('')
-  const [userDetail, setUserDetail] = useState<UserDetail | null>(null)
-  const [comparison, setComparison] = useState<ComparisonRow[]>([])
+  // Analytics tab
+  const [summary, setSummary] = useState<SummaryRow[]>([])
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<SummaryRow | null>(null)
+  const [detail, setDetail] = useState<UserDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
   useEffect(() => {
@@ -76,48 +58,38 @@ export default function AdminUsersPage() {
   }, [user, router])
 
   useEffect(() => {
-    fetch('/api/admin/users')
-      .then(r => r.json())
-      .then(d => { setUsers(d.users || []); setLoading(false) })
+    fetch('/api/admin/users').then(r => r.json()).then(d => {
+      setUsers(d.users || [])
+      setUsersLoading(false)
+    })
   }, [])
 
   const loadAnalytics = useCallback(() => {
+    if (summary.length) return
     setAnalyticsLoading(true)
-    fetch('/api/admin/activity')
-      .then(r => r.json())
-      .then(d => {
-        setUserList(d.userList || [])
-        setComparison(d.comparison || [])
-        if (d.userList?.length && !selectedUserId) setSelectedUserId(d.userList[0].id)
-        setAnalyticsLoading(false)
-      })
-  }, [selectedUserId])
+    fetch('/api/admin/activity').then(r => r.json()).then(d => {
+      setSummary(d.summary || [])
+      setAnalyticsLoading(false)
+    })
+  }, [summary.length])
 
-  const loadUserDetail = useCallback((uid: string) => {
-    if (!uid) return
+  const selectUser = (row: SummaryRow) => {
+    setSelectedUser(row)
+    setDetail(null)
     setDetailLoading(true)
-    fetch(`/api/admin/activity?userId=${uid}`)
-      .then(r => r.json())
-      .then(d => { setUserDetail(d.userDetail || null); setDetailLoading(false) })
-  }, [])
+    fetch(`/api/admin/activity?userId=${row.userId}`).then(r => r.json()).then(d => {
+      setDetail(d)
+      setDetailLoading(false)
+    })
+  }
 
-  useEffect(() => {
-    if (selectedUserId) loadUserDetail(selectedUserId)
-  }, [selectedUserId, loadUserDetail])
-
-  const filteredUsers = users.filter(u => {
-    if (filter === 'active') return u.status === 'active'
-    if (filter === 'trial') return u.status === 'trial'
-    return true
-  })
+  const filteredUsers = users.filter(u =>
+    filter === 'all' ? true : u.status === filter
+  )
 
   const openEdit = (u: User) => {
     setEditUser(u)
-    setEditForm({
-      full_name: u.full_name,
-      status: u.status,
-      trial_ends_at: u.trial_ends_at ? u.trial_ends_at.slice(0, 10) : '',
-    })
+    setEditForm({ full_name: u.full_name, status: u.status, trial_ends_at: u.trial_ends_at?.slice(0, 10) || '' })
   }
 
   const saveEdit = async () => {
@@ -139,7 +111,7 @@ export default function AdminUsersPage() {
   if (!user || user.email !== adminEmail) return null
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 py-2">
+    <div className="max-w-7xl mx-auto space-y-6 py-2">
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
           <Shield className="h-4 w-4 text-primary" />
@@ -171,7 +143,7 @@ export default function AdminUsersPage() {
 
           <Card>
             <CardContent className="p-0">
-              {loading ? (
+              {usersLoading ? (
                 <div className="p-8 text-center text-muted-foreground"><RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />Ładowanie...</div>
               ) : (
                 <div className="overflow-x-auto">
@@ -184,7 +156,7 @@ export default function AdminUsersPage() {
                         <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">Ostatnie logowanie</th>
                         <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">Aktywność</th>
                         <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">Marka</th>
-                        <th className="px-4 py-3"></th>
+                        <th className="px-4 py-3" />
                       </tr>
                     </thead>
                     <tbody>
@@ -203,18 +175,14 @@ export default function AdminUsersPage() {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <Badge variant={u.status === 'active' ? 'default' : u.status === 'trial' ? 'secondary' : 'outline'} className="text-xs">
-                              {u.status}
-                            </Badge>
+                            <Badge variant={u.status === 'active' ? 'default' : u.status === 'trial' ? 'secondary' : 'outline'} className="text-xs">{u.status}</Badge>
                           </td>
                           <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{fmtDate(u.created_at)}</td>
                           <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{fmtDateTime(u.last_sign_in_at)}</td>
                           <td className="px-4 py-3 text-muted-foreground hidden lg:table-cell">{fmtDateTime(u.last_activity)}</td>
                           <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{u.brand_name || '—'}</td>
                           <td className="px-4 py-3">
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(u)}>
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(u)}><Pencil className="h-3.5 w-3.5" /></Button>
                           </td>
                         </tr>
                       ))}
@@ -227,157 +195,76 @@ export default function AdminUsersPage() {
         </TabsContent>
 
         {/* ── TAB 2: Analytics ── */}
-        <TabsContent value="analytics" className="space-y-6 mt-4">
-          {analyticsLoading && (
-            <div className="p-8 text-center text-muted-foreground">
-              <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />Ładowanie...
-            </div>
-          )}
-
-          {!analyticsLoading && userList.length > 0 && (
-            <>
-              {/* S1: User selector */}
-              <Card>
-                <CardContent className="pt-5 pb-5">
-                  <label className="text-sm font-medium block mb-2">Wybierz użytkownika</label>
-                  <select
-                    className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background max-w-sm"
-                    value={selectedUserId}
-                    onChange={e => setSelectedUserId(e.target.value)}
-                  >
-                    {userList.map(u => (
-                      <option key={u.id} value={u.id}>{u.name} — {u.email}</option>
-                    ))}
-                  </select>
-                </CardContent>
-              </Card>
-
-              {detailLoading && (
-                <div className="p-6 text-center text-muted-foreground">
-                  <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-1" />
-                </div>
-              )}
-
-              {!detailLoading && userDetail && (
-                <>
-                  {/* S3: User stats */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {[
-                      { label: 'Łącznie wizyt (7d)', value: userDetail.totalVisits },
-                      { label: 'Pierwsza wizyta', value: fmtDate(userDetail.firstVisit) },
-                      { label: 'Ostatnia wizyta', value: fmtDateTime(userDetail.lastVisit) },
-                      { label: 'Ulubiona strona', value: userDetail.topPages[0]?.page || '—' },
-                    ].map(({ label, value }) => (
-                      <Card key={label}>
-                        <CardContent className="pt-4 pb-4">
-                          <p className="text-xs text-muted-foreground mb-1">{label}</p>
-                          <p className="font-semibold text-sm truncate">{value}</p>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Top pages bar chart */}
-                    <Card>
-                      <CardHeader><CardTitle className="text-sm">Top 5 stron</CardTitle></CardHeader>
-                      <CardContent>
-                        <ResponsiveContainer width="100%" height={160}>
-                          <BarChart data={userDetail.topPages} layout="vertical">
-                            <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-                            <YAxis type="category" dataKey="page" tick={{ fontSize: 10 }} width={120} />
-                            <Tooltip />
-                            <Bar dataKey="count" fill="#1a3a5c" radius={[0, 4, 4, 0]} name="Wizyty" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </CardContent>
-                    </Card>
-
-                    {/* Hourly activity */}
-                    <Card>
-                      <CardHeader><CardTitle className="text-sm">Aktywność wg godziny</CardTitle></CardHeader>
-                      <CardContent>
-                        <ResponsiveContainer width="100%" height={160}>
-                          <BarChart data={userDetail.hourly}>
-                            <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickFormatter={h => `${h}h`} />
-                            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                            <Tooltip labelFormatter={h => `${h}:00`} />
-                            <Bar dataKey="count" fill="#1a3a5c" radius={[2, 2, 0, 0]} name="Wizyty" />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </CardContent>
-                    </Card>
-                  </div>
-
-                  {/* S2: Activity timeline */}
-                  <Card>
-                    <CardHeader><CardTitle className="text-sm">Oś czasu aktywności (ostatnie 7 dni)</CardTitle></CardHeader>
-                    <CardContent className="space-y-4">
-                      {Object.keys(userDetail.byDay).length === 0 ? (
-                        <p className="text-sm text-muted-foreground">Brak aktywności w ostatnich 7 dniach.</p>
-                      ) : (
-                        Object.entries(userDetail.byDay).map(([day, visits]) => (
-                          <div key={day}>
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">{day}</p>
-                            <div className="space-y-0.5 pl-3 border-l-2 border-muted">
-                              {visits.map((v, i) => (
-                                <div key={i} className="flex items-center gap-3 text-sm">
-                                  <span className="text-xs text-muted-foreground w-10 flex-shrink-0">{v.time}</span>
-                                  <span className="font-mono text-xs">{v.page}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </CardContent>
-                  </Card>
-                </>
-              )}
-
-              {/* S4: Comparison table */}
-              {comparison.length > 0 && (
+        <TabsContent value="analytics" className="mt-4">
+          {analyticsLoading ? (
+            <div className="p-8 text-center text-muted-foreground"><RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />Ładowanie...</div>
+          ) : (
+            <div className={`flex gap-4 ${selectedUser ? 'items-start' : ''}`}>
+              {/* Summary table */}
+              <div className={selectedUser ? 'flex-1 min-w-0' : 'w-full'}>
                 <Card>
-                  <CardHeader><CardTitle className="text-sm">Porównanie wszystkich użytkowników (30 dni)</CardTitle></CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b bg-muted/30">
-                            <th className="text-left px-4 py-2 font-medium text-muted-foreground">Użytkownik</th>
-                            <th className="text-right px-4 py-2 font-medium text-muted-foreground">Wizyty</th>
-                            <th className="text-left px-4 py-2 font-medium text-muted-foreground hidden md:table-cell">Ulubiona strona</th>
-                            <th className="text-right px-4 py-2 font-medium text-muted-foreground hidden lg:table-cell">Ostatnia wizyta</th>
-                            <th className="text-center px-4 py-2 font-medium text-muted-foreground">7 dni</th>
+                            <th className="text-left px-4 py-3 font-medium text-muted-foreground">Użytkownik</th>
+                            <th className="text-right px-4 py-3 font-medium text-muted-foreground">Wizyty (7d)</th>
+                            <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">Ostatnia wizyta</th>
+                            <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">Ulubiona strona</th>
+                            <th className="text-center px-4 py-3 font-medium text-muted-foreground">7 dni</th>
+                            <th className="px-4 py-3" />
                           </tr>
                         </thead>
                         <tbody>
-                          {comparison.map(u => {
-                            const maxSpark = Math.max(...u.spark, 1)
+                          {summary.map(row => {
+                            const isSelected = selectedUser?.userId === row.userId
+                            const maxSpark = Math.max(...row.spark, 1)
+                            const hasActivity = row.visits > 0
                             return (
                               <tr
-                                key={u.userId}
-                                className={`border-b hover:bg-muted/20 cursor-pointer transition-colors ${u.userId === selectedUserId ? 'bg-primary/5' : ''}`}
-                                onClick={() => setSelectedUserId(u.userId)}
+                                key={row.userId}
+                                className={`border-b transition-colors cursor-pointer ${isSelected ? 'bg-primary/8 border-l-2 border-l-primary' : 'hover:bg-muted/20'} ${!hasActivity ? 'opacity-50' : ''}`}
+                                onClick={() => selectUser(row)}
                               >
-                                <td className="px-4 py-2">
-                                  <p className="font-medium">{u.name}</p>
-                                  <p className="text-xs text-muted-foreground">{u.email}</p>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-2">
+                                    <Avatar className="h-7 w-7 flex-shrink-0">
+                                      <AvatarImage src={row.avatar || undefined} />
+                                      <AvatarFallback className="text-xs">{(row.name || row.email || '?')[0].toUpperCase()}</AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-xs truncate">{row.name}</p>
+                                      <p className="text-xs text-muted-foreground truncate">{row.email}</p>
+                                    </div>
+                                  </div>
                                 </td>
-                                <td className="px-4 py-2 text-right font-semibold">{u.visits}</td>
-                                <td className="px-4 py-2 font-mono text-xs hidden md:table-cell text-muted-foreground">{u.topPage}</td>
-                                <td className="px-4 py-2 text-right text-xs text-muted-foreground hidden lg:table-cell">{fmtDate(u.last)}</td>
-                                <td className="px-4 py-2">
-                                  <div className="flex items-end gap-px h-6 justify-center">
-                                    {u.spark.map((v, i) => (
+                                <td className="px-4 py-3 text-right">
+                                  {hasActivity ? (
+                                    <span className="font-semibold">{row.visits}</span>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">Brak aktywności</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">{fmtDateTime(row.last)}</td>
+                                <td className="px-4 py-3 font-mono text-xs text-muted-foreground hidden lg:table-cell truncate max-w-[140px]">{row.topPage}</td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-end gap-px h-5 justify-center">
+                                    {row.spark.map((v, i) => (
                                       <div
                                         key={i}
-                                        className="w-2 bg-primary/60 rounded-sm"
-                                        style={{ height: `${Math.max(2, (v / maxSpark) * 24)}px` }}
+                                        className="w-2.5 rounded-sm"
+                                        style={{
+                                          height: `${Math.max(2, (v / maxSpark) * 20)}px`,
+                                          background: v === 0 ? '#e5e7eb' : v === maxSpark ? '#1a3a5c' : `rgba(26,58,92,${0.3 + (v / maxSpark) * 0.7})`,
+                                        }}
                                         title={`${v}`}
                                       />
                                     ))}
                                   </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <Button size="sm" variant="ghost" className="text-xs h-7 px-2">Zobacz</Button>
                                 </td>
                               </tr>
                             )
@@ -387,8 +274,88 @@ export default function AdminUsersPage() {
                     </div>
                   </CardContent>
                 </Card>
+              </div>
+
+              {/* Detail panel */}
+              {selectedUser && (
+                <div className="w-[400px] flex-shrink-0 border rounded-lg bg-background shadow-sm">
+                  {/* Header */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-b">
+                    <Avatar className="h-9 w-9">
+                      <AvatarImage src={selectedUser.avatar || undefined} />
+                      <AvatarFallback>{(selectedUser.name || selectedUser.email || '?')[0].toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{selectedUser.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{selectedUser.email}</p>
+                    </div>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 flex-shrink-0" onClick={() => setSelectedUser(null)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {detailLoading ? (
+                    <div className="p-8 text-center text-muted-foreground"><RefreshCw className="h-4 w-4 animate-spin mx-auto" /></div>
+                  ) : detail ? (
+                    <div className="overflow-y-auto max-h-[80vh]">
+                      {/* KPI */}
+                      <div className="grid grid-cols-3 gap-0 border-b">
+                        {[
+                          { label: 'Wizyty (7d)', value: detail.totalVisits },
+                          { label: 'Ulubiona', value: detail.topPages[0]?.page?.replace('/', '') || '—' },
+                          { label: 'Aktywny od', value: fmtDate(detail.firstVisit) },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="px-3 py-3 text-center border-r last:border-r-0">
+                            <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
+                            <p className="text-sm font-semibold truncate" title={String(value)}>{value}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Hourly chart */}
+                      <div className="px-4 py-3 border-b">
+                        <p className="text-xs font-medium text-muted-foreground mb-2">Aktywność wg godziny</p>
+                        <ResponsiveContainer width="100%" height={80}>
+                          <BarChart data={detail.hourly} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+                            <XAxis dataKey="hour" tick={{ fontSize: 9 }} tickFormatter={h => h % 4 === 0 ? `${h}h` : ''} />
+                            <YAxis tick={{ fontSize: 9 }} allowDecimals={false} />
+                            <Tooltip labelFormatter={h => `${h}:00`} contentStyle={{ fontSize: 11 }} />
+                            <Bar dataKey="count" fill="#1a3a5c" radius={[2, 2, 0, 0]} name="Wizyty" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      {/* Timeline */}
+                      <div className="px-4 py-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-3">Oś czasu (7 dni)</p>
+                        {Object.keys(detail.byDay).length === 0 ? (
+                          <p className="text-xs text-muted-foreground">Brak aktywności.</p>
+                        ) : (
+                          <div className="space-y-4">
+                            {Object.entries(detail.byDay).map(([day, visits]) => (
+                              <div key={day}>
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">{day}</p>
+                                <div className="space-y-0.5 pl-3 border-l-2 border-muted">
+                                  {visits.slice(0, 20).map((v, i) => (
+                                    <div key={i} className="flex items-center gap-2 text-xs">
+                                      <span className="text-muted-foreground w-9 flex-shrink-0">{v.time}</span>
+                                      <span className="font-mono text-[11px] truncate">{v.page}</span>
+                                    </div>
+                                  ))}
+                                  {visits.length > 20 && (
+                                    <p className="text-xs text-muted-foreground pl-11">+{visits.length - 20} więcej</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               )}
-            </>
+            </div>
           )}
         </TabsContent>
       </Tabs>

@@ -17,30 +17,21 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const userId = searchParams.get('userId')
 
-  const thirtyDaysAgo = new Date()
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-  // Auth users + profiles for user list
+  // Auth users + profiles
   const [{ data: { users: authUsers } }, { data: profiles }] = await Promise.all([
     service.auth.admin.listUsers({ perPage: 1000 }),
-    service.from('profiles').select('user_id, full_name'),
+    service.from('profiles').select('user_id, full_name, avatar_url'),
   ])
-  const profileMap: Record<string, string> = {}
-  for (const p of (profiles || [])) profileMap[p.user_id] = p.full_name || ''
+  const profileMap: Record<string, { name: string; avatar: string }> = {}
+  for (const p of (profiles || [])) profileMap[p.user_id] = { name: p.full_name || '', avatar: p.avatar_url || '' }
   const emailMap: Record<string, string> = {}
   for (const u of authUsers) emailMap[u.id] = u.email || ''
 
-  const userList = authUsers.map(u => ({
-    id: u.id,
-    email: u.email || '',
-    name: profileMap[u.id] || u.email || u.id,
-  }))
-
   // Per-user detail
   if (userId) {
-    const sevenDaysAgo = new Date()
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
     const { data: logs } = await (service as any).from('user_activity_log')
       .select('page, visited_at')
       .eq('user_id', userId)
@@ -50,11 +41,11 @@ export async function GET(request: Request) {
 
     const entries: { page: string; visited_at: string }[] = logs || []
 
-    // Group by day
+    // Group by day label
     const byDay: Record<string, { time: string; page: string }[]> = {}
     for (const e of entries) {
       const d = new Date(e.visited_at)
-      const day = d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' })
+      const day = d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })
       const time = d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
       if (!byDay[day]) byDay[day] = []
       byDay[day].push({ time, page: e.page })
@@ -68,70 +59,62 @@ export async function GET(request: Request) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5)
 
-    // Hourly distribution
-    const hourly: Record<number, number> = {}
-    for (const e of entries) {
-      const h = new Date(e.visited_at).getHours()
-      hourly[h] = (hourly[h] || 0) + 1
-    }
-    const hourlyArr = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: hourly[h] || 0 }))
+    // Hourly
+    const hourly = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }))
+    for (const e of entries) hourly[new Date(e.visited_at).getHours()].count++
 
     return Response.json({
-      userList,
-      userDetail: {
-        totalVisits: entries.length,
-        byDay,
-        topPages,
-        hourly: hourlyArr,
-        firstVisit: entries.length ? entries[entries.length - 1].visited_at : null,
-        lastVisit: entries.length ? entries[0].visited_at : null,
-      },
+      totalVisits: entries.length,
+      byDay,
+      topPages,
+      hourly,
+      firstVisit: entries.length ? entries[entries.length - 1].visited_at : null,
+      lastVisit: entries.length ? entries[0].visited_at : null,
     })
   }
 
-  // All-users comparison table
+  // Summary table: all users with 7-day activity
   const { data: allLogs } = await (service as any).from('user_activity_log')
     .select('user_id, page, visited_at')
-    .gte('visited_at', thirtyDaysAgo.toISOString())
+    .gte('visited_at', sevenDaysAgo.toISOString())
     .order('visited_at', { ascending: true })
 
   const entries = allLogs || []
 
-  // Per-user stats
-  const userStats: Record<string, { visits: number; pages: Record<string, number>; last: string; daily: Record<string, number> }> = {}
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
-  for (const e of entries) {
-    if (!userStats[e.user_id]) userStats[e.user_id] = { visits: 0, pages: {}, last: e.visited_at, daily: {} }
-    const s = userStats[e.user_id]
-    s.visits++
-    s.pages[e.page] = (s.pages[e.page] || 0) + 1
-    if (e.visited_at > s.last) s.last = e.visited_at
-    if (e.visited_at >= sevenDaysAgo.toISOString()) {
-      const day = e.visited_at.slice(0, 10)
-      s.daily[day] = (s.daily[day] || 0) + 1
-    }
-  }
-
-  // Build 7-day sparkline keys
   const sparkDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().slice(0, 10)
   })
 
-  const comparison = Object.entries(userStats).map(([uid, s]) => {
-    const topPage = Object.entries(s.pages).sort((a, b) => b[1] - a[1])[0]?.[0] || '—'
-    const spark = sparkDays.map(day => s.daily[day] || 0)
-    return {
-      userId: uid,
-      name: profileMap[uid] || emailMap[uid] || uid,
-      email: emailMap[uid] || '',
-      visits: s.visits,
-      topPage,
-      last: s.last,
-      spark,
-    }
-  }).sort((a, b) => b.visits - a.visits)
+  const stats: Record<string, { visits: number; pages: Record<string, number>; last: string; daily: Record<string, number> }> = {}
+  for (const e of entries) {
+    if (!stats[e.user_id]) stats[e.user_id] = { visits: 0, pages: {}, last: e.visited_at, daily: {} }
+    const s = stats[e.user_id]
+    s.visits++
+    s.pages[e.page] = (s.pages[e.page] || 0) + 1
+    if (e.visited_at > s.last) s.last = e.visited_at
+    const day = e.visited_at.slice(0, 10)
+    s.daily[day] = (s.daily[day] || 0) + 1
+  }
 
-  return Response.json({ userList, comparison })
+  // All auth users — include ones with no activity
+  const summary = authUsers.map(u => {
+    const s = stats[u.id]
+    return {
+      userId: u.id,
+      name: profileMap[u.id]?.name || u.email || u.id,
+      email: u.email || '',
+      avatar: profileMap[u.id]?.avatar || '',
+      visits: s?.visits || 0,
+      topPage: s ? (Object.entries(s.pages).sort((a, b) => b[1] - a[1])[0]?.[0] || '—') : '—',
+      last: s?.last || null,
+      spark: sparkDays.map(d => s?.daily[d] || 0),
+    }
+  }).sort((a, b) => {
+    if (!a.last && !b.last) return 0
+    if (!a.last) return 1
+    if (!b.last) return -1
+    return b.last.localeCompare(a.last)
+  })
+
+  return Response.json({ summary })
 }
