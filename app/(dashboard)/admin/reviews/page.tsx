@@ -161,6 +161,7 @@ export default function AdminReviewsPage() {
     }
 
     for (const review of dedupedParsed) {
+      console.log('[dedup] checking:', review.author_name, '| brand_id:', review.brand_id, '| content[:40]:', review.content.slice(0, 40))
       const { data: existing } = await supabase
         .from('reviews')
         .select('id')
@@ -169,6 +170,7 @@ export default function AdminReviewsPage() {
         .ilike('content', review.content.slice(0, 80).replace(/[%_]/g, '') + '%')
         .limit(1)
 
+      console.log('[dedup] existing:', existing?.length, JSON.stringify(existing))
       if (existing && existing.length > 0) {
         duplicates++
       } else {
