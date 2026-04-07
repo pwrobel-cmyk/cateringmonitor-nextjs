@@ -25,6 +25,14 @@ interface ParsedReview {
   content: string
   rating: number
   review_date: string | null
+  owner_response: string | null
+}
+
+function cleanResponse(raw: string): string {
+  return raw
+    .replace(/^Odpowied[zź]\s+w[łl]a[śs]ciciela[^a-zA-ZąęśćźżńółĄĘŚĆŹŻŃÓŁ]*/i, '')
+    .replace(/\s*Więcej\s*$/i, '')
+    .trim()
 }
 
 export default function AdminReviewsPage() {
@@ -67,6 +75,7 @@ export default function AdminReviewsPage() {
         const authorCol = col(['name', 'autor', 'author_name'])
         const ratingCol = col(['stars', 'ocena', 'rating'])
         const dateCol = col(['data dodania opini', 'date', 'data', 'review_date'])
+        const responseCol = col(['owner_response', 'odpowiedź właściciela', 'odpowiedz wlasciciela', 'owner response'])
 
         const parsed: ParsedReview[] = []
         for (let i = 1; i < rows.length; i++) {
@@ -99,6 +108,9 @@ export default function AdminReviewsPage() {
             }
           }
 
+          const rawResponse = responseCol >= 0 ? String(row[responseCol] ?? '').trim() : ''
+          const owner_response = rawResponse ? cleanResponse(rawResponse) : null
+
           parsed.push({
             brand_id: brand_id as string,
             brand_name: brandRaw,
@@ -106,6 +118,7 @@ export default function AdminReviewsPage() {
             content,
             rating,
             review_date,
+            owner_response,
           })
         }
         resolve(parsed)
@@ -170,7 +183,7 @@ export default function AdminReviewsPage() {
   }
 
   async function approve(review: ParsedReview) {
-    const { error } = await supabase.from('reviews').insert({
+    const { data: inserted, error } = await supabase.from('reviews').insert({
       brand_id: review.brand_id,
       author_name: review.author_name,
       content: review.content,
@@ -179,11 +192,21 @@ export default function AdminReviewsPage() {
       source: 'manual',
       is_approved: true,
       original_brand_name: review.brand_name,
-    })
+    }).select('id').single()
 
     if (error && error.code !== '23505') {
       toast.error(`Błąd zapisu: ${error.message}`)
       return
+    }
+
+    if (inserted?.id && review.owner_response) {
+      await (supabase as any).from('review_responses').insert({
+        review_id: inserted.id,
+        brand_id: review.brand_id,
+        body: review.owner_response,
+        source: 'manual',
+        status: 'published',
+      })
     }
 
     setPending((prev) => prev.filter((r) => r !== review))
@@ -199,7 +222,7 @@ export default function AdminReviewsPage() {
     let saved = 0
     let failed = 0
     for (const review of pending) {
-      const { error } = await supabase.from('reviews').insert({
+      const { data: inserted, error } = await supabase.from('reviews').insert({
         brand_id: review.brand_id,
         author_name: review.author_name,
         content: review.content,
@@ -208,9 +231,21 @@ export default function AdminReviewsPage() {
         source: 'manual',
         is_approved: true,
         original_brand_name: review.brand_name,
-      })
-      if (error && error.code !== '23505') failed++
-      else saved++
+      }).select('id').single()
+      if (error && error.code !== '23505') {
+        failed++
+      } else {
+        saved++
+        if (inserted?.id && review.owner_response) {
+          await (supabase as any).from('review_responses').insert({
+            review_id: inserted.id,
+            brand_id: review.brand_id,
+            body: review.owner_response,
+            source: 'manual',
+            status: 'published',
+          })
+        }
+      }
     }
     setPending([])
     toast.success(`Zatwierdzono ${saved} opinii${failed > 0 ? `. Błędy: ${failed}` : ''}`)

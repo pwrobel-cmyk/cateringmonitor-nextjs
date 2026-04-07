@@ -192,6 +192,7 @@ export default function ReviewManagerPage() {
   // Composer
   const [tone, setTone]             = useState<Tone>('professional')
   const [aiResponse, setAiResponse] = useState('')
+  const [publishedResponse, setPublishedResponse] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [copied, setCopied]         = useState(false)
 
@@ -411,21 +412,26 @@ export default function ReviewManagerPage() {
 
   // ── Load response from Supabase when review selected ──
   useEffect(() => {
-    if (!selectedId) { setAiResponse(''); return }
+    if (!selectedId) { setAiResponse(''); setPublishedResponse(null); return }
     const cached = responses[selectedId]
-    if (cached) { setAiResponse(cached.body); setTone((cached.tone as Tone) || 'professional'); return }
+    if (cached) { setAiResponse(cached.body); setTone((cached.tone as Tone) || 'professional') }
+
     ;(supabase as any).from('review_responses')
-      .select('id, body, status, tone')
+      .select('id, body, status, tone, source')
       .eq('review_id', selectedId)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .then(({ data }: { data: ReviewResponse[] }) => {
-        if (data?.[0]) {
-          setResponses(prev => ({ ...prev, [selectedId]: data[0] }))
-          setAiResponse(data[0].body)
-          setTone((data[0].tone as Tone) || 'professional')
-        } else {
-          setAiResponse('')
+      .then(({ data }: { data: (ReviewResponse & { source?: string })[] }) => {
+        const published = data?.find(r => r.status === 'published' && r.source === 'manual')
+        setPublishedResponse(published?.body || null)
+        if (!cached) {
+          const draft = data?.find(r => r.status !== 'published' || r.source !== 'manual')
+          if (draft) {
+            setResponses(prev => ({ ...prev, [selectedId]: draft }))
+            setAiResponse(draft.body)
+            setTone((draft.tone as Tone) || 'professional')
+          } else if (!published) {
+            setAiResponse('')
+          }
         }
       })
   }, [selectedId])
@@ -1209,6 +1215,13 @@ export default function ReviewManagerPage() {
                 {topics.map(t => (
                   <span key={t} className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${TOPIC_COLORS[t] || 'bg-gray-100 text-gray-600'}`}>{t}</span>
                 ))}
+              </div>
+            )}
+
+            {publishedResponse && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-xs font-medium text-green-700 mb-1">Opublikowana odpowiedź właściciela</p>
+                <p className="text-sm text-green-900 whitespace-pre-wrap">{publishedResponse}</p>
               </div>
             )}
 
