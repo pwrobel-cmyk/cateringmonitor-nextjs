@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Shield, Users, BarChart3, Pencil, RefreshCw } from 'lucide-react'
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
 } from 'recharts'
 
 const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
@@ -31,15 +31,26 @@ type User = {
   last_activity: string | null
 }
 
-type ActivityData = {
-  daily: { date: string; count: number }[]
-  pages: { page: string; visits: number; uniqueUsers: number }[]
-  topUsers: { userId: string; name: string; email: string; visits: number; last: string }[]
-  heatmap: Record<string, number>
+type UserListItem = { id: string; email: string; name: string }
+
+type UserDetail = {
+  totalVisits: number
+  byDay: Record<string, { time: string; page: string }[]>
+  topPages: { page: string; count: number }[]
+  hourly: { hour: number; count: number }[]
+  firstVisit: string | null
+  lastVisit: string | null
 }
 
-const DAYS = ['Nd', 'Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'Sb']
-const HOURS = Array.from({ length: 24 }, (_, i) => i)
+type ComparisonRow = {
+  userId: string
+  name: string
+  email: string
+  visits: number
+  topPage: string
+  last: string
+  spark: number[]
+}
 
 export default function AdminUsersPage() {
   const { user } = useAuth()
@@ -52,8 +63,13 @@ export default function AdminUsersPage() {
   const [editForm, setEditForm] = useState({ full_name: '', status: '', trial_ends_at: '' })
   const [saving, setSaving] = useState(false)
 
-  const [activity, setActivity] = useState<ActivityData | null>(null)
-  const [activityLoading, setActivityLoading] = useState(false)
+  // Analytics state
+  const [userList, setUserList] = useState<UserListItem[]>([])
+  const [selectedUserId, setSelectedUserId] = useState<string>('')
+  const [userDetail, setUserDetail] = useState<UserDetail | null>(null)
+  const [comparison, setComparison] = useState<ComparisonRow[]>([])
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
 
   useEffect(() => {
     if (user && user.email !== adminEmail) router.replace('/dashboard')
@@ -65,12 +81,29 @@ export default function AdminUsersPage() {
       .then(d => { setUsers(d.users || []); setLoading(false) })
   }, [])
 
-  const loadActivity = () => {
-    setActivityLoading(true)
+  const loadAnalytics = useCallback(() => {
+    setAnalyticsLoading(true)
     fetch('/api/admin/activity')
       .then(r => r.json())
-      .then(d => { setActivity(d); setActivityLoading(false) })
-  }
+      .then(d => {
+        setUserList(d.userList || [])
+        setComparison(d.comparison || [])
+        if (d.userList?.length && !selectedUserId) setSelectedUserId(d.userList[0].id)
+        setAnalyticsLoading(false)
+      })
+  }, [selectedUserId])
+
+  const loadUserDetail = useCallback((uid: string) => {
+    if (!uid) return
+    setDetailLoading(true)
+    fetch(`/api/admin/activity?userId=${uid}`)
+      .then(r => r.json())
+      .then(d => { setUserDetail(d.userDetail || null); setDetailLoading(false) })
+  }, [])
+
+  useEffect(() => {
+    if (selectedUserId) loadUserDetail(selectedUserId)
+  }, [selectedUserId, loadUserDetail])
 
   const filteredUsers = users.filter(u => {
     if (filter === 'active') return u.status === 'active'
@@ -103,8 +136,6 @@ export default function AdminUsersPage() {
   const fmtDate = (s: string | null) => s ? new Date(s).toLocaleDateString('pl-PL') : '—'
   const fmtDateTime = (s: string | null) => s ? new Date(s).toLocaleString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
-  const maxHeat = activity ? Math.max(...Object.values(activity.heatmap), 1) : 1
-
   if (!user || user.email !== adminEmail) return null
 
   return (
@@ -122,7 +153,7 @@ export default function AdminUsersPage() {
       <Tabs defaultValue="users">
         <TabsList>
           <TabsTrigger value="users" className="gap-2"><Users className="h-4 w-4" />Lista użytkowników</TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-2" onClick={loadActivity}><BarChart3 className="h-4 w-4" />Analityka</TabsTrigger>
+          <TabsTrigger value="analytics" className="gap-2" onClick={loadAnalytics}><BarChart3 className="h-4 w-4" />Analityka</TabsTrigger>
         </TabsList>
 
         {/* ── TAB 1: Users ── */}
@@ -197,120 +228,166 @@ export default function AdminUsersPage() {
 
         {/* ── TAB 2: Analytics ── */}
         <TabsContent value="analytics" className="space-y-6 mt-4">
-          {activityLoading && (
-            <div className="p-8 text-center text-muted-foreground"><RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />Ładowanie...</div>
+          {analyticsLoading && (
+            <div className="p-8 text-center text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" />Ładowanie...
+            </div>
           )}
 
-          {activity && (
+          {!analyticsLoading && userList.length > 0 && (
             <>
-              {/* Daily chart */}
+              {/* S1: User selector */}
               <Card>
-                <CardHeader><CardTitle className="text-base">Aktywność dzienna (30 dni)</CardTitle></CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={activity.daily}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={v => v.slice(5)} />
-                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
-                      <Tooltip labelFormatter={v => String(v)} />
-                      <Line type="monotone" dataKey="count" stroke="#1a3a5c" strokeWidth={2} dot={false} name="Wizyty" />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <CardContent className="pt-5 pb-5">
+                  <label className="text-sm font-medium block mb-2">Wybierz użytkownika</label>
+                  <select
+                    className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background max-w-sm"
+                    value={selectedUserId}
+                    onChange={e => setSelectedUserId(e.target.value)}
+                  >
+                    {userList.map(u => (
+                      <option key={u.id} value={u.id}>{u.name} — {u.email}</option>
+                    ))}
+                  </select>
                 </CardContent>
               </Card>
 
-              {/* Heatmap */}
-              <Card>
-                <CardHeader><CardTitle className="text-base">Aktywność wg godziny i dnia tygodnia</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="text-xs border-separate border-spacing-0.5">
-                      <thead>
-                        <tr>
-                          <th className="w-8 text-muted-foreground font-normal" />
-                          {HOURS.map(h => (
-                            <th key={h} className="w-5 text-muted-foreground font-normal text-center">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {DAYS.map((day, di) => (
-                          <tr key={di}>
-                            <td className="pr-1 text-muted-foreground text-right">{day}</td>
-                            {HOURS.map(h => {
-                              const val = activity.heatmap[`${di}_${h}`] || 0
-                              const opacity = val ? 0.15 + (val / maxHeat) * 0.85 : 0
-                              return (
-                                <td key={h} title={`${val} wizyt`}>
-                                  <div
-                                    className="w-5 h-5 rounded-sm"
-                                    style={{ background: val ? `rgba(26,58,92,${opacity})` : '#f3f4f6' }}
-                                  />
-                                </td>
-                              )
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              {detailLoading && (
+                <div className="p-6 text-center text-muted-foreground">
+                  <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-1" />
+                </div>
+              )}
+
+              {!detailLoading && userDetail && (
+                <>
+                  {/* S3: User stats */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: 'Łącznie wizyt (7d)', value: userDetail.totalVisits },
+                      { label: 'Pierwsza wizyta', value: fmtDate(userDetail.firstVisit) },
+                      { label: 'Ostatnia wizyta', value: fmtDateTime(userDetail.lastVisit) },
+                      { label: 'Ulubiona strona', value: userDetail.topPages[0]?.page || '—' },
+                    ].map(({ label, value }) => (
+                      <Card key={label}>
+                        <CardContent className="pt-4 pb-4">
+                          <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                          <p className="font-semibold text-sm truncate">{value}</p>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                </CardContent>
-              </Card>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Top pages */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Top pages bar chart */}
+                    <Card>
+                      <CardHeader><CardTitle className="text-sm">Top 5 stron</CardTitle></CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={160}>
+                          <BarChart data={userDetail.topPages} layout="vertical">
+                            <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                            <YAxis type="category" dataKey="page" tick={{ fontSize: 10 }} width={120} />
+                            <Tooltip />
+                            <Bar dataKey="count" fill="#1a3a5c" radius={[0, 4, 4, 0]} name="Wizyty" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+
+                    {/* Hourly activity */}
+                    <Card>
+                      <CardHeader><CardTitle className="text-sm">Aktywność wg godziny</CardTitle></CardHeader>
+                      <CardContent>
+                        <ResponsiveContainer width="100%" height={160}>
+                          <BarChart data={userDetail.hourly}>
+                            <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickFormatter={h => `${h}h`} />
+                            <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                            <Tooltip labelFormatter={h => `${h}:00`} />
+                            <Bar dataKey="count" fill="#1a3a5c" radius={[2, 2, 0, 0]} name="Wizyty" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* S2: Activity timeline */}
+                  <Card>
+                    <CardHeader><CardTitle className="text-sm">Oś czasu aktywności (ostatnie 7 dni)</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      {Object.keys(userDetail.byDay).length === 0 ? (
+                        <p className="text-sm text-muted-foreground">Brak aktywności w ostatnich 7 dniach.</p>
+                      ) : (
+                        Object.entries(userDetail.byDay).map(([day, visits]) => (
+                          <div key={day}>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">{day}</p>
+                            <div className="space-y-0.5 pl-3 border-l-2 border-muted">
+                              {visits.map((v, i) => (
+                                <div key={i} className="flex items-center gap-3 text-sm">
+                                  <span className="text-xs text-muted-foreground w-10 flex-shrink-0">{v.time}</span>
+                                  <span className="font-mono text-xs">{v.page}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+
+              {/* S4: Comparison table */}
+              {comparison.length > 0 && (
                 <Card>
-                  <CardHeader><CardTitle className="text-base">Najpopularniejsze strony</CardTitle></CardHeader>
+                  <CardHeader><CardTitle className="text-sm">Porównanie wszystkich użytkowników (30 dni)</CardTitle></CardHeader>
                   <CardContent className="p-0">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/30">
-                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Strona</th>
-                          <th className="text-right px-4 py-2 font-medium text-muted-foreground">Wizyty</th>
-                          <th className="text-right px-4 py-2 font-medium text-muted-foreground">Unikalni</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activity.pages.map(p => (
-                          <tr key={p.page} className="border-b hover:bg-muted/20">
-                            <td className="px-4 py-2 font-mono text-xs">{p.page}</td>
-                            <td className="px-4 py-2 text-right">{p.visits}</td>
-                            <td className="px-4 py-2 text-right text-muted-foreground">{p.uniqueUsers}</td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/30">
+                            <th className="text-left px-4 py-2 font-medium text-muted-foreground">Użytkownik</th>
+                            <th className="text-right px-4 py-2 font-medium text-muted-foreground">Wizyty</th>
+                            <th className="text-left px-4 py-2 font-medium text-muted-foreground hidden md:table-cell">Ulubiona strona</th>
+                            <th className="text-right px-4 py-2 font-medium text-muted-foreground hidden lg:table-cell">Ostatnia wizyta</th>
+                            <th className="text-center px-4 py-2 font-medium text-muted-foreground">7 dni</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {comparison.map(u => {
+                            const maxSpark = Math.max(...u.spark, 1)
+                            return (
+                              <tr
+                                key={u.userId}
+                                className={`border-b hover:bg-muted/20 cursor-pointer transition-colors ${u.userId === selectedUserId ? 'bg-primary/5' : ''}`}
+                                onClick={() => setSelectedUserId(u.userId)}
+                              >
+                                <td className="px-4 py-2">
+                                  <p className="font-medium">{u.name}</p>
+                                  <p className="text-xs text-muted-foreground">{u.email}</p>
+                                </td>
+                                <td className="px-4 py-2 text-right font-semibold">{u.visits}</td>
+                                <td className="px-4 py-2 font-mono text-xs hidden md:table-cell text-muted-foreground">{u.topPage}</td>
+                                <td className="px-4 py-2 text-right text-xs text-muted-foreground hidden lg:table-cell">{fmtDate(u.last)}</td>
+                                <td className="px-4 py-2">
+                                  <div className="flex items-end gap-px h-6 justify-center">
+                                    {u.spark.map((v, i) => (
+                                      <div
+                                        key={i}
+                                        className="w-2 bg-primary/60 rounded-sm"
+                                        style={{ height: `${Math.max(2, (v / maxSpark) * 24)}px` }}
+                                        title={`${v}`}
+                                      />
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </CardContent>
                 </Card>
-
-                {/* Top users */}
-                <Card>
-                  <CardHeader><CardTitle className="text-base">Najbardziej aktywni</CardTitle></CardHeader>
-                  <CardContent className="p-0">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b bg-muted/30">
-                          <th className="text-left px-4 py-2 font-medium text-muted-foreground">Użytkownik</th>
-                          <th className="text-right px-4 py-2 font-medium text-muted-foreground">Wizyty</th>
-                          <th className="text-right px-4 py-2 font-medium text-muted-foreground">Ostatnia</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activity.topUsers.map(u => (
-                          <tr key={u.userId} className="border-b hover:bg-muted/20">
-                            <td className="px-4 py-2">
-                              <p className="font-medium">{u.name}</p>
-                              <p className="text-xs text-muted-foreground">{u.email}</p>
-                            </td>
-                            <td className="px-4 py-2 text-right">{u.visits}</td>
-                            <td className="px-4 py-2 text-right text-xs text-muted-foreground">{fmtDate(u.last)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              </div>
+              )}
             </>
           )}
         </TabsContent>
