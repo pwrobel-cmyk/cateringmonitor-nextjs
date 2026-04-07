@@ -30,6 +30,9 @@ export function ActivityTracker() {
         page: pathname,
         session_id: sid,
         visited_at: new Date().toISOString(),
+      }).then(({ error }: any) => {
+        if (error) console.error('[ActivityTracker] insert error:', error)
+        else console.log('[ActivityTracker] tracked:', pathname)
       })
     })
   }, [pathname])
