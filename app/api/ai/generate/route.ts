@@ -40,9 +40,11 @@ export async function POST(request: Request) {
       })
     }
 
+    // fal SDK wraps response in .data
+    const output = result?.data ?? result
     const outputUrl = type === 'image'
-      ? result?.images?.[0]?.url
-      : result?.video?.url
+      ? output?.images?.[0]?.url
+      : output?.video?.url
 
     if (!outputUrl) {
       return Response.json({ error: 'No output from model' }, { status: 500 })
@@ -74,8 +76,8 @@ export async function POST(request: Request) {
       model: model || (type === 'image' ? 'fal-ai/flux/schnell' : 'fal-ai/kling-video/v1.6/standard/text-to-video'),
       url: publicUrl,
       storage_path: filename,
-      width: type === 'image' ? result?.images?.[0]?.width : null,
-      height: type === 'image' ? result?.images?.[0]?.height : null,
+      width: type === 'image' ? output?.images?.[0]?.width : null,
+      height: type === 'image' ? output?.images?.[0]?.height : null,
       source: 'generated',
     }).select().single()
 
