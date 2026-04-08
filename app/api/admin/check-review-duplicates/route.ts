@@ -20,6 +20,27 @@ export async function POST(request: Request) {
 
     if (data && data.length > 0) {
       duplicateIds.push(review._fp)
+
+      // If the duplicate review has an owner_response, save it if not already present
+      if (review.owner_response && data[0]?.id) {
+        const { data: existingResponse } = await supabase
+          .from('review_responses')
+          .select('id')
+          .eq('review_id', data[0].id)
+          .eq('source', 'manual')
+          .limit(1)
+
+        if (!existingResponse || existingResponse.length === 0) {
+          await supabase.from('review_responses').insert({
+            review_id: data[0].id,
+            brand_id: review.brand_id,
+            body: review.owner_response,
+            tone: 'professional',
+            source: 'manual',
+            status: 'published',
+          })
+        }
+      }
     }
   }
 
