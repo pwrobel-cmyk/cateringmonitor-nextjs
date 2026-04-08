@@ -42,7 +42,7 @@ export default function AdminReviewsPage() {
   const [preview, setPreview] = useState<ParsedReview[]>([])
   const [pending, setPending] = useState<ParsedReview[]>([])
   const [importing, setImporting] = useState(false)
-  const [stats, setStats] = useState<{ imported: number; duplicates: number } | null>(null)
+  const [stats, setStats] = useState<{ imported: number; duplicates: number; savedResponses: number } | null>(null)
 
   if (!user) return null
   if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
@@ -161,13 +161,13 @@ export default function AdminReviewsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reviews: dedupedParsed.map(r => ({ ...r, _fp: `${r.brand_id}|${r.author_name}|${r.content.slice(0, 80)}` })) }),
     })
-    const { duplicateIds } = await res.json()
+    const { duplicateIds, savedResponses } = await res.json()
     const dupSet = new Set(duplicateIds)
     const newReviews = dedupedParsed.filter(r => !dupSet.has(`${r.brand_id}|${r.author_name}|${r.content.slice(0, 80)}`))
     const duplicates = parsed.length - newReviews.length
 
     setPending(newReviews)
-    setStats({ imported: newReviews.length, duplicates })
+    setStats({ imported: newReviews.length, duplicates, savedResponses: savedResponses || 0 })
     toast.success(`Znaleziono ${newReviews.length} nowych opinii. Duplikaty: ${duplicates}.`)
     setImporting(false)
   }
@@ -301,6 +301,9 @@ export default function AdminReviewsPage() {
             <div className="flex gap-4 text-sm">
               <span className="text-green-600">✓ Nowe: {stats.imported}</span>
               <span className="text-yellow-600">⊘ Duplikaty: {stats.duplicates}</span>
+              {stats.savedResponses > 0 && (
+                <span className="text-blue-600">💬 Odpowiedzi właścicieli: {stats.savedResponses}</span>
+              )}
             </div>
           )}
         </CardContent>

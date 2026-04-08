@@ -8,6 +8,7 @@ const supabase = createClient(
 export async function POST(request: Request) {
   const { reviews } = await request.json()
   const duplicateIds: string[] = []
+  let savedResponses = 0
 
   for (const review of reviews) {
     const { data } = await supabase
@@ -39,10 +40,11 @@ export async function POST(request: Request) {
             source: 'manual',
             status: 'published',
           })
+          savedResponses++
         }
       }
     }
   }
 
-  return Response.json({ duplicateIds })
+  return Response.json({ duplicateIds, savedResponses })
 }
