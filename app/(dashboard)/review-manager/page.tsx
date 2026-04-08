@@ -623,7 +623,9 @@ export default function ReviewManagerPage() {
                   setBrandId(b.id); setShowPicker(false)
                   if (userId) {
                     await (supabase as any).from('user_brand_assignments')
-                      .upsert({ user_id: userId, brand_id: b.id }, { onConflict: 'user_id' })
+                      .delete().eq('user_id', userId)
+                    await (supabase as any).from('user_brand_assignments')
+                      .insert({ user_id: userId, brand_id: b.id })
                   }
                 }}
                   className="flex items-center gap-3 w-full px-4 py-3 rounded-lg border hover:bg-accent transition-colors text-left">
