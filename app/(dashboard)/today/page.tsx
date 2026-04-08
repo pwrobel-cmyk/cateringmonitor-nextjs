@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase/client'
 import { useReviewsStatistics } from '@/hooks/supabase/useReviewsStatistics'
+import { useBrands } from '@/hooks/supabase/useBrands'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertCircle, AlertTriangle, Info, RefreshCw, Zap } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Info, RefreshCw, Zap, Building2 } from 'lucide-react'
 
 type Priority = 'critical' | 'warning' | 'info'
 
@@ -42,23 +43,43 @@ function borderColor(priority: Priority) {
 
 export default function TodayPage() {
   const { user } = useAuth()
+  const isAdmin = user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL
+  const { data: allBrands = [] } = useBrands()
   const [brandId, setBrandId] = useState<string | undefined>()
+  const [brandName, setBrandName] = useState<string>('')
+  const [hasAssignment, setHasAssignment] = useState<boolean | null>(null) // null = loading
   const [loading, setLoading] = useState(true)
   const [recommendations, setRecommendations] = useState<Recommendation[]>([])
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
 
-  // Load brandId from user_brand_assignments
+  // Load brandId from user_brand_assignments (or first brand for admin)
   useEffect(() => {
     if (!user) return
+    if (isAdmin) {
+      if (allBrands.length > 0 && !brandId) {
+        const first = allBrands[0] as any
+        setBrandId(first.id)
+        setBrandName(first.name || '')
+        setHasAssignment(true)
+      }
+      return
+    }
     ;(supabase as any)
       .from('user_brand_assignments')
-      .select('brand_id')
+      .select('brand_id, brands(name)')
       .eq('user_id', user.id)
       .single()
       .then(({ data }: any) => {
-        if (data?.brand_id) setBrandId(data.brand_id)
+        if (data?.brand_id) {
+          setBrandId(data.brand_id)
+          setBrandName(data.brands?.name || '')
+          setHasAssignment(true)
+        } else {
+          setHasAssignment(false)
+          setLoading(false)
+        }
       })
-  }, [user])
+  }, [user, isAdmin, allBrands, brandId])
 
   const { data: stats } = useReviewsStatistics(brandId)
 
@@ -237,8 +258,10 @@ export default function TodayPage() {
   }, [stats])
 
   useEffect(() => {
+    if (hasAssignment === false) return
+    if (hasAssignment === null) return
     loadData()
-  }, [loadData])
+  }, [loadData, brandId, hasAssignment])
 
   const urgent = recommendations.filter(r => r.priority === 'critical' || r.priority === 'warning')
   const observations = recommendations.filter(r => r.priority === 'info')
@@ -247,6 +270,22 @@ export default function TodayPage() {
   const updatedStr = updatedAt
     ? updatedAt.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
     : null
+
+  // Brak przypisania marki
+  if (hasAssignment === false) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center p-6">
+        <Zap className="h-14 w-14 text-muted-foreground mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Wybierz swoją markę</h2>
+        <p className="text-muted-foreground max-w-sm mb-6">
+          Aby zobaczyć rekomendacje dla Twojej marki, najpierw skonfiguruj konto w Review Manager.
+        </p>
+        <Link href="/review-manager">
+          <Button>Przejdź do Review Manager →</Button>
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6 max-w-3xl">
@@ -258,8 +297,32 @@ export default function TodayPage() {
             Co zrobić dziś
             <span className="text-muted-foreground font-normal text-base">· {today}</span>
           </h1>
+          {/* Brand pill / admin dropdown */}
+          <div className="mt-2">
+            {isAdmin && allBrands.length > 0 ? (
+              <select
+                className="text-sm border rounded-full px-3 py-1 bg-muted font-medium focus:outline-none"
+                value={brandId || ''}
+                onChange={e => {
+                  const b = allBrands.find((b: any) => b.id === e.target.value) as any
+                  setBrandId(e.target.value)
+                  setBrandName(b?.name || '')
+                  setRecommendations([])
+                }}
+              >
+                {allBrands.map((b: any) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            ) : brandName ? (
+              <span className="inline-flex items-center gap-1.5 text-sm bg-muted rounded-full px-3 py-1 font-medium">
+                <Building2 className="h-3.5 w-3.5" />
+                {brandName}
+              </span>
+            ) : null}
+          </div>
           {updatedStr && !loading && (
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground mt-1.5">
               {recommendations.length} działań · zaktualizowano {updatedStr}
             </p>
           )}
