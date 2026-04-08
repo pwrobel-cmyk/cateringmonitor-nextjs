@@ -149,7 +149,11 @@ export default function AIGeneratorPage() {
     const ext = file.name.split('.').pop()
     const filename = `${user.id}/${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('ai-assets').upload(filename, file, { upsert: false })
-    if (error) { toast.error('Błąd uploadu'); return null }
+    if (error) {
+      console.error('[upload] storage error:', error)
+      toast.error('Błąd uploadu: ' + error.message)
+      return null
+    }
     const { data: { publicUrl } } = supabase.storage.from('ai-assets').getPublicUrl(filename)
     const assetType: 'image' | 'video' = file.type.startsWith('video') ? 'video' : 'image'
     const { data: asset } = await (supabase as any).from('ai_assets').insert({
