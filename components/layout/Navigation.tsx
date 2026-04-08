@@ -15,6 +15,7 @@ import {
   Image,
   ChevronDown,
   TrendingUp,
+  Brain,
 } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -38,6 +39,7 @@ const navigation: { name: string; href: string; icon: any; beta?: boolean }[] = 
 const infografikiSubItems = [
   { name: "Infografiki", href: "/infografiki", icon: Image },
   { name: "Trends", href: "/trends", icon: TrendingUp },
+  { name: "Insights", href: "/insights", icon: Brain },
 ];
 
 export function Navigation() {
@@ -45,7 +47,7 @@ export function Navigation() {
   const [infografikiExpanded, setInfografikiExpanded] = useState(false);
   const pathname = usePathname();
 
-  const isInfografikiActive = pathname === "/infografiki" || pathname === "/trends";
+  const isInfografikiActive = pathname === "/infografiki" || pathname === "/trends" || pathname === "/insights";
 
   return (
     <>
@@ -86,6 +88,18 @@ export function Navigation() {
           >
             <Image className="h-4 w-4" />
             <span>Infografiki</span>
+          </Link>
+          <Link
+            href="/insights"
+            className={cn(
+              "flex items-center space-x-2 px-3 py-3 md:py-4 border-b-2 text-xs md:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0",
+              pathname === "/insights"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+            )}
+          >
+            <Brain className="h-4 w-4" />
+            <span>Insights</span>
           </Link>
         </div>
       </nav>
