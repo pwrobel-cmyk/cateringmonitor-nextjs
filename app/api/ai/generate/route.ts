@@ -31,13 +31,27 @@ export async function POST(request: Request) {
       })
     } else if (type === 'video') {
       const modelId = model || 'fal-ai/kling-video/v1.6/standard/text-to-video'
-      result = await fal.run(modelId, {
-        input: {
-          prompt,
-          duration: '5',
-          aspect_ratio: '16:9',
-        },
-      })
+
+      if (modelId === 'xai/grok-imagine-video/reference-to-video') {
+        result = await fal.run(modelId, {
+          input: {
+            prompt,
+            reference_image_urls: referenceUrls?.length ? referenceUrls : undefined,
+            duration: 8,
+            aspect_ratio: '16:9',
+            resolution: '720p',
+          },
+        })
+      } else {
+        result = await fal.run(modelId, {
+          input: {
+            prompt,
+            duration: '5',
+            aspect_ratio: '16:9',
+            ...(referenceUrls?.length ? { image_url: referenceUrls[0] } : {}),
+          },
+        })
+      }
     }
 
     // fal SDK wraps response in .data

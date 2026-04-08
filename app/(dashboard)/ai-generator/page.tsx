@@ -27,6 +27,7 @@ const VIDEO_MODELS = [
   { id: 'fal-ai/kling-video/v1.6/pro/text-to-video', name: 'Kling 1.6 Pro', desc: '5s, wysoka jakość', badge: 'Pro' },
   { id: 'fal-ai/minimax-video/image-to-video', name: 'MiniMax Image→Video', desc: 'Animuj zdjęcie', badge: 'Jakość' },
   { id: 'fal-ai/wan-t2v-v1.3', name: 'Wan T2V 1.3', desc: 'Cinematyczne video', badge: 'Pro' },
+  { id: 'xai/grok-imagine-video/reference-to-video', name: 'Grok Image→Video', desc: 'Animuj zdjęcie referencyjne, 8s 720p', badge: 'Pro' },
 ]
 
 const IMAGE_PROMPTS = [
