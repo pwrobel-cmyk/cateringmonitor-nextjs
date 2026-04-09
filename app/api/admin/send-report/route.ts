@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   for (const email of emails as string[]) {
     const { error } = await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || 'noreply@cateringmonitor.pl',
+      from: 'raporty@cateringmonitor.pl',
       to: email,
       subject: subject || 'Raport Catering Monitor',
       html: `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:sans-serif;max-width:900px;margin:0 auto;padding:20px;color:#111}table{border-collapse:collapse;width:100%}td,th{padding:6px 8px;border-bottom:1px solid #e5e7eb}h1,h2,h3{margin:0 0 8px}</style></head><body>${reportHtml}</body></html>`,
