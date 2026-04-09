@@ -46,7 +46,9 @@ export default function AdminUsersPage() {
   const [filter, setFilter] = useState<'all' | 'active' | 'trial'>('all')
   const [usersLoading, setUsersLoading] = useState(true)
   const [editUser, setEditUser] = useState<User | null>(null)
-  const [editForm, setEditForm] = useState({ full_name: '', status: '', trial_ends_at: '', brand_id: '', role: 'user', password: '' })
+  const [editForm, setEditForm] = useState({ full_name: '', status: '', trial_ends_at: '', brand_id: '', role: 'user' })
+  const [changePassword, setChangePassword] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [brands, setBrands] = useState<BrandOption[]>([])
 
@@ -98,7 +100,9 @@ export default function AdminUsersPage() {
 
   const openEdit = (u: User) => {
     setEditUser(u)
-    setEditForm({ full_name: u.full_name, status: u.status, trial_ends_at: u.trial_ends_at?.slice(0, 10) || '', brand_id: u.brand_id || '', role: u.role || 'user', password: '' })
+    setEditForm({ full_name: u.full_name, status: u.status, trial_ends_at: u.trial_ends_at?.slice(0, 10) || '', brand_id: u.brand_id || '', role: u.role || 'user' })
+    setChangePassword(false)
+    setNewPassword('')
   }
 
   const saveEdit = async () => {
@@ -114,7 +118,7 @@ export default function AdminUsersPage() {
     const extra: Record<string, any> = { userId: editUser.id }
     if (editForm.brand_id !== editUser.brand_id) extra.brandId = editForm.brand_id
     if (editForm.role !== editUser.role) extra.role = editForm.role
-    if (editForm.password) extra.password = editForm.password
+    if (changePassword && newPassword) extra.password = newPassword
 
     if (Object.keys(extra).length > 1) {
       await fetch('/api/admin/update-user', {
@@ -438,8 +442,13 @@ export default function AdminUsersPage() {
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium">Nowe hasło <span className="font-normal text-muted-foreground">(opcjonalne)</span></label>
-              <Input className="mt-1" type="password" placeholder="Pozostaw puste aby nie zmieniać" value={editForm.password} onChange={e => setEditForm(f => ({ ...f, password: e.target.value }))} />
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={changePassword} onChange={e => { setChangePassword(e.target.checked); if (!e.target.checked) setNewPassword('') }} />
+                <span className="text-sm font-medium">Zmień hasło</span>
+              </label>
+              {changePassword && (
+                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Nowe hasło" className="mt-2 w-full border rounded-lg px-3 py-2 text-sm bg-background" />
+              )}
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <Button variant="outline" onClick={() => setEditUser(null)}>Anuluj</Button>
