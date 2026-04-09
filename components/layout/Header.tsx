@@ -1,13 +1,13 @@
 'use client';
 
 import Link from "next/link";
-import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare, Users } from "lucide-react";
+import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare, Users, Bell } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCountry } from "@/contexts/CountryContext";
 import { Button } from "@/components/ui/button";
 import { useBrandsWithLimit } from "@/hooks/supabase/useBrandsWithLimit";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useRouter } from "next/navigation";
@@ -19,7 +19,18 @@ export function Header() {
   const { data: profile } = useUserProfile();
   const [isOpen, setIsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [urgentCount, setUrgentCount] = useState(0);
   const router = useRouter();
+  const fetchedRef = useRef(false);
+
+  useEffect(() => {
+    if (!user || fetchedRef.current) return
+    fetchedRef.current = true
+    fetch('/api/today-count')
+      .then(r => r.json())
+      .then(d => setUrgentCount(d.count || 0))
+      .catch(() => {})
+  }, [user])
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -49,6 +60,18 @@ export function Header() {
 
         {/* Desktop Menu */}
         <div className="hidden lg:flex items-center space-x-4 flex-shrink-0 w-auto">
+          {/* Bell notification */}
+          {user && (
+            <Link href="/today" className="relative flex items-center justify-center w-9 h-9 rounded-full hover:bg-muted transition-colors">
+              <Bell className="h-5 w-5 text-muted-foreground" />
+              {urgentCount > 0 && (
+                <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
+                  {urgentCount > 9 ? '9+' : urgentCount}
+                </span>
+              )}
+            </Link>
+          )}
+
           {/* Country selector */}
           <div className="flex items-center space-x-3 px-3 py-1.5 bg-muted rounded-lg">
             <button

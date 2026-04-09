@@ -15,10 +15,9 @@ import {
   Image,
   ChevronDown,
   TrendingUp,
-  Zap,
   Sparkles,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   Collapsible,
@@ -27,7 +26,6 @@ import {
 } from "@/components/ui/collapsible";
 
 const navigation: { name: string; href: string; icon: any; beta?: boolean }[] = [
-  { name: "Co zrobić dziś", href: "/today", icon: Zap },
   { name: "Przegląd", href: "/dashboard", icon: Home },
   { name: "Porównywarka", href: "/compare", icon: ArrowLeftRight },
   { name: "Pakiety & Diety", href: "/packages", icon: Package },
@@ -47,17 +45,9 @@ const infografikiSubItems = [
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
   const [infografikiExpanded, setInfografikiExpanded] = useState(false);
-  const [urgentCount, setUrgentCount] = useState(0);
   const pathname = usePathname();
 
   const isInfografikiActive = pathname === "/infografiki" || pathname === "/trends";
-
-  // Read urgent count from localStorage (set by /today page)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const stored = localStorage.getItem('urgentCount');
-    setUrgentCount(stored ? parseInt(stored, 10) || 0 : 0);
-  }, [pathname]);
 
   return (
     <>
@@ -67,7 +57,6 @@ export function Navigation() {
           {navigation.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
-            const isTodayWithBadge = item.href === '/today' && urgentCount > 0;
             return (
               <Link
                 key={item.name}
@@ -81,11 +70,6 @@ export function Navigation() {
               >
                 <Icon className="h-4 w-4" />
                 <span>{item.name}</span>
-                {isTodayWithBadge && (
-                  <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                    {urgentCount}
-                  </span>
-                )}
                 {item.beta && (
                   <span className="bg-primary/20 text-primary px-1 py-0.5 rounded font-medium ml-1" style={{ fontSize: '9px' }}>BETA</span>
                 )}
@@ -114,18 +98,12 @@ export function Navigation() {
           <SheetTrigger className="w-full flex items-center justify-center gap-2 border border-input bg-background px-3 py-1.5 text-sm font-medium rounded-lg hover:bg-muted transition-colors">
             <Menu className="h-4 w-4" />
             Menu
-            {urgentCount > 0 && (
-              <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                {urgentCount}
-              </span>
-            )}
           </SheetTrigger>
           <SheetContent side="left" className="w-[280px]">
             <div className="flex flex-col space-y-1 mt-6">
               {navigation.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
-                const isTodayWithBadge = item.href === '/today' && urgentCount > 0;
                 return (
                   <Link
                     key={item.name}
@@ -140,11 +118,6 @@ export function Navigation() {
                   >
                     <Icon className="h-5 w-5" />
                     <span className="flex-1">{item.name}</span>
-                    {isTodayWithBadge && (
-                      <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">
-                        {urgentCount}
-                      </span>
-                    )}
                     {item.beta && (
                       <span className="bg-primary/20 text-primary px-1 py-0.5 rounded font-medium" style={{ fontSize: '9px' }}>BETA</span>
                     )}
