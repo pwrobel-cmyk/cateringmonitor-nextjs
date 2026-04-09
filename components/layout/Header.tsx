@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useCountry } from "@/contexts/CountryContext";
 import { Button } from "@/components/ui/button";
 import { useBrandsWithLimit } from "@/hooks/supabase/useBrandsWithLimit";
+import { supabase } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useState, useEffect, useRef } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -26,10 +27,13 @@ export function Header() {
   useEffect(() => {
     if (!user || fetchedRef.current) return
     fetchedRef.current = true
-    fetch('/api/today-count')
-      .then(r => r.json())
-      .then(d => setUrgentCount(d.count || 0))
-      .catch(() => {})
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const token = session?.access_token
+      fetch('/api/today-count', token ? { headers: { authorization: `Bearer ${token}` } } : {})
+        .then(r => r.json())
+        .then(d => setUrgentCount(d.count || 0))
+        .catch(() => {})
+    })
   }, [user])
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   LineChart, Line, PieChart, Pie, Cell,
@@ -165,12 +166,13 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export default function ReviewManagerPage() {
   const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
+  const searchParams = useSearchParams()
 
   const [brandId, setBrandId]       = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
   const [userEmail, setUserEmail]   = useState<string | null>(null)
   const [fullName, setFullName]     = useState<string | null>(null)
-  const [showAnalytics, setShowAnalytics] = useState(false)
+  const [showAnalytics, setShowAnalytics] = useState(() => searchParams.get('tab') === 'analytics')
 
   // Reviews list
   const [reviews, setReviews]               = useState<Review[]>([])

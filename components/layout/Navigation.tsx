@@ -15,7 +15,6 @@ import {
   Image,
   ChevronDown,
   TrendingUp,
-  Sparkles,
 } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -34,7 +33,6 @@ const navigation: { name: string; href: string; icon: any; beta?: boolean }[] = 
   { name: "Raporty", href: "/reports", icon: BarChart3 },
   { name: "Screenshots", href: "/screenshots", icon: Camera },
   { name: "Review Manager", href: "/review-manager", icon: MessageSquare, beta: true },
-  { name: "Generator AI", href: "/ai-generator", icon: Sparkles, beta: true },
 ];
 
 const infografikiSubItems = [

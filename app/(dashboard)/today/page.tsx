@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase/client'
-import { useReviewsStatistics } from '@/hooks/supabase/useReviewsStatistics'
 import { useBrands } from '@/hooks/supabase/useBrands'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -81,16 +80,17 @@ export default function TodayPage() {
       })
   }, [user, isAdmin, allBrands, brandId])
 
-  const { data: stats } = useReviewsStatistics(brandId)
-
   const loadData = useCallback(async () => {
+    if (!brandId) return
     setLoading(true)
 
     const now = new Date()
     const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString()
 
-    const [negRes, priceRes, discRes] = await Promise.all([
+    const [negRes, priceRes, discRes, currReviews, prevReviews] = await Promise.all([
       // A) Negatywne opinie bez odpowiedzi — ostatnie 48h
       (supabase as any)
         .from('reviews')
@@ -99,6 +99,7 @@ export default function TodayPage() {
         .gte('review_date', twoDaysAgo)
         .not('status', 'in', '("done","skipped")')
         .eq('is_approved', true)
+        .eq('brand_id', brandId)
         .limit(20),
 
       // B) Zmiany cen — ostatnie 7 dni
@@ -117,6 +118,23 @@ export default function TodayPage() {
         .gte('valid_from', sevenDaysAgo.slice(0, 10))
         .order('discount_percentage', { ascending: false })
         .limit(10),
+
+      // D) Oceny bieżące 30 dni
+      (supabase as any)
+        .from('reviews')
+        .select('rating')
+        .eq('brand_id', brandId)
+        .eq('is_approved', true)
+        .gte('review_date', thirtyDaysAgo.slice(0, 10)),
+
+      // E) Oceny poprzednie 30 dni
+      (supabase as any)
+        .from('reviews')
+        .select('rating')
+        .eq('brand_id', brandId)
+        .eq('is_approved', true)
+        .gte('review_date', sixtyDaysAgo.slice(0, 10))
+        .lt('review_date', thirtyDaysAgo.slice(0, 10)),
     ])
 
     const negativeReviews: any[] = negRes.data || []
@@ -206,6 +224,32 @@ export default function TodayPage() {
       })
     }
 
+    // 4. Spadek oceny / velocity
+    const currRatings: any[] = currReviews.data || []
+    const prevRatings: any[] = prevReviews.data || []
+    const currAvg = currRatings.length > 0 ? currRatings.reduce((s: number, r: any) => s + r.rating, 0) / currRatings.length : 0
+    const prevAvg = prevRatings.length > 0 ? prevRatings.reduce((s: number, r: any) => s + r.rating, 0) / prevRatings.length : 0
+    if (prevAvg > 0 && currAvg > 0 && currAvg - prevAvg < -0.2) {
+      recs.push({
+        priority: 'warning',
+        category: 'Ocena',
+        title: 'Spadek średniej oceny marki',
+        description: `Poprzednie 30 dni: ${prevAvg.toFixed(2)}★ → Bieżące 30 dni: ${currAvg.toFixed(2)}★`,
+        action_label: 'Sprawdź opinie',
+        action_href: '/review-manager?tab=analytics',
+      })
+    }
+    if (prevRatings.length > 0 && currRatings.length < prevRatings.length * 0.7) {
+      recs.push({
+        priority: 'info',
+        category: 'Aktywność',
+        title: 'Spada aktywność opinii',
+        description: `Bieżące 30 dni: ${currRatings.length} opinii vs poprzednie: ${prevRatings.length} (−${Math.round((1 - currRatings.length / prevRatings.length) * 100)}%)`,
+        action_label: 'Zobacz trendy',
+        action_href: '/reports',
+      })
+    }
+
     setRecommendations(recs)
     setUpdatedAt(new Date())
 
@@ -216,46 +260,7 @@ export default function TodayPage() {
     }
 
     setLoading(false)
-  }, [])
-
-  // Dodaj rekomendacje na podstawie statystyk (rating/velocity)
-  useEffect(() => {
-    if (!stats?.monthlyTrends || stats.monthlyTrends.length < 2) return
-    const sorted = [...stats.monthlyTrends].sort((a: any, b: any) =>
-      String(a.month).localeCompare(String(b.month))
-    )
-    const last = sorted[sorted.length - 1] as any
-    const prev = sorted[sorted.length - 2] as any
-
-    const ratingDrop = prev?.avgRating && last?.avgRating && last.avgRating - prev.avgRating < -0.2
-    const velocityDrop = prev?.count && last?.count && last.count < prev.count * 0.7
-
-    setRecommendations(existing => {
-      const filtered = existing.filter(r => r.category !== 'Ocena' && r.category !== 'Aktywność')
-      const extras: Recommendation[] = []
-      if (ratingDrop) {
-        extras.push({
-          priority: 'warning',
-          category: 'Ocena',
-          title: 'Spadek oceny marki',
-          description: `Poprzedni miesiąc: ${prev.avgRating?.toFixed(2)} → Obecny: ${last.avgRating?.toFixed(2)}`,
-          action_label: 'Sprawdź opinie',
-          action_href: '/reviews',
-        })
-      }
-      if (velocityDrop) {
-        extras.push({
-          priority: 'info',
-          category: 'Aktywność',
-          title: 'Spada aktywność opinii',
-          description: `Bieżący miesiąc: ${last.count} opinii vs poprzedni: ${prev.count} (−${Math.round((1 - last.count / prev.count) * 100)}%)`,
-          action_label: 'Zobacz trendy',
-          action_href: '/reports',
-        })
-      }
-      return [...filtered, ...extras]
-    })
-  }, [stats])
+  }, [brandId])
 
   useEffect(() => {
     if (hasAssignment === false) return
