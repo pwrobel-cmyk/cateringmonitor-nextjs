@@ -15,6 +15,8 @@ import {
   Image,
   ChevronDown,
   TrendingUp,
+  Users,
+  FileBarChart2,
 } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -46,6 +48,7 @@ export function Navigation() {
   const pathname = usePathname();
 
   const isInfografikiActive = pathname === "/infografiki" || pathname === "/trends";
+  const isAdminSection = pathname.startsWith("/admin");
 
   return (
     <>
@@ -87,6 +90,34 @@ export function Navigation() {
             <Image className="h-4 w-4" />
             <span>Infografiki</span>
           </Link>
+
+          {isAdminSection && (
+            <>
+              <div className="w-px h-6 bg-border self-center mx-1 flex-shrink-0" />
+              {[
+                { name: "Użytkownicy", href: "/admin/users", icon: Users },
+                { name: "Generuj raport", href: "/admin/reports", icon: FileBarChart2 },
+              ].map(item => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center space-x-2 px-3 py-3 md:py-4 border-b-2 text-xs md:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0",
+                      isActive
+                        ? "border-primary text-primary"
+                        : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span>{item.name}</span>
+                  </Link>
+                );
+              })}
+            </>
+          )}
         </div>
       </nav>
 

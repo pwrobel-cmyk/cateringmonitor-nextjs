@@ -139,3 +139,19 @@ body {
     @apply font-sans;
   }
 }
+
+@media print {
+  nav,
+  header,
+  .no-print {
+    display: none !important;
+  }
+  .report-content {
+    width: 100%;
+    max-width: 100%;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
