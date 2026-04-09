@@ -12,14 +12,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Shield, Users, BarChart3, Pencil, RefreshCw, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { supabase } from '@/lib/supabase/client'
 
 const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
 
 type User = {
   id: string; email: string; created_at: string; last_sign_in_at: string | null
   full_name: string; avatar_url: string; status: string; trial_ends_at: string | null
-  company_name: string; brand_name: string; last_activity: string | null
+  company_name: string; brand_name: string; brand_id: string; role: string; last_activity: string | null
 }
+
+type BrandOption = { id: string; name: string }
 
 type SummaryRow = {
   userId: string; name: string; email: string; avatar: string
@@ -43,8 +46,9 @@ export default function AdminUsersPage() {
   const [filter, setFilter] = useState<'all' | 'active' | 'trial'>('all')
   const [usersLoading, setUsersLoading] = useState(true)
   const [editUser, setEditUser] = useState<User | null>(null)
-  const [editForm, setEditForm] = useState({ full_name: '', status: '', trial_ends_at: '' })
+  const [editForm, setEditForm] = useState({ full_name: '', status: '', trial_ends_at: '', brand_id: '', role: 'user', password: '' })
   const [saving, setSaving] = useState(false)
+  const [brands, setBrands] = useState<BrandOption[]>([])
 
   // Analytics tab
   const [summary, setSummary] = useState<SummaryRow[]>([])
@@ -62,6 +66,11 @@ export default function AdminUsersPage() {
       setUsers(d.users || [])
       setUsersLoading(false)
     })
+  }, [])
+
+  useEffect(() => {
+    ;(supabase as any).from('brands').select('id, name').eq('is_active', true).order('name')
+      .then(({ data }: any) => setBrands(data || []))
   }, [])
 
   const loadAnalytics = useCallback(() => {
@@ -89,18 +98,34 @@ export default function AdminUsersPage() {
 
   const openEdit = (u: User) => {
     setEditUser(u)
-    setEditForm({ full_name: u.full_name, status: u.status, trial_ends_at: u.trial_ends_at?.slice(0, 10) || '' })
+    setEditForm({ full_name: u.full_name, status: u.status, trial_ends_at: u.trial_ends_at?.slice(0, 10) || '', brand_id: u.brand_id || '', role: u.role || 'user', password: '' })
   }
 
   const saveEdit = async () => {
     if (!editUser) return
     setSaving(true)
+
     await fetch('/api/admin/users', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: editUser.id, ...editForm, trial_ends_at: editForm.trial_ends_at || null }),
+      body: JSON.stringify({ userId: editUser.id, full_name: editForm.full_name, status: editForm.status, trial_ends_at: editForm.trial_ends_at || null }),
     })
-    setUsers(prev => prev.map(u => u.id === editUser.id ? { ...u, ...editForm } : u))
+
+    const extra: Record<string, any> = { userId: editUser.id }
+    if (editForm.brand_id !== editUser.brand_id) extra.brandId = editForm.brand_id
+    if (editForm.role !== editUser.role) extra.role = editForm.role
+    if (editForm.password) extra.password = editForm.password
+
+    if (Object.keys(extra).length > 1) {
+      await fetch('/api/admin/update-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(extra),
+      })
+    }
+
+    const brandName = brands.find(b => b.id === editForm.brand_id)?.name || ''
+    setUsers(prev => prev.map(u => u.id === editUser.id ? { ...u, full_name: editForm.full_name, status: editForm.status, trial_ends_at: editForm.trial_ends_at || null, brand_id: editForm.brand_id, brand_name: brandName, role: editForm.role } : u))
     setSaving(false)
     setEditUser(null)
   }
@@ -387,6 +412,34 @@ export default function AdminUsersPage() {
             <div>
               <label className="text-sm font-medium">Trial do</label>
               <Input className="mt-1" type="date" value={editForm.trial_ends_at} onChange={e => setEditForm(f => ({ ...f, trial_ends_at: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Domyślna marka</label>
+              <select
+                className="mt-1 w-full border border-input rounded-md px-3 py-2 text-sm bg-background"
+                value={editForm.brand_id}
+                onChange={e => setEditForm(f => ({ ...f, brand_id: e.target.value }))}
+              >
+                <option value="">— brak —</option>
+                {brands.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Rola</label>
+              <select
+                className="mt-1 w-full border border-input rounded-md px-3 py-2 text-sm bg-background"
+                value={editForm.role}
+                onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}
+              >
+                <option value="user">user</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Nowe hasło <span className="font-normal text-muted-foreground">(opcjonalne)</span></label>
+              <Input className="mt-1" type="password" placeholder="Pozostaw puste aby nie zmieniać" value={editForm.password} onChange={e => setEditForm(f => ({ ...f, password: e.target.value }))} />
             </div>
             <div className="flex gap-2 justify-end pt-2">
               <Button variant="outline" onClick={() => setEditUser(null)}>Anuluj</Button>

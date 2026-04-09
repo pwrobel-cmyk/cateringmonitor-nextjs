@@ -18,7 +18,7 @@ export async function GET() {
   const { data: { users: authUsers } } = await service.auth.admin.listUsers({ perPage: 1000 })
 
   // Profiles
-  const { data: profiles } = await service.from('profiles').select('user_id, full_name, avatar_url, status, trial_ends_at, company_name')
+  const { data: profiles } = await service.from('profiles').select('user_id, full_name, avatar_url, status, trial_ends_at, company_name, role')
 
   // Brand assignments
   const { data: assignments } = await service.from('user_brand_assignments').select('user_id, brand_id, brands(name)')
@@ -36,8 +36,8 @@ export async function GET() {
   const profileMap: Record<string, any> = {}
   for (const p of (profiles || [])) profileMap[p.user_id] = p
 
-  const assignMap: Record<string, string> = {}
-  for (const a of (assignments || [])) assignMap[a.user_id] = (a.brands as any)?.name || ''
+  const assignMap: Record<string, { id: string; name: string }> = {}
+  for (const a of (assignments || [])) assignMap[a.user_id] = { id: (a as any).brand_id || '', name: (a.brands as any)?.name || '' }
 
   const users = authUsers.map(u => ({
     id: u.id,
@@ -49,7 +49,9 @@ export async function GET() {
     status: profileMap[u.id]?.status || 'active',
     trial_ends_at: profileMap[u.id]?.trial_ends_at || null,
     company_name: profileMap[u.id]?.company_name || '',
-    brand_name: assignMap[u.id] || '',
+    brand_id: assignMap[u.id]?.id || '',
+    brand_name: assignMap[u.id]?.name || '',
+    role: profileMap[u.id]?.role || 'user',
     last_activity: lastVisit[u.id] || null,
   }))
 
