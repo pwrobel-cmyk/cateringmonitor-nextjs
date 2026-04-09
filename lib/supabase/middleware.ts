@@ -53,6 +53,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  if (user && pathname.startsWith("/admin") && user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    return NextResponse.redirect(url);
+  }
+
   if (user && pathname === "/auth") {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
