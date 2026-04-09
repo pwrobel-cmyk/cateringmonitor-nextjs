@@ -24,15 +24,18 @@ interface ReportSummary {
 }
 
 function buildEmailHtml(summary: ReportSummary, reportLink: string): string {
-  const trendRow = summary.trend
-    ? `<tr><td colspan="4" style="padding-top:16px;">
-        <div style="background:#f0f4ff;border-left:4px solid #1e3a5f;padding:12px 16px;border-radius:0 6px 6px 0;">
-          <span style="color:#1e3a5f;font-size:14px;">
-            Trend w analizowanym okresie: <strong>${summary.trend}</strong>
-            ${summary.bestMonth ? ` · Najlepszy miesiąc: <strong>${summary.bestMonth}</strong>` : ''}
-          </span>
-        </div>
-      </td></tr>`
+  const trendHtml = summary.trend
+    ? `<tr>
+        <td colspan="2" style="padding-top:16px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="background:#f0f4ff;border-left:4px solid #1a3557;padding:12px 16px;">
+                <span style="color:#1a3557;font-size:13px;">Trend: <strong>${summary.trend}</strong>${summary.bestMonth ? ' &middot; Najlepszy miesiąc: <strong>' + summary.bestMonth.replace(/★/g, '') + '</strong>' : ''}</span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`
     : ''
 
   return `<!DOCTYPE html>
@@ -41,48 +44,56 @@ function buildEmailHtml(summary: ReportSummary, reportLink: string): string {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
 </head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f4f6f8;margin:0;padding:0;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:30px 0;">
+<body style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f8;margin:0;padding:0;">
+  <table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f6f8" style="padding:30px 0;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);max-width:600px;">
+        <table width="560" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="border:1px solid #e2e8f0;">
 
           <!-- Header -->
           <tr>
-            <td style="background:#1a3557;padding:32px 40px;text-align:center;">
-              <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:700;letter-spacing:-0.3px;">${summary.brandName}</h1>
-              <p style="color:#93c5fd;margin:8px 0 0;font-size:13px;">Raport analizy opinii klientów</p>
-              <p style="color:#bfdbfe;margin:4px 0 0;font-size:13px;">${summary.dateFrom} – ${summary.dateTo}</p>
+            <td bgcolor="#1a3557" style="padding:28px 36px;text-align:center;">
+              <div style="color:#ffffff;font-size:20px;font-weight:bold;margin:0;">${summary.brandName}</div>
+              <div style="color:#93c5fd;font-size:12px;margin:6px 0 0;">Raport analizy opinii klientow</div>
+              <div style="color:#bfdbfe;font-size:12px;margin:3px 0 0;">${summary.dateFrom} &ndash; ${summary.dateTo}</div>
             </td>
           </tr>
 
-          <!-- Stats -->
+          <!-- Stats heading -->
           <tr>
-            <td style="padding:32px 40px 24px;">
-              <h2 style="color:#1a3557;font-size:16px;font-weight:600;margin:0 0 20px;text-transform:uppercase;letter-spacing:0.5px;">Podsumowanie okresu</h2>
+            <td style="padding:28px 36px 12px;">
+              <div style="color:#1a3557;font-size:13px;font-weight:bold;text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid #e2e8f0;padding-bottom:10px;">Podsumowanie okresu</div>
+            </td>
+          </tr>
+
+          <!-- Stats 2x2 -->
+          <tr>
+            <td style="padding:0 36px 8px;">
               <table width="100%" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td align="center" width="25%" style="background:#f0f4ff;border-radius:8px;padding:18px 8px;">
-                    <div style="font-size:26px;font-weight:700;color:#1a3557;line-height:1;">${summary.stats.avgRating}</div>
-                    <div style="font-size:11px;color:#6b7280;margin-top:6px;">★&nbsp;Średnia ocena</div>
+                  <td width="48%" align="center" bgcolor="#eef2ff" style="padding:16px;border-radius:6px;">
+                    <div style="font-size:28px;font-weight:bold;color:#1a3557;">${summary.stats.avgRating}</div>
+                    <div style="font-size:11px;color:#6b7280;margin-top:4px;">Srednia ocena (max 5)</div>
                   </td>
-                  <td width="12"></td>
-                  <td align="center" width="25%" style="background:#f0fdf4;border-radius:8px;padding:18px 8px;">
-                    <div style="font-size:26px;font-weight:700;color:#16a34a;line-height:1;">${summary.stats.positivePercent}%</div>
-                    <div style="font-size:11px;color:#6b7280;margin-top:6px;">Pozytywnych</div>
-                  </td>
-                  <td width="12"></td>
-                  <td align="center" width="25%" style="background:#fff7ed;border-radius:8px;padding:18px 8px;">
-                    <div style="font-size:26px;font-weight:700;color:#ea580c;line-height:1;">${summary.stats.negativePercent}%</div>
-                    <div style="font-size:11px;color:#6b7280;margin-top:6px;">Negatywnych</div>
-                  </td>
-                  <td width="12"></td>
-                  <td align="center" width="25%" style="background:#fafafa;border-radius:8px;padding:18px 8px;border:1px solid #e5e7eb;">
-                    <div style="font-size:26px;font-weight:700;color:#374151;line-height:1;">${summary.stats.count.toLocaleString('pl-PL')}</div>
-                    <div style="font-size:11px;color:#6b7280;margin-top:6px;">Opinii</div>
+                  <td width="4%"></td>
+                  <td width="48%" align="center" bgcolor="#f0fdf4" style="padding:16px;border-radius:6px;">
+                    <div style="font-size:28px;font-weight:bold;color:#16a34a;">${summary.stats.positivePercent}%</div>
+                    <div style="font-size:11px;color:#6b7280;margin-top:4px;">Pozytywnych opinii (4-5)</div>
                   </td>
                 </tr>
-                ${trendRow}
+                <tr><td colspan="3" style="padding:6px 0;"></td></tr>
+                <tr>
+                  <td width="48%" align="center" bgcolor="#fff7ed" style="padding:16px;border-radius:6px;">
+                    <div style="font-size:28px;font-weight:bold;color:#ea580c;">${summary.stats.negativePercent}%</div>
+                    <div style="font-size:11px;color:#6b7280;margin-top:4px;">Negatywnych opinii (1-2)</div>
+                  </td>
+                  <td width="4%"></td>
+                  <td width="48%" align="center" bgcolor="#f8fafc" style="padding:16px;border-radius:6px;border:1px solid #e2e8f0;">
+                    <div style="font-size:28px;font-weight:bold;color:#374151;">${summary.stats.count.toLocaleString('pl-PL')}</div>
+                    <div style="font-size:11px;color:#6b7280;margin-top:4px;">Liczba opinii w okresie</div>
+                  </td>
+                </tr>
+                ${trendHtml}
               </table>
             </td>
           </tr>

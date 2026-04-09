@@ -50,6 +50,7 @@ export async function updateSession(request: NextRequest) {
   if (!user && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth";
+    url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
 
@@ -60,8 +61,10 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && pathname === "/auth") {
+    const next = request.nextUrl.searchParams.get("next");
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = next && next.startsWith("/") ? next : "/dashboard";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
