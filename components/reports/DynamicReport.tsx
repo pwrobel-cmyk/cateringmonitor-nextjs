@@ -424,6 +424,48 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
     enabled: !!discountData, // wait for discount data so after-discount chart is correct
   })
 
+  // ── Brand ranking query ─────────────────────────────────────────────────────
+  const { data: brandRanking } = useQuery({
+    queryKey: ["report-brand-ranking", dateFrom, dateTo],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from("reviews")
+        .select("brand_id, rating, brands(name, logo_url)")
+        .eq("is_approved", true)
+        .gte("review_date", dateFrom)
+        .lte("review_date", dateTo)
+      const rows = (data || []) as any[]
+
+      const byBrand: Record<string, { name: string; logoUrl: string | null; brandId: string; ratings: number[] }> = {}
+      rows.forEach((r: any) => {
+        const bid = r.brand_id
+        if (!bid) return
+        if (!byBrand[bid]) byBrand[bid] = { name: r.brands?.name || "Unknown", logoUrl: r.brands?.logo_url || null, brandId: bid, ratings: [] }
+        if (r.rating != null) byBrand[bid].ratings.push(r.rating)
+      })
+
+      return Object.values(byBrand)
+        .filter(b => b.ratings.length > 0)
+        .map(b => {
+          const count = b.ratings.length
+          const avg = b.ratings.reduce((a, c) => a + c, 0) / count
+          const positive = b.ratings.filter(r => r >= 4).length
+          const negative = b.ratings.filter(r => r <= 2).length
+          return {
+            brandId: b.brandId,
+            name: b.name,
+            logoUrl: b.logoUrl,
+            count,
+            avgRating: parseFloat(avg.toFixed(2)),
+            positivePercent: parseFloat(((positive / count) * 100).toFixed(1)),
+            negativePercent: parseFloat(((negative / count) * 100).toFixed(1)),
+          }
+        })
+        .sort((a, b) => b.avgRating - a.avgRating)
+        .slice(0, 15)
+    },
+  })
+
   // ── Users (for email modal) ─────────────────────────────────────────────────
   const { data: usersData } = useQuery({
     queryKey: ["admin-users-for-email"],
@@ -471,6 +513,13 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
   const firstHalf     = periodStats?.[1]
   const secondHalf    = periodStats?.[2]
   const lastMonthStat = periodStats?.[3]
+
+  const brandRankPosition = useMemo(() => {
+    if (!brandId || !brandRanking) return null
+    const idx = brandRanking.findIndex(b => b.brandId === brandId)
+    if (idx === -1) return null
+    return { position: idx + 1, total: brandRanking.length }
+  }, [brandId, brandRanking])
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
@@ -556,6 +605,16 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
               )}
             </CardContent>
           </Card>
+
+          {/* Rank badge */}
+          {brandRankPosition && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="border-primary text-primary font-semibold px-3 py-1 text-sm">
+                <Target className="h-4 w-4 mr-1" />
+                Pozycja #{brandRankPosition.position} z {brandRankPosition.total} marek w rankingu opinii
+              </Badge>
+            </div>
+          )}
 
           {/* 4 period KPI cards */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -944,6 +1003,75 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
             </CardContent>
           </Card>
         </section>
+
+        <Separator />
+
+        {/* ── SEKCJA: Ranking marek ── */}
+        {brandRanking && brandRanking.length > 0 && (
+          <section className="space-y-6">
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <Target className="h-6 w-6 text-primary" />
+              Ranking marek wg opinii w tym okresie
+            </h2>
+            {brandRankPosition && (
+              <Badge variant="outline" className="border-primary text-primary font-semibold px-3 py-1 text-sm">
+                Pozycja #{brandRankPosition.position} z {brandRankPosition.total} marek
+              </Badge>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-muted-foreground text-left">
+                    <th className="py-2 pr-3 w-8">#</th>
+                    <th className="py-2 pr-3 w-10"></th>
+                    <th className="py-2 pr-4">Marka</th>
+                    <th className="py-2 pr-4 text-right">Liczba opinii</th>
+                    <th className="py-2 pr-4 text-right">Średnia ocena</th>
+                    <th className="py-2 pr-4 text-right">% pozytywnych</th>
+                    <th className="py-2 text-right">% negatywnych</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {brandRanking.map((b, idx) => {
+                    const isSelected = brandId && b.brandId === brandId
+                    return (
+                      <tr
+                        key={b.brandId}
+                        className={isSelected ? "bg-primary/10 font-semibold border-l-4 border-l-primary" : "border-b border-border/40"}
+                      >
+                        <td className="py-2 pr-3 text-muted-foreground">{idx + 1}</td>
+                        <td className="py-2 pr-3">
+                          {b.logoUrl ? (
+                            <img src={b.logoUrl} alt={b.name} className="h-6 w-6 object-contain rounded" />
+                          ) : (
+                            <div className="h-6 w-6 rounded bg-muted flex items-center justify-center">
+                              <MessageSquare className="h-3 w-3 text-muted-foreground" />
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <span>{b.name}</span>
+                          {isSelected && (
+                            <Badge className="ml-2 text-xs py-0" variant="default">Twoja marka</Badge>
+                          )}
+                        </td>
+                        <td className="py-2 pr-4 text-right">{b.count.toLocaleString("pl-PL")}</td>
+                        <td className="py-2 pr-4 text-right">
+                          <span className="flex items-center justify-end gap-1">
+                            {b.avgRating.toFixed(2)}
+                            <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+                          </span>
+                        </td>
+                        <td className="py-2 pr-4 text-right text-green-600">{b.positivePercent}%</td>
+                        <td className="py-2 text-right text-red-600">{b.negativePercent}%</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         <Separator />
 
