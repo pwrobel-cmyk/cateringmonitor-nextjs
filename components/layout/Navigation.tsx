@@ -16,7 +16,6 @@ import {
   ChevronDown,
   TrendingUp,
   Users,
-  FileBarChart2,
 } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -96,7 +95,6 @@ export function Navigation() {
               <div className="w-px h-6 bg-border self-center mx-1 flex-shrink-0" />
               {[
                 { name: "Użytkownicy", href: "/admin/users", icon: Users },
-                { name: "Generuj raport", href: "/admin/reports", icon: FileBarChart2 },
               ].map(item => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
