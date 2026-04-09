@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare, Users, Bell } from "lucide-react";
+import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare, Users, Bell, Settings } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCountry } from "@/contexts/CountryContext";
 import { Button } from "@/components/ui/button";
@@ -129,6 +129,9 @@ export function Header() {
                     <p className="text-sm font-medium">{profile?.full_name || "Użytkownik"}</p>
                     <p className="text-xs text-gray-500">{user.email}</p>
                   </div>
+                  <button onClick={() => { router.push('/settings'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                    <Settings className="h-4 w-4" /> Ustawienia
+                  </button>
                   <button onClick={() => { router.push('/pricing'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
                     <CreditCard className="h-4 w-4" /> Subskrypcja
                   </button>
