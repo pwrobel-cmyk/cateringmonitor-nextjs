@@ -51,7 +51,7 @@ export async function GET() {
     company_name: profileMap[u.id]?.company_name || '',
     brand_id: assignMap[u.id]?.id || '',
     brand_name: assignMap[u.id]?.name || '',
-    role: profileMap[u.id]?.role || 'user',
+    role: profileMap[u.id]?.role || (u as any).app_metadata?.role || (u as any).user_metadata?.role || 'user',
     last_activity: lastVisit[u.id] || null,
   }))
 
