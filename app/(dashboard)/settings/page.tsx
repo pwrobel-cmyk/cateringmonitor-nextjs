@@ -353,7 +353,7 @@ function MyReports({ userId }: { userId: string | undefined }) {
   }
 
   return (
-    <Card>
+    <Card id="raporty">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <FileBarChart2 className="h-4 w-4" /> Moje raporty

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from "next/link";
-import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare, Users, Bell, Settings } from "lucide-react";
+import { Building2, TrendingUp, LogOut, Menu, CreditCard, ClipboardList, Shield, Bot, MessageSquare, Users, Bell, Settings, FileBarChart2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCountry } from "@/contexts/CountryContext";
 import { Button } from "@/components/ui/button";
@@ -138,6 +138,9 @@ export function Header() {
                   <button onClick={() => { router.push('/backlog'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
                     <ClipboardList className="h-4 w-4" /> Backlog zgłoszeń
                   </button>
+                  <button onClick={() => { router.push('/settings#raporty'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                    <FileBarChart2 className="h-4 w-4" /> Moje raporty
+                  </button>
                   {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
                     <>
                       <div className="border-t border-gray-100 my-1" />
@@ -234,6 +237,14 @@ export function Header() {
                   >
                     <ClipboardList className="h-4 w-4 mr-2" />
                     Backlog zgłoszeń
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start"
+                    onClick={() => { router.push("/settings#raporty"); setIsOpen(false); }}
+                  >
+                    <FileBarChart2 className="h-4 w-4 mr-2" />
+                    Moje raporty
                   </Button>
                   {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
                     <Button
