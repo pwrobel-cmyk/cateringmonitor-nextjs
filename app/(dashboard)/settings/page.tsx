@@ -8,9 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { toast } from 'sonner'
-import { User, Lock, Building2, Bell, Camera } from 'lucide-react'
+import { User, Lock, Building2, Bell, Camera, FileBarChart2, ExternalLink, Copy } from 'lucide-react'
 import { useUserProfile } from '@/hooks/useUserProfile'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import Link from 'next/link'
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -313,6 +314,92 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Moje raporty ── */}
+      <MyReports userId={user?.id} />
     </div>
+  )
+}
+
+function MyReports({ userId }: { userId: string | undefined }) {
+  const { data: reports = [], isLoading } = useQuery({
+    queryKey: ['my-custom-reports', userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('custom_reports')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+      return (data || []) as {
+        id: string
+        title: string
+        brand_name: string
+        date_from: string
+        date_to: string
+        created_at: string
+      }[]
+    },
+  })
+
+  const copyLink = async (id: string) => {
+    const link = `${window.location.origin}/reports/custom/${id}`
+    try {
+      await navigator.clipboard.writeText(link)
+      toast.success('Link skopiowany do schowka')
+    } catch {
+      toast.error('Nie udało się skopiować linku')
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <FileBarChart2 className="h-4 w-4" /> Moje raporty
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Ładowanie…</p>
+        ) : reports.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Brak przypisanych raportów. Administrator może przypisać Ci raport z Generatora Raportów.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {reports.map(r => {
+              const createdAt = (() => {
+                try { return new Date(r.created_at).toLocaleDateString('pl-PL') } catch { return '' }
+              })()
+              return (
+                <div key={r.id} className="flex items-start justify-between gap-4 p-3 rounded-lg border bg-muted/30">
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate">{r.title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {r.brand_name} · {r.date_from} – {r.date_to}
+                    </p>
+                    {createdAt && (
+                      <p className="text-xs text-muted-foreground">Utworzony {createdAt}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0">
+                    <Link href={`/reports/custom/${r.id}`}>
+                      <Button size="sm" variant="outline">
+                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                        Otwórz
+                      </Button>
+                    </Link>
+                    <Button size="sm" variant="ghost" onClick={() => copyLink(r.id)}>
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }

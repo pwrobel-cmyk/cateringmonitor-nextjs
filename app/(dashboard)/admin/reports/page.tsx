@@ -3,13 +3,17 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
+import { useAuth } from '@/contexts/AuthContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { FileBarChart2 } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { FileBarChart2, UserPlus, Copy, Check } from 'lucide-react'
 import { DynamicReport } from '@/components/reports/DynamicReport'
+import { toast } from 'sonner'
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, startOfWeek, endOfWeek, subWeeks, subMonths, subQuarters, startOfQuarter, endOfQuarter } from 'date-fns'
 
 type DateRangeType = 'last_week' | 'last_month' | 'last_quarter' | 'specific_month' | 'year'
@@ -24,18 +28,15 @@ function computeDateRange(
 
   switch (type) {
     case 'last_week': {
-      // Previous Mon–Sun
       const prevMonday = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 })
       const prevSunday = endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 })
       return { from: fmt(prevMonday), to: fmt(prevSunday) }
     }
     case 'last_month': {
-      // 1st – last day of previous calendar month
       const prevMonth = subMonths(now, 1)
       return { from: fmt(startOfMonth(prevMonth)), to: fmt(endOfMonth(prevMonth)) }
     }
     case 'last_quarter': {
-      // 1st – last day of previous calendar quarter
       const prevQuarter = subQuarters(now, 1)
       return { from: fmt(startOfQuarter(prevQuarter)), to: fmt(endOfQuarter(prevQuarter)) }
     }
@@ -67,6 +68,7 @@ const DATE_RANGE_OPTIONS: { value: DateRangeType; label: string }[] = [
 ]
 
 export default function AdminReportsPage() {
+  const { user } = useAuth()
   const [brandId, setBrandId] = useState<string>('all')
   const [dateRangeType, setDateRangeType] = useState<DateRangeType>('last_month')
   const [specificMonth, setSpecificMonth] = useState(
@@ -74,6 +76,13 @@ export default function AdminReportsPage() {
   )
   const [specificYear, setSpecificYear] = useState('2025')
   const [reportParams, setReportParams] = useState<ReportParams | null>(null)
+
+  // Assign modal state
+  const [showAssign, setShowAssign] = useState(false)
+  const [assignUserId, setAssignUserId] = useState<string>('')
+  const [assignTitle, setAssignTitle] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const { data: brands = [] } = useQuery({
     queryKey: ['brands-for-report'],
@@ -83,6 +92,16 @@ export default function AdminReportsPage() {
         .select('id, name, logo_url')
         .order('name')
       return data || []
+    },
+  })
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['admin-users-for-assign'],
+    enabled: showAssign,
+    queryFn: async () => {
+      const res = await fetch('/api/admin/users')
+      const json = await res.json()
+      return (json.users || []) as { id: string; email: string; full_name?: string }[]
     },
   })
 
@@ -96,6 +115,53 @@ export default function AdminReportsPage() {
       dateFrom: from,
       dateTo: to,
     })
+  }
+
+  const openAssignModal = () => {
+    if (!reportParams) return
+    setAssignTitle(`${reportParams.brandName} · ${reportParams.dateFrom} – ${reportParams.dateTo}`)
+    setAssignUserId('')
+    setCopied(false)
+    setShowAssign(true)
+  }
+
+  const handleAssign = async () => {
+    if (!reportParams || !assignUserId || !user) return
+    setAssigning(true)
+    try {
+      const { data, error } = await (supabase as any)
+        .from('custom_reports')
+        .insert({
+          user_id: assignUserId,
+          brand_id: reportParams.brandId,
+          brand_name: reportParams.brandName,
+          date_from: reportParams.dateFrom,
+          date_to: reportParams.dateTo,
+          title: assignTitle,
+          created_by: user.id,
+        })
+        .select('id')
+        .single()
+
+      if (error) throw error
+
+      const link = `https://cateringmonitor.pl/reports/custom/${data.id}`
+
+      try {
+        await navigator.clipboard.writeText(link)
+        setCopied(true)
+      } catch {}
+
+      toast.success(
+        `Raport przypisany! Link skopiowany do schowka: ${link}`,
+        { duration: 8000 }
+      )
+      setShowAssign(false)
+    } catch (e: any) {
+      toast.error(e.message || 'Błąd przypisywania raportu')
+    } finally {
+      setAssigning(false)
+    }
   }
 
   return (
@@ -182,9 +248,15 @@ export default function AdminReportsPage() {
             </Button>
 
             {reportParams && (
-              <p className="text-xs text-muted-foreground text-center">
-                {reportParams.brandName} · {reportParams.dateFrom} – {reportParams.dateTo}
-              </p>
+              <>
+                <p className="text-xs text-muted-foreground text-center">
+                  {reportParams.brandName} · {reportParams.dateFrom} – {reportParams.dateTo}
+                </p>
+                <Button variant="outline" className="w-full" onClick={openAssignModal}>
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Przypisz do użytkownika
+                </Button>
+              </>
             )}
           </CardContent>
         </Card>
@@ -202,6 +274,44 @@ export default function AdminReportsPage() {
           )}
         </div>
       </div>
+
+      {/* Assign modal */}
+      <Dialog open={showAssign} onOpenChange={setShowAssign}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Przypisz raport do użytkownika</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label>Użytkownik</Label>
+              <Select value={assignUserId} onValueChange={v => v && setAssignUserId(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Wybierz użytkownika" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(users as any[]).map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.full_name ? `${u.full_name} (${u.email})` : u.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tytuł raportu</Label>
+              <Input value={assignTitle} onChange={e => setAssignTitle(e.target.value)} />
+            </div>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button variant="outline" onClick={() => setShowAssign(false)}>Anuluj</Button>
+              <Button onClick={handleAssign} disabled={assigning || !assignUserId || !assignTitle}>
+                {assigning ? 'Przypisuję...' : (
+                  <>{copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}Przypisz</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
