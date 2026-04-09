@@ -75,7 +75,9 @@ export default function ReviewsPage() {
     page,
     20,
     selectedBrandId || undefined,
-    recentRating
+    recentRating,
+    undefined,
+    true
   );
 
   const reviews = reviewsData?.reviews || [];
@@ -116,7 +118,11 @@ export default function ReviewsPage() {
         <div className="flex flex-wrap gap-3 items-center">
           <Select value={selectedBrandId || "all"} onValueChange={(v) => v && handleBrandChange(v)}>
             <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Wszystkie marki" />
+              <SelectValue placeholder="Wszystkie marki">
+                {selectedBrandId
+                  ? ((brands || []).find(b => b.id === selectedBrandId)?.name || "Wszystkie marki")
+                  : "Wszystkie marki"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Wszystkie marki</SelectItem>

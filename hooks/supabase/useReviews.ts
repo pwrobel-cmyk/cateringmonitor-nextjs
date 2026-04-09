@@ -25,7 +25,8 @@ export function useReviews(
   limit: number = 50,
   brandId?: string,
   rating?: number,
-  sources?: string[]
+  sources?: string[],
+  skipAssignmentFilter: boolean = false
 ) {
   const { selectedCountry } = useCountry();
   const { assignedBrandIds } = useUserBrands();
@@ -33,9 +34,9 @@ export function useReviews(
   const to = from + limit - 1;
 
   return useQuery({
-    queryKey: ["reviews", page, limit, brandId, rating, selectedCountry, assignedBrandIds, sources],
+    queryKey: ["reviews", page, limit, brandId, rating, selectedCountry, skipAssignmentFilter ? null : assignedBrandIds, sources],
     queryFn: async () => {
-      if (assignedBrandIds.length === 0) {
+      if (!skipAssignmentFilter && assignedBrandIds.length === 0) {
         return { reviews: [], total: 0, hasMore: false };
       }
 
@@ -50,8 +51,11 @@ export function useReviews(
             country
           )
         `, { count: 'exact' })
-        .eq("is_approved", true)
-        .in("brand_id", assignedBrandIds);
+        .eq("is_approved", true);
+
+      if (!skipAssignmentFilter) {
+        query = query.in("brand_id", assignedBrandIds);
+      }
 
       if (selectedCountry === "Czechy") {
         query = query.eq("brands.country", "Czechy");
