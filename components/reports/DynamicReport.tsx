@@ -462,7 +462,6 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
           }
         })
         .sort((a, b) => b.avgRating - a.avgRating)
-        .slice(0, 15)
     },
   })
 
