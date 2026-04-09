@@ -31,9 +31,10 @@ export async function POST(request: Request) {
     }
   }
 
-  // Role — stored in user_roles table (upsert)
+  // Role — stored in user_roles table (delete + insert)
   if (role !== undefined) {
-    const { error } = await service.from('user_roles').upsert({ user_id: userId, role }, { onConflict: 'user_id' })
+    await service.from('user_roles').delete().eq('user_id', userId)
+    const { error } = await service.from('user_roles').insert({ user_id: userId, role })
     if (error) errors.push(`role: ${error.message}`)
   }
 
