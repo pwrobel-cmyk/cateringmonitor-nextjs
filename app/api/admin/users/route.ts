@@ -21,7 +21,8 @@ export async function GET() {
   const { data: profiles } = await service.from('profiles').select('user_id, full_name, avatar_url, status, trial_ends_at, company_name')
 
   // Roles
-  const { data: roles } = await service.from('user_roles').select('user_id, role')
+  const { data: roles, error: rolesError } = await service.from('user_roles').select('*')
+  console.log('[admin/users] roles sample:', JSON.stringify(roles?.slice(0, 3)), 'error:', rolesError?.message)
 
   // Brand assignments
   const { data: assignments } = await service.from('user_brand_assignments').select('user_id, brand_id, brands(name)')
