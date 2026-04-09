@@ -206,7 +206,7 @@ function ReviewAspectsSection({ brandId }: { brandId: string }) {
 
 export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, dateTo }: DynamicReportProps) {
   const [showEmail, setShowEmail] = useState(false)
-  const [selectedUserEmails, setSelectedUserEmails] = useState<string[]>([])
+  const [selectedUsers, setSelectedUsers] = useState<{ id: string; email: string }[]>([])
   const [extraEmails, setExtraEmails] = useState("")
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState<{ sent: number; errors: string[] } | null>(null)
@@ -493,15 +493,33 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
   const handleSendEmail = async () => {
     setSending(true)
     setSendResult(null)
-    const emails = [
-      ...selectedUserEmails,
-      ...extraEmails.split("\n").map(e => e.trim()).filter(Boolean),
+    const extraRecipients = extraEmails
+      .split("\n")
+      .map(e => e.trim())
+      .filter(Boolean)
+      .map(email => ({ email }))
+    const recipients = [
+      ...selectedUsers.map(u => ({ userId: u.id, email: u.email })),
+      ...extraRecipients,
     ]
-    const reportHtml = reportRef.current?.outerHTML || ""
+    const stats = allTimeStats
+      ? { count: allTimeStats.count, avgRating: allTimeStats.avgRating, positivePercent: allTimeStats.positivePercent, negativePercent: allTimeStats.negativePercent }
+      : { count: 0, avgRating: "0.00", positivePercent: "0", negativePercent: "0" }
+    const reportSummary = {
+      brandId,
+      brandName,
+      brandLogoUrl,
+      dateFrom,
+      dateTo,
+      title: `${brandName} · ${dateFrom} – ${dateTo}`,
+      stats,
+      trend: trendInsight?.trend,
+      bestMonth: trendInsight?.best ? `${trendInsight.best.month} (${trendInsight.best.avgRating?.toFixed(2)}★)` : undefined,
+    }
     const res = await fetch("/api/admin/send-report", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emails, reportHtml, subject: `Raport ${brandName} · ${dateFrom} – ${dateTo}` }),
+      body: JSON.stringify({ recipients, reportSummary }),
     })
     setSendResult(await res.json())
     setSending(false)
@@ -1261,7 +1279,7 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
       </div>
 
       {/* ── Email Modal ── */}
-      <Dialog open={showEmail} onOpenChange={open => { setShowEmail(open); if (!open) { setSendResult(null); setSelectedUserEmails([]); setExtraEmails("") } }}>
+      <Dialog open={showEmail} onOpenChange={open => { setShowEmail(open); if (!open) { setSendResult(null); setSelectedUsers([]); setExtraEmails("") } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Wyślij raport emailem</DialogTitle>
@@ -1277,9 +1295,9 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
                 ) : usersData.map((u: any) => (
                   <label key={u.id} className="flex items-center gap-2.5 cursor-pointer rounded px-1 py-0.5 hover:bg-muted/50">
                     <Checkbox
-                      checked={selectedUserEmails.includes(u.email)}
-                      onCheckedChange={checked => setSelectedUserEmails(prev =>
-                        checked ? [...prev, u.email] : prev.filter(e => e !== u.email)
+                      checked={selectedUsers.some(s => s.id === u.id)}
+                      onCheckedChange={checked => setSelectedUsers(prev =>
+                        checked ? [...prev, { id: u.id, email: u.email }] : prev.filter(s => s.id !== u.id)
                       )}
                     />
                     <span className="text-sm flex-1 truncate">{u.full_name || u.email}</span>
@@ -1301,7 +1319,7 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
               </div>
             )}
             <Button className="w-full" onClick={handleSendEmail}
-              disabled={sending || (selectedUserEmails.length === 0 && !extraEmails.trim())}>
+              disabled={sending || (selectedUsers.length === 0 && !extraEmails.trim())}>
               {sending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Wysyłanie…</> : "Wyślij"}
             </Button>
           </div>
