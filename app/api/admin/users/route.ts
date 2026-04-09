@@ -18,7 +18,8 @@ export async function GET() {
   const { data: { users: authUsers } } = await service.auth.admin.listUsers({ perPage: 1000 })
 
   // Profiles
-  const { data: profiles } = await service.from('profiles').select('user_id, full_name, avatar_url, status, trial_ends_at, company_name, role')
+  const { data: profiles, error: profilesError } = await service.from('profiles').select('user_id, full_name, avatar_url, status, trial_ends_at, company_name, role')
+  if (profilesError) console.error('[admin/users] profiles error:', profilesError.message)
 
   // Brand assignments
   const { data: assignments } = await service.from('user_brand_assignments').select('user_id, brand_id, brands(name)')
