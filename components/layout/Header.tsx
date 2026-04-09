@@ -138,7 +138,7 @@ export function Header() {
                   <button onClick={() => { router.push('/backlog'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
                     <ClipboardList className="h-4 w-4" /> Backlog zgłoszeń
                   </button>
-                  <button onClick={() => { router.push('/settings#raporty'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                  <button onClick={() => { router.push('/moje-raporty'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
                     <FileBarChart2 className="h-4 w-4" /> Moje raporty
                   </button>
                   {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
@@ -241,7 +241,7 @@ export function Header() {
                   <Button
                     variant="outline"
                     className="w-full justify-start"
-                    onClick={() => { router.push("/settings#raporty"); setIsOpen(false); }}
+                    onClick={() => { router.push("/moje-raporty"); setIsOpen(false); }}
                   >
                     <FileBarChart2 className="h-4 w-4 mr-2" />
                     Moje raporty
