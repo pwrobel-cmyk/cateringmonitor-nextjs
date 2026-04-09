@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { FileBarChart2 } from 'lucide-react'
 import { DynamicReport } from '@/components/reports/DynamicReport'
-import { format, subWeeks, subMonths, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns'
+import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, startOfWeek, endOfWeek, subWeeks, subMonths, subQuarters, startOfQuarter, endOfQuarter } from 'date-fns'
 
 type DateRangeType = 'last_week' | 'last_month' | 'last_quarter' | 'specific_month' | 'year'
 
@@ -23,12 +23,22 @@ function computeDateRange(
   const fmt = (d: Date) => format(d, 'yyyy-MM-dd')
 
   switch (type) {
-    case 'last_week':
-      return { from: fmt(subWeeks(now, 1)), to: fmt(now) }
-    case 'last_month':
-      return { from: fmt(subMonths(now, 1)), to: fmt(now) }
-    case 'last_quarter':
-      return { from: fmt(subMonths(now, 3)), to: fmt(now) }
+    case 'last_week': {
+      // Previous Mon–Sun
+      const prevMonday = startOfWeek(subWeeks(now, 1), { weekStartsOn: 1 })
+      const prevSunday = endOfWeek(subWeeks(now, 1), { weekStartsOn: 1 })
+      return { from: fmt(prevMonday), to: fmt(prevSunday) }
+    }
+    case 'last_month': {
+      // 1st – last day of previous calendar month
+      const prevMonth = subMonths(now, 1)
+      return { from: fmt(startOfMonth(prevMonth)), to: fmt(endOfMonth(prevMonth)) }
+    }
+    case 'last_quarter': {
+      // 1st – last day of previous calendar quarter
+      const prevQuarter = subQuarters(now, 1)
+      return { from: fmt(startOfQuarter(prevQuarter)), to: fmt(endOfQuarter(prevQuarter)) }
+    }
     case 'specific_month': {
       const d = new Date(specificMonth + '-01')
       return { from: fmt(startOfMonth(d)), to: fmt(endOfMonth(d)) }

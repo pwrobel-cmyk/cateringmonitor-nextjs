@@ -2,22 +2,33 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { supabase } from "@/lib/supabase/client"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
-import { Star, MessageSquare, TrendingUp, TrendingDown, Printer, Mail, Loader2 } from "lucide-react"
-import { useState, useRef, useMemo } from "react"
+import { Progress } from "@/components/ui/progress"
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer,
+  Star, MessageSquare, TrendingUp, TrendingDown, Heart, ThumbsUp, ThumbsDown,
+  AlertTriangle, Calendar, Sparkles, Clock, Target, Percent, DollarSign,
+  Quote, Printer, Mail, Loader2,
+} from "lucide-react"
+import { useState, useRef, useMemo } from "react"
+import { format, startOfMonth, endOfMonth } from "date-fns"
+import { pl } from "date-fns/locale"
+import {
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts"
+import { useReviewAspects } from "@/hooks/supabase/useReviewAspects"
 
-interface DynamicReportProps {
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface DynamicReportProps {
   brandId: string | null
   brandName: string
   brandLogoUrl?: string | null
@@ -25,22 +36,60 @@ interface DynamicReportProps {
   dateTo: string
 }
 
-async function fetchAllReviews(brandId: string | null, dateFrom: string, dateTo: string) {
-  let all: any[] = []
+interface ReviewRow {
+  rating: number | null
+  content: string | null
+  review_date: string | null
+  source: string | null
+  author_name: string | null
+}
+
+interface PeriodStats {
+  label: string
+  count: number
+  avgRating: string
+  positivePercent: string
+  negativePercent: string
+  positive: number
+  negative: number
+  neutral: number
+}
+
+interface MonthlyPoint {
+  month: string
+  avgRating: number | null
+  count: number
+  positive: number
+  negative: number
+}
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const SENTIMENT_COLORS = {
+  positive: "hsl(142, 76%, 36%)",
+  neutral:  "hsl(48, 96%, 53%)",
+  negative: "hsl(0, 84%, 60%)",
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+async function fetchAllReviews(
+  brandId: string | null,
+  dateFrom: string,
+  dateTo: string,
+): Promise<ReviewRow[]> {
+  let all: ReviewRow[] = []
   let from = 0
   const size = 1000
-
   while (true) {
     let q = (supabase as any)
-      .from('reviews')
-      .select('rating, content, review_date, source, author_name')
-      .eq('is_approved', true)
-      .gte('review_date', dateFrom)
-      .lte('review_date', dateTo)
-      .order('review_date', { ascending: true })
-
-    if (brandId) q = q.eq('brand_id', brandId)
-
+      .from("reviews")
+      .select("rating, content, review_date, source, author_name")
+      .eq("is_approved", true)
+      .gte("review_date", dateFrom)
+      .lte("review_date", dateTo)
+      .order("review_date", { ascending: true })
+    if (brandId) q = q.eq("brand_id", brandId)
     const { data, error } = await q.range(from, from + size - 1)
     if (error) throw error
     if (!data?.length) break
@@ -48,92 +97,274 @@ async function fetchAllReviews(brandId: string | null, dateFrom: string, dateTo:
     if (data.length < size) break
     from += size
   }
-
   return all
 }
+
+function computeStats(reviews: ReviewRow[], label: string): PeriodStats {
+  const total = reviews.length
+  if (!total) return { label, count: 0, avgRating: "0.00", positivePercent: "0", negativePercent: "0", positive: 0, negative: 0, neutral: 0 }
+  const sum = reviews.reduce((acc, r) => acc + (r.rating ?? 0), 0)
+  const positive = reviews.filter(r => (r.rating ?? 0) >= 4).length
+  const negative = reviews.filter(r => (r.rating ?? 0) <= 2).length
+  const neutral = reviews.filter(r => r.rating === 3).length
+  return {
+    label,
+    count: total,
+    avgRating: (sum / total).toFixed(2),
+    positivePercent: ((positive / total) * 100).toFixed(1),
+    negativePercent: ((negative / total) * 100).toFixed(1),
+    positive, negative, neutral,
+  }
+}
+
+function getEmotion(avgRating: number, positivePercent: number, negativePercent: number) {
+  if (avgRating >= 4.5 && positivePercent >= 85) return { dominant: "Zaufanie",     secondary: "Lojalność",          type: "positive" as const }
+  if (avgRating >= 4.2 && positivePercent >= 80) return { dominant: "Satysfakcja",  secondary: "Zadowolenie",        type: "positive" as const }
+  if (avgRating >= 4.0 && negativePercent < 15)  return { dominant: "Nadzieja",     secondary: "Powrót zaufania",    type: "neutral"  as const }
+  if (avgRating < 4.0  || negativePercent >= 20) return { dominant: "Frustracja",   secondary: "Rozczarowanie",      type: "negative" as const }
+  return                                                 { dominant: "Ostrożność",   secondary: "Niepewność",         type: "neutral"  as const }
+}
+
+function fmtMonth(month: string) {
+  const [y, m] = month.split("-")
+  return `${m}/${y.slice(2)}`
+}
+
+function fmtDate(d: string | null) {
+  if (!d) return ""
+  try { return format(new Date(d), "LLLL yyyy", { locale: pl }) } catch { return "" }
+}
+
+// ─── Sub-component: Review Aspects ───────────────────────────────────────────
+
+function ReviewAspectsSection({ brandId }: { brandId: string }) {
+  const { data: aspects = [], isLoading } = useReviewAspects(brandId)
+  const topAspect = aspects[0]
+  const controversial = aspects.filter(a => a.negative >= 20)
+
+  return (
+    <section className="space-y-6">
+      <h2 className="text-2xl font-bold flex items-center gap-2">
+        <MessageSquare className="h-6 w-6 text-primary" />
+        Najczęstsze aspekty w opiniach
+      </h2>
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-28 w-full" />)}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {aspects.map((item, idx) => (
+              <Card key={idx}>
+                <CardContent className="pt-6">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="text-lg font-semibold capitalize">{item.aspect}</h3>
+                      <p className="text-sm text-muted-foreground">{item.mentions} wzmianek</p>
+                    </div>
+                    {item.positive >= 85
+                      ? <ThumbsUp className="h-5 w-5 text-green-500" />
+                      : item.negative >= 20
+                        ? <AlertTriangle className="h-5 w-5 text-orange-500" />
+                        : <Heart className="h-5 w-5 text-primary" />
+                    }
+                  </div>
+                  <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted mb-1">
+                    <div className="bg-green-500" style={{ width: `${item.positive}%` }} />
+                    <div className="bg-red-500"   style={{ width: `${item.negative}%` }} />
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-green-600 font-medium">P {item.positive}%</span>
+                    <span className="text-red-600 font-medium">N {item.negative}%</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {topAspect && (
+            <Card className="border-l-4 border-l-primary bg-primary/5">
+              <CardContent className="pt-4">
+                <p className="text-sm">
+                  <strong>Insight:</strong> {topAspect.aspect.charAt(0).toUpperCase() + topAspect.aspect.slice(1)} jest
+                  najczęściej wymienianym aspektem ({topAspect.mentions} wzmianek) z {topAspect.positive}% pozytywnych opinii.
+                  {controversial.length > 0 && (
+                    <> {controversial.map(a => a.aspect.charAt(0).toUpperCase() + a.aspect.slice(1)).join(", ")} budzi więcej kontrowersji ({controversial.map(a => `${a.negative}%`).join("–")} negatywnych).</>
+                  )}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, dateTo }: DynamicReportProps) {
   const [showEmail, setShowEmail] = useState(false)
   const [selectedUserEmails, setSelectedUserEmails] = useState<string[]>([])
-  const [extraEmails, setExtraEmails] = useState('')
+  const [extraEmails, setExtraEmails] = useState("")
   const [sending, setSending] = useState(false)
   const [sendResult, setSendResult] = useState<{ sent: number; errors: string[] } | null>(null)
   const reportRef = useRef<HTMLDivElement>(null)
 
-  const { data: reviews = [], isLoading } = useQuery({
-    queryKey: ['dynamic-report-reviews', brandId, dateFrom, dateTo],
+  // ── Period helpers ──────────────────────────────────────────────────────────
+  const fromMs = useMemo(() => new Date(dateFrom).getTime(), [dateFrom])
+  const toMs   = useMemo(() => new Date(dateTo).getTime(),   [dateTo])
+  const midMs  = useMemo(() => (fromMs + toMs) / 2,          [fromMs, toMs])
+  const lastMonthStart = useMemo(() => startOfMonth(new Date(dateTo)), [dateTo])
+  const lastMonthLabel = useMemo(() => format(lastMonthStart, "LLLL yyyy", { locale: pl }), [lastMonthStart])
+
+  // ── Reviews query ───────────────────────────────────────────────────────────
+  const { data: allReviews = [], isLoading: isLoadingReviews } = useQuery({
+    queryKey: ["dynamic-report-reviews", brandId, dateFrom, dateTo],
     queryFn: () => fetchAllReviews(brandId, dateFrom, dateTo),
   })
 
-  const stats = useMemo(() => {
-    if (!reviews.length) return null
-    const total = reviews.length
-    const avgRating = reviews.reduce((acc: number, r: any) => acc + (r.rating || 0), 0) / total
-    const positive = reviews.filter((r: any) => r.rating >= 4).length
-    const negative = reviews.filter((r: any) => r.rating <= 2).length
-    return {
-      total,
-      avgRating: avgRating.toFixed(2),
-      positivePercent: ((positive / total) * 100).toFixed(1),
-      negativePercent: ((negative / total) * 100).toFixed(1),
-    }
-  }, [reviews])
+  // ── Derived: period stats ───────────────────────────────────────────────────
+  const periodStats = useMemo((): PeriodStats[] | null => {
+    if (!allReviews.length) return null
+    const firstHalf  = allReviews.filter(r => r.review_date && new Date(r.review_date).getTime() <= midMs)
+    const secondHalf = allReviews.filter(r => r.review_date && new Date(r.review_date).getTime() >  midMs)
+    const lastMonth  = allReviews.filter(r => {
+      if (!r.review_date) return false
+      const t = new Date(r.review_date).getTime()
+      return t >= lastMonthStart.getTime()
+    })
+    return [
+      computeStats(allReviews, "Wybrany okres"),
+      computeStats(firstHalf,  "Pierwsza połowa"),
+      computeStats(secondHalf, "Druga połowa"),
+      computeStats(lastMonth,  lastMonthLabel),
+    ]
+  }, [allReviews, midMs, lastMonthStart, lastMonthLabel])
 
-  const monthlyTrends = useMemo(() => {
-    const buckets: Record<string, number[]> = {}
-    reviews.forEach((r: any) => {
+  // ── Derived: monthly trends ─────────────────────────────────────────────────
+  const monthlyTrends = useMemo((): MonthlyPoint[] => {
+    const buckets: Record<string, { ratings: number[]; positive: number; negative: number }> = {}
+    allReviews.forEach(r => {
       if (!r.review_date) return
       const key = r.review_date.slice(0, 7)
-      if (!buckets[key]) buckets[key] = []
-      buckets[key].push(r.rating || 0)
+      if (!buckets[key]) buckets[key] = { ratings: [], positive: 0, negative: 0 }
+      buckets[key].ratings.push(r.rating ?? 0)
+      if ((r.rating ?? 0) >= 4) buckets[key].positive++
+      if ((r.rating ?? 0) <= 2) buckets[key].negative++
     })
     return Object.entries(buckets)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([month, ratings]) => ({
+      .map(([month, d]) => ({
         month,
-        avgRating: parseFloat((ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length).toFixed(2)),
-        count: ratings.length,
+        avgRating: parseFloat((d.ratings.reduce((a, b) => a + b, 0) / d.ratings.length).toFixed(2)),
+        count:     d.ratings.length,
+        positive:  d.positive,
+        negative:  d.negative,
       }))
-  }, [reviews])
+  }, [allReviews])
 
-  const ratingDist = useMemo(() => {
-    return [5, 4, 3, 2, 1].map(star => {
-      const count = reviews.filter((r: any) => r.rating === star).length
-      return {
-        star,
-        count,
-        percent: reviews.length ? parseFloat(((count / reviews.length) * 100).toFixed(1)) : 0,
-      }
-    })
-  }, [reviews])
+  // ── Derived: rating distribution ───────────────────────────────────────────
+  const ratingDist = useMemo(() => [5,4,3,2,1].map(star => {
+    const count = allReviews.filter(r => r.rating === star).length
+    return { star, count, percent: allReviews.length ? parseFloat(((count / allReviews.length) * 100).toFixed(1)) : 0 }
+  }), [allReviews])
 
-  const quotes = useMemo(() => {
-    const positive = reviews.filter((r: any) => r.rating >= 4 && r.content?.length > 20).slice(-6).reverse()
-    const negative = reviews.filter((r: any) => r.rating <= 2 && r.content?.length > 20).slice(-4).reverse()
-    return { positive, negative }
-  }, [reviews])
+  // ── Derived: sentiment pie ──────────────────────────────────────────────────
+  const sentimentData = useMemo(() => {
+    const s = periodStats?.[0]
+    if (!s || !s.count) return [
+      { name: "Pozytywne (4–5★)", value: 0, color: SENTIMENT_COLORS.positive },
+      { name: "Neutralne (3★)",   value: 0, color: SENTIMENT_COLORS.neutral  },
+      { name: "Negatywne (1–2★)", value: 0, color: SENTIMENT_COLORS.negative },
+    ]
+    const neutralPct = parseFloat(((s.neutral / s.count) * 100).toFixed(1))
+    return [
+      { name: "Pozytywne (4–5★)", value: parseFloat(s.positivePercent), color: SENTIMENT_COLORS.positive },
+      { name: "Neutralne (3★)",   value: neutralPct,                    color: SENTIMENT_COLORS.neutral  },
+      { name: "Negatywne (1–2★)", value: parseFloat(s.negativePercent), color: SENTIMENT_COLORS.negative },
+    ]
+  }, [periodStats])
 
-  const { data: discounts = [] } = useQuery({
-    queryKey: ['dynamic-report-discounts', brandId, dateFrom, dateTo],
+  // ── Derived: troubled months ────────────────────────────────────────────────
+  const troubledMonths = useMemo(
+    () => monthlyTrends.filter(m => m.avgRating !== null && m.avgRating < 3.5 && m.count > 0),
+    [monthlyTrends]
+  )
+
+  // ── Derived: best / worst month ─────────────────────────────────────────────
+  const trendInsight = useMemo(() => {
+    const withData = monthlyTrends.filter(m => m.avgRating !== null && m.count > 0)
+    if (!withData.length) return null
+    const best  = withData.reduce((a, b) => (a.avgRating! > b.avgRating! ? a : b))
+    const worst = withData.reduce((a, b) => (a.avgRating! < b.avgRating! ? a : b))
+    const first = withData[0], last = withData[withData.length - 1]
+    const diff  = (last.avgRating ?? 0) - (first.avgRating ?? 0)
+    const trend = diff >  0.2 ? "rosnący" : diff < -0.2 ? "spadkowy" : "stabilny"
+    return { best, worst, trend, diff: diff.toFixed(2) }
+  }, [monthlyTrends])
+
+  // ── Quotes query ────────────────────────────────────────────────────────────
+  const { data: realQuotes, isLoading: isLoadingQuotes } = useQuery({
+    queryKey: ["dynamic-report-quotes", brandId, dateFrom, dateTo],
     queryFn: async () => {
-      let q = (supabase as any)
-        .from('discounts')
-        .select('code, percentage, valid_from, valid_until, description, brands(name)')
-        .gte('valid_from', dateFrom)
-        .lte('valid_from', dateTo)
-        .order('valid_from', { ascending: false })
-      if (brandId) q = q.eq('brand_id', brandId)
-      const { data } = await q
-      return data || []
+      const positive: ReviewRow[] = allReviews.filter(r => (r.rating ?? 0) >= 4 && (r.content?.length ?? 0) > 20).slice(-6).reverse()
+      const negative: ReviewRow[] = allReviews.filter(r => (r.rating ?? 0) <= 2 && (r.content?.length ?? 0) > 20).slice(-4).reverse()
+      return { positive, negative }
+    },
+    enabled: allReviews.length > 0,
+  })
+
+  // ── Discounts query ─────────────────────────────────────────────────────────
+  const { data: discountData, isLoading: isLoadingDiscounts } = useQuery({
+    queryKey: ["dynamic-report-discounts", brandId, dateFrom, dateTo],
+    queryFn: async () => {
+      // All brands: comparison chart
+      const { data: all } = await (supabase as any)
+        .from("discounts")
+        .select("brand_id, percentage, valid_from, valid_until, code, description, brands(name)")
+        .gte("valid_from", dateFrom)
+        .lte("valid_from", dateTo)
+        .not("percentage", "is", null)
+
+      const rows = (all || []) as any[]
+
+      // Per-brand avg discount
+      const byBrand: Record<string, { sum: number; count: number; name: string }> = {}
+      rows.forEach((d: any) => {
+        const name = d.brands?.name || "Unknown"
+        if (!byBrand[name]) byBrand[name] = { sum: 0, count: 0, name }
+        byBrand[name].sum   += d.percentage
+        byBrand[name].count++
+      })
+      const comparison = Object.values(byBrand)
+        .map(b => ({ brand: b.name, avgDiscount: parseFloat((b.sum / b.count).toFixed(1)) }))
+        .sort((a, b) => b.avgDiscount - a.avgDiscount)
+
+      // Brand-specific codes
+      const brandCodes = brandId
+        ? rows.filter((d: any) => d.brand_id === brandId)
+        : rows.slice(0, 10)
+
+      // Brand-specific stats
+      const brandRows = brandId
+        ? rows.filter((d: any) => d.brand_id === brandId)
+        : rows
+      const pcts = brandRows.map((d: any) => d.percentage).filter(Boolean) as number[]
+      const stats = pcts.length
+        ? { count: pcts.length, avg: parseFloat((pcts.reduce((a,b)=>a+b,0)/pcts.length).toFixed(1)), min: Math.min(...pcts), max: Math.max(...pcts) }
+        : null
+
+      return { comparison, brandCodes, stats }
     },
   })
 
-  const { data: prices = [] } = useQuery({
-    queryKey: ['dynamic-report-prices', brandId, dateFrom, dateTo],
-    enabled: !!brandId,
+  // ── Prices query ────────────────────────────────────────────────────────────
+  const { data: priceData, isLoading: isLoadingPrices } = useQuery({
+    queryKey: ["dynamic-report-prices", brandId, dateFrom, dateTo],
     queryFn: async () => {
       const { data } = await (supabase as any)
-        .from('price_history')
+        .from("price_history")
         .select(`
           price,
           date_recorded,
@@ -145,28 +376,65 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
             )
           )
         `)
-        .gte('date_recorded', dateFrom)
-        .lte('date_recorded', dateTo)
-        .order('date_recorded', { ascending: false })
-        .limit(50)
-      if (!data) return []
-      return data.filter((p: any) => {
-        const bid = p.package_kcal_ranges?.packages?.brands?.id
-        return !brandId || bid === brandId
+        .gte("date_recorded", dateFrom)
+        .lte("date_recorded", dateTo)
+        .not("price", "is", null)
+
+      const rows = (data || []) as any[]
+
+      // Aggregate avg price per brand
+      const byBrand: Record<string, { sum: number; count: number; min: number; max: number; name: string }> = {}
+      rows.forEach((p: any) => {
+        const name = p.package_kcal_ranges?.packages?.brands?.name || "Unknown"
+        if (!byBrand[name]) byBrand[name] = { sum: 0, count: 0, min: Infinity, max: -Infinity, name }
+        byBrand[name].sum   += p.price
+        byBrand[name].count++
+        byBrand[name].min    = Math.min(byBrand[name].min, p.price)
+        byBrand[name].max    = Math.max(byBrand[name].max, p.price)
       })
+
+      const catalog = Object.values(byBrand)
+        .filter(b => b.count > 0)
+        .map(b => ({ brand: b.name, avgPrice: parseFloat((b.sum / b.count).toFixed(2)) }))
+        .sort((a, b) => b.avgPrice - a.avgPrice)
+        .slice(0, 12)
+
+      // Discount map for after-discount chart
+      const discountMap: Record<string, number> = {}
+      if (discountData?.comparison) {
+        discountData.comparison.forEach((d: any) => { discountMap[d.brand] = d.avgDiscount })
+      }
+      const afterDiscount = catalog.map(p => ({
+        brand:    p.brand,
+        avgPrice: parseFloat((p.avgPrice * (1 - (discountMap[p.brand] || 0) / 100)).toFixed(2)),
+      })).sort((a, b) => b.avgPrice - a.avgPrice)
+
+      // Selected brand stats
+      const selectedBrandName = brandName
+      const brandEntry = byBrand[selectedBrandName]
+      const brandStats = brandEntry ? {
+        avgPrice: parseFloat((brandEntry.sum / brandEntry.count).toFixed(2)),
+        minPrice: parseFloat(brandEntry.min.toFixed(2)),
+        maxPrice: parseFloat(brandEntry.max.toFixed(2)),
+      } : null
+
+      return { catalog, afterDiscount, brandStats }
     },
+    enabled: !!discountData, // wait for discount data so after-discount chart is correct
   })
 
+  // ── Users (for email modal) ─────────────────────────────────────────────────
   const { data: usersData } = useQuery({
-    queryKey: ['admin-users-for-email'],
+    queryKey: ["admin-users-for-email"],
     enabled: showEmail,
     queryFn: async () => {
-      const res = await fetch('/api/admin/users')
+      const res = await fetch("/api/admin/users")
       const json = await res.json()
       return json.users || []
     },
   })
 
+  // ── Actions ─────────────────────────────────────────────────────────────────
   const handlePrint = () => window.print()
 
   const handleSendEmail = async () => {
@@ -174,157 +442,208 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
     setSendResult(null)
     const emails = [
       ...selectedUserEmails,
-      ...extraEmails.split('\n').map((e: string) => e.trim()).filter(Boolean),
+      ...extraEmails.split("\n").map(e => e.trim()).filter(Boolean),
     ]
-    const reportHtml = reportRef.current?.outerHTML || ''
-    const subject = `Raport ${brandName} · ${dateFrom} – ${dateTo}`
-    const res = await fetch('/api/admin/send-report', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emails, reportHtml, subject }),
+    const reportHtml = reportRef.current?.outerHTML || ""
+    const res = await fetch("/api/admin/send-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emails, reportHtml, subject: `Raport ${brandName} · ${dateFrom} – ${dateTo}` }),
     })
-    const result = await res.json()
-    setSendResult(result)
+    setSendResult(await res.json())
     setSending(false)
   }
 
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32 w-full" />)}
-      </div>
-    )
-  }
+  // ── Shortcuts ───────────────────────────────────────────────────────────────
+  const allTimeStats  = periodStats?.[0]
+  const firstHalf     = periodStats?.[1]
+  const secondHalf    = periodStats?.[2]
+  const lastMonthStat = periodStats?.[3]
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <>
       {/* Action buttons */}
       <div className="flex gap-3 mb-6 no-print">
         <Button variant="outline" onClick={handlePrint}>
-          <Printer className="h-4 w-4 mr-2" />
-          Pobierz PDF
+          <Printer className="h-4 w-4 mr-2" />Pobierz PDF
         </Button>
         <Button variant="outline" onClick={() => setShowEmail(true)}>
-          <Mail className="h-4 w-4 mr-2" />
-          Wyślij email
+          <Mail className="h-4 w-4 mr-2" />Wyślij email
         </Button>
       </div>
 
-      {/* Report content */}
-      <div ref={reportRef} className="report-content space-y-8">
+      {/* ── Report content ── */}
+      <div ref={reportRef} className="report-content space-y-10">
 
-        {/* SEKCJA 1 — Header */}
+        {/* HEADER */}
         <div className="flex items-start gap-6 pb-6 border-b">
           {brandLogoUrl ? (
-            <div className="h-16 w-16 rounded-lg bg-white p-1 flex items-center justify-center shadow-sm flex-shrink-0">
+            <div className="h-20 w-20 rounded-lg bg-white p-2 flex items-center justify-center shadow-sm flex-shrink-0">
               <img src={brandLogoUrl} alt={brandName} className="h-full w-full object-contain" />
             </div>
           ) : (
-            <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-              <MessageSquare className="h-8 w-8 text-muted-foreground" />
+            <div className="h-20 w-20 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+              <MessageSquare className="h-10 w-10 text-muted-foreground" />
             </div>
           )}
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold">Raport {brandName}</h1>
-            <p className="text-muted-foreground mt-1">{dateFrom} – {dateTo}</p>
+          <div>
+            <h1 className="text-3xl font-bold mb-1">{brandName}</h1>
+            <p className="text-lg text-muted-foreground mb-2">Raport analizy opinii klientów</p>
+            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mb-3">
+              <span className="flex items-center gap-1">
+                <MessageSquare className="h-4 w-4" />
+                {allTimeStats?.count?.toLocaleString("pl-PL") ?? "…"} opinii
+              </span>
+              <span className="flex items-center gap-1">
+                <Calendar className="h-4 w-4" />
+                {dateFrom} – {dateTo}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* SEKCJA 1 — KPI Cards */}
-        {stats ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* ── SEKCJA: Executive Summary ── */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Sparkles className="h-6 w-6 text-primary" />
+            Executive Summary
+          </h2>
+
+          {/* Insight card — generative */}
+          <Card className="border-l-4 border-l-primary bg-primary/5">
+            <CardContent className="pt-6">
+              {isLoadingReviews ? (
+                <Skeleton className="h-12 w-full" />
+              ) : (
+                <p className="text-lg leading-relaxed">
+                  <strong>{brandName}</strong> zebrał{" "}
+                  <strong>{allTimeStats?.count?.toLocaleString("pl-PL") ?? "…"}</strong> opinii
+                  w okresie {dateFrom}–{dateTo} ze średnią{" "}
+                  <strong>{allTimeStats?.avgRating ?? "…"}/5</strong>.{" "}
+                  {trendInsight && (
+                    <>
+                      Trend w analizowanym okresie jest <strong>{trendInsight.trend}</strong>.{" "}
+                      Najlepszy miesiąc: <strong>{fmtMonth(trendInsight.best.month)}</strong> ({trendInsight.best.avgRating?.toFixed(2)}★).{" "}
+                      {troubledMonths.length > 0 && (
+                        <>Miesiące wymagające uwagi (poniżej 3.5★): <strong>{troubledMonths.map(m => fmtMonth(m.month)).join(", ")}</strong>.</>
+                      )}
+                    </>
+                  )}
+                  {allTimeStats && (
+                    <span className="text-primary font-semibold">
+                      {" "}Kluczowe: {parseFloat(allTimeStats.positivePercent) >= 70
+                        ? "wysoki odsetek pozytywnych opinii."
+                        : parseFloat(allTimeStats.negativePercent) >= 20
+                          ? "wysoki odsetek negatywnych opinii wymaga działań."
+                          : "wyniki na stabilnym poziomie."}
+                    </span>
+                  )}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 4 period KPI cards */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {isLoadingReviews ? (
+              [1,2,3,4].map(i => <Card key={i}><CardContent className="pt-6"><Skeleton className="h-12 w-full" /></CardContent></Card>)
+            ) : (
+              [
+                { stats: allTimeStats,  label: "Wybrany okres",    icon: Clock,      color: "" },
+                { stats: firstHalf,     label: "Pierwsza połowa",  icon: TrendingUp, color: "" },
+                { stats: secondHalf,    label: "Druga połowa",     icon: TrendingUp, color: "border-green-200 dark:border-green-800" },
+                { stats: lastMonthStat, label: lastMonthLabel,     icon: Star,       color: "border-primary/30 bg-primary/5" },
+              ].map(({ stats: s, label, icon: Icon, color }, idx) => (
+                <Card key={idx} className={color}>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium capitalize">{s?.label ?? label}</CardTitle>
+                    <Icon className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-baseline gap-2">
+                      <span className={`text-3xl font-bold ${idx === 3 ? "text-primary" : idx === 2 ? "text-green-600" : ""}`}>
+                        {s?.avgRating ?? "—"}
+                      </span>
+                      <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {s?.count?.toLocaleString("pl-PL") ?? "0"} opinii
+                    </p>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </section>
+
+        <Separator />
+
+        {/* ── SEKCJA: Podsumowanie ── */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Sparkles className="h-6 w-6 text-primary" />
+            Podsumowanie
+          </h2>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Sentiment pie */}
             <Card>
-              <CardHeader className="pb-1 pt-4 px-4">
-                <CardTitle className="text-xs text-muted-foreground font-normal">Łączna liczba opinii</CardTitle>
+              <CardHeader>
+                <CardTitle>Rozkład sentymentu</CardTitle>
+                <CardDescription>Na podstawie {allTimeStats?.count?.toLocaleString("pl-PL") ?? "…"} opinii</CardDescription>
               </CardHeader>
-              <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold">{Number(stats.total).toLocaleString()}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-1 pt-4 px-4">
-                <CardTitle className="text-xs text-muted-foreground font-normal">Średnia ocena</CardTitle>
-              </CardHeader>
-              <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold flex items-center gap-1">
-                  {stats.avgRating}
-                  <Star className="h-4 w-4 text-yellow-400 fill-yellow-400" />
+              <CardContent>
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={sentimentData} cx="50%" cy="50%" innerRadius={60} outerRadius={100}
+                           paddingAngle={2} dataKey="value" label={({ value }) => `${value}%`}>
+                        {sentimentData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
+
+            {/* Generative insights */}
             <Card>
-              <CardHeader className="pb-1 pt-4 px-4">
-                <CardTitle className="text-xs text-muted-foreground font-normal">% pozytywnych</CardTitle>
+              <CardHeader>
+                <CardTitle>Kluczowe wnioski</CardTitle>
+                <CardDescription>Na podstawie danych z zakresu {dateFrom} – {dateTo}</CardDescription>
               </CardHeader>
-              <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold text-green-600 flex items-center gap-1">
-                  {stats.positivePercent}%
-                  <TrendingUp className="h-4 w-4" />
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-1 pt-4 px-4">
-                <CardTitle className="text-xs text-muted-foreground font-normal">% negatywnych</CardTitle>
-              </CardHeader>
-              <CardContent className="px-4 pb-4">
-                <div className="text-2xl font-bold text-red-600 flex items-center gap-1">
-                  {stats.negativePercent}%
-                  <TrendingDown className="h-4 w-4" />
-                </div>
+              <CardContent className="space-y-4">
+                {trendInsight ? (
+                  <>
+                    {[
+                      { num: 1, color: "primary", text: <>Łączna liczba opinii: <strong>{allTimeStats?.count?.toLocaleString("pl-PL")}</strong> ze średnią <strong>{allTimeStats?.avgRating}★</strong></> },
+                      { num: 2, color: "primary", text: <>Trend: <strong>{trendInsight.trend}</strong> (zmiana {Number(trendInsight.diff) > 0 ? "+" : ""}{trendInsight.diff} ★ od pierwszego do ostatniego miesiąca)</> },
+                      { num: 3, color: "primary", text: <>Najlepszy miesiąc: <strong>{fmtMonth(trendInsight.best.month)}</strong> ({trendInsight.best.avgRating?.toFixed(2)}★, {trendInsight.best.count} opinii)</> },
+                      { num: 4, color: troubledMonths.length > 0 ? "orange" : "primary", text: troubledMonths.length > 0
+                        ? <>Miesiące poniżej 3.5★: <strong>{troubledMonths.map(m => fmtMonth(m.month)).join(", ")}</strong></>
+                        : <>Brak miesięcy poniżej 3.5★ — wyniki stabilne przez cały okres</> },
+                      { num: 5, color: "green", text: <>{parseFloat(allTimeStats?.positivePercent ?? "0") >= 70
+                        ? <><strong>{allTimeStats?.positivePercent}%</strong> opinii pozytywnych (≥4★) — wysoki poziom zadowolenia</>
+                        : <><strong>{allTimeStats?.negativePercent}%</strong> opinii negatywnych (≤2★) — wymaga uwagi</> }</> },
+                    ].map(({ num, color, text }) => (
+                      <div key={num} className="flex gap-3">
+                        <div className={`flex-shrink-0 w-6 h-6 rounded-full bg-${color}-500/10 flex items-center justify-center text-xs font-bold text-${color === "orange" ? "orange-600" : color === "green" ? "green-600" : "primary"}`}>{num}</div>
+                        <p className="text-sm">{text}</p>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Brak danych do analizy w wybranym zakresie.</p>
+                )}
               </CardContent>
             </Card>
           </div>
-        ) : (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground">
-              Brak opinii w wybranym zakresie dat
-            </CardContent>
-          </Card>
-        )}
 
-        {/* SEKCJA 2 — Monthly Trends */}
-        {monthlyTrends.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Trendy miesięczne</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={monthlyTrends}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="rating" domain={[0, 5]} width={30} />
-                  <YAxis yAxisId="count" orientation="right" width={40} />
-                  <Tooltip />
-                  <Line
-                    yAxisId="rating"
-                    type="monotone"
-                    dataKey="avgRating"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    name="Śr. ocena"
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    yAxisId="count"
-                    type="monotone"
-                    dataKey="count"
-                    stroke="hsl(var(--chart-2))"
-                    strokeWidth={1}
-                    strokeDasharray="4 2"
-                    name="Liczba opinii"
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* SEKCJA 3 — Rating Distribution */}
-        {stats && (
+          {/* Rozkład ocen */}
           <Card>
             <CardHeader>
               <CardTitle>Rozkład ocen</CardTitle>
@@ -335,143 +654,475 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
                   <div key={star} className="flex items-center gap-3">
                     <span className="text-sm w-8 text-right font-medium">{star}★</span>
                     <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${percent}%`,
-                          backgroundColor:
-                            star >= 4 ? 'hsl(142,76%,36%)' : star === 3 ? 'hsl(43,96%,53%)' : 'hsl(0,84%,60%)',
-                        }}
-                      />
+                      <div className="h-full rounded-full transition-all" style={{
+                        width: `${percent}%`,
+                        backgroundColor: star >= 4 ? "hsl(142,76%,36%)" : star === 3 ? "hsl(43,96%,53%)" : "hsl(0,84%,60%)",
+                      }} />
                     </div>
-                    <span className="text-sm text-muted-foreground w-28 text-right">
-                      {count.toLocaleString()} ({percent}%)
-                    </span>
+                    <span className="text-sm text-muted-foreground w-28 text-right">{count.toLocaleString()} ({percent}%)</span>
                   </div>
                 ))}
               </div>
             </CardContent>
           </Card>
+        </section>
+
+        <Separator />
+
+        {/* ── SEKCJA: Sentyment i emocje ── */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Heart className="h-6 w-6 text-primary" />
+            Sentyment i emocje klientów
+          </h2>
+
+          {/* Emotion timeline */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Dynamika emocji w czasie</CardTitle>
+              <CardDescription>Jak zmieniały się emocje klientów w podokresach</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {isLoadingReviews ? (
+                  [1,2,3,4].map(i => <Skeleton key={i} className="h-16 w-full" />)
+                ) : (
+                  periodStats?.map((s, idx) => {
+                    if (!s.count) return null
+                    const emotion = getEmotion(parseFloat(s.avgRating), parseFloat(s.positivePercent), parseFloat(s.negativePercent))
+                    return (
+                      <div key={idx} className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
+                        <div className="flex-shrink-0 w-40">
+                          <p className="text-sm font-medium">{s.label}</p>
+                          <p className="text-xs text-muted-foreground">{s.count.toLocaleString("pl-PL")} opinii</p>
+                        </div>
+                        <div className="flex-1 flex gap-3">
+                          <Badge variant="outline" className={
+                            emotion.type === "positive" ? "border-green-500 text-green-600" :
+                            emotion.type === "negative" ? "border-red-500   text-red-600"   :
+                                                          "border-blue-500  text-blue-600"
+                          }>{emotion.dominant}</Badge>
+                          <Badge variant="secondary">{emotion.secondary}</Badge>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className={`text-lg font-bold ${parseFloat(s.avgRating) < 4.0 ? "text-orange-600" : "text-green-600"}`}>
+                            {s.avgRating}
+                          </span>
+                          <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        <Separator />
+
+        {/* ── SEKCJA: Aspekty (tylko jeśli brandId) ── */}
+        {brandId && (
+          <>
+            <ReviewAspectsSection brandId={brandId} />
+            <Separator />
+          </>
         )}
 
-        {/* SEKCJA 4 — Quotes */}
-        {(quotes.positive.length > 0 || quotes.negative.length > 0) && (
-          <div className="space-y-4">
-            <h2 className="text-xl font-semibold">Wybrane opinie</h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-3">
-                <h3 className="text-xs font-semibold text-green-600 uppercase tracking-wide">Pozytywne</h3>
-                {quotes.positive.slice(0, 3).map((q: any, i: number) => (
-                  <Card key={i} className="border-green-200 dark:border-green-900">
-                    <CardContent className="pt-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-7 h-7 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center text-xs font-bold text-green-700 dark:text-green-300">
-                          {(q.author_name || '?').slice(0, 1).toUpperCase()}
-                        </div>
-                        <span className="text-sm font-medium truncate">{q.author_name || 'Anonimowy'}</span>
-                        <Badge variant="outline" className="text-xs ml-auto flex-shrink-0">{q.rating}★</Badge>
+        {/* ── SEKCJA: Timeline ocen ── */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Calendar className="h-6 w-6 text-primary" />
+            Timeline ocen
+          </h2>
+
+          {/* Line chart — avg rating */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Średnia ocena w czasie</CardTitle>
+              <CardDescription>Trend miesięczny {dateFrom} – {dateTo}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoadingReviews ? <Skeleton className="h-[300px] w-full" /> : (
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={monthlyTrends}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} tickFormatter={fmtMonth} interval="preserveStartEnd" />
+                      <YAxis domain={[1, 5]} tick={{ fontSize: 11 }} />
+                      <Tooltip content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null
+                        const d = payload[0].payload as MonthlyPoint
+                        return (
+                          <div className="bg-background border rounded-lg p-3 shadow-lg text-sm">
+                            <p className="font-medium">{label}</p>
+                            {d.avgRating == null ? <p className="text-muted-foreground">Brak danych</p> : (
+                              <>
+                                <p>Średnia: {d.avgRating?.toFixed(2)} ★</p>
+                                <p className="text-muted-foreground">{d.count} opinii</p>
+                                <p className="text-green-600">Pozytywne: {d.positive}</p>
+                                <p className="text-red-600">Negatywne: {d.negative}</p>
+                              </>
+                            )}
+                          </div>
+                        )
+                      }} />
+                      <Line type="monotone" dataKey="avgRating" connectNulls={false}
+                            stroke="hsl(var(--primary))" strokeWidth={2}
+                            dot={{ fill: "hsl(var(--primary))", r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Bar chart — volume */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Liczba opinii miesięcznie</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingReviews ? <Skeleton className="h-[250px] w-full" /> : (
+                <div className="h-[250px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={monthlyTrends}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} tickFormatter={fmtMonth} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="positive" stackId="a" fill="hsl(142,76%,36%)" name="Pozytywne" />
+                      <Bar dataKey="negative" stackId="a" fill="hsl(0,84%,60%)"   name="Negatywne" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Miesiące wymagające uwagi */}
+          {troubledMonths.length > 0 && (
+            <Card className="border-2 border-orange-500/30">
+              <CardHeader className="bg-orange-500/5">
+                <CardTitle className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-orange-500" />
+                  Miesiące wymagające uwagi (poniżej 3.5★)
+                </CardTitle>
+                <CardDescription>Okresy z obniżoną oceną w analizowanym zakresie</CardDescription>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4">
+                  {troubledMonths.map((m, i) => (
+                    <div key={i} className={`p-4 rounded-lg border ${m.avgRating! < 3.0 ? "bg-red-500/10 border-red-500/30" : "bg-orange-500/10 border-orange-500/30"}`}>
+                      <div className="text-sm text-muted-foreground">{fmtMonth(m.month)}</div>
+                      <div className={`text-2xl font-bold mt-1 ${m.avgRating! < 3.0 ? "text-red-600" : "text-orange-600"}`}>
+                        {m.avgRating?.toFixed(2)} ★
                       </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-                        {q.content?.slice(0, 200)}{q.content?.length > 200 ? '…' : ''}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-              <div className="space-y-3">
-                <h3 className="text-xs font-semibold text-red-600 uppercase tracking-wide">Negatywne</h3>
-                {quotes.negative.slice(0, 3).map((q: any, i: number) => (
-                  <Card key={i} className="border-red-200 dark:border-red-900">
-                    <CardContent className="pt-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-7 h-7 rounded-full bg-red-100 dark:bg-red-900 flex items-center justify-center text-xs font-bold text-red-700 dark:text-red-300">
-                          {(q.author_name || '?').slice(0, 1).toUpperCase()}
-                        </div>
-                        <span className="text-sm font-medium truncate">{q.author_name || 'Anonimowy'}</span>
-                        <Badge variant="outline" className="text-xs ml-auto flex-shrink-0">{q.rating}★</Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-                        {q.content?.slice(0, 200)}{q.content?.length > 200 ? '…' : ''}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      <div className="text-xs text-muted-foreground mt-1">{m.count} opinii</div>
+                    </div>
+                  ))}
+                </div>
+                <Card className="mt-4 border-l-4 border-l-orange-500 bg-orange-500/5">
+                  <CardContent className="pt-4">
+                    <p className="text-sm">
+                      <strong>Wniosek:</strong> W wybranym zakresie zaobserwowano {troubledMonths.length}{" "}
+                      {troubledMonths.length === 1 ? "miesiąc" : troubledMonths.length < 5 ? "miesiące" : "miesięcy"} z ocenami
+                      poniżej 3.5★. Analiza treści opinii z tych okresów może pomóc w identyfikacji problemów operacyjnych.
+                    </p>
+                  </CardContent>
+                </Card>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Best / worst month summary */}
+          {trendInsight && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary" />
+                  Podsumowanie okresu
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="p-4 rounded-lg bg-green-500/5 border border-green-500/20">
+                    <h4 className="font-semibold text-green-700 mb-2 flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4" /> Najlepszy miesiąc
+                    </h4>
+                    <p className="text-sm"><strong>{fmtMonth(trendInsight.best.month)}</strong></p>
+                    <p className="text-2xl font-bold text-green-600">{trendInsight.best.avgRating?.toFixed(2)} ★</p>
+                    <p className="text-xs text-muted-foreground">{trendInsight.best.count} opinii</p>
+                  </div>
+                  <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/20">
+                    <h4 className="font-semibold text-red-700 mb-2 flex items-center gap-2">
+                      <TrendingDown className="h-4 w-4" /> Najgorszy miesiąc
+                    </h4>
+                    <p className="text-sm"><strong>{fmtMonth(trendInsight.worst.month)}</strong></p>
+                    <p className="text-2xl font-bold text-red-600">{trendInsight.worst.avgRating?.toFixed(2)} ★</p>
+                    <p className="text-xs text-muted-foreground">{trendInsight.worst.count} opinii</p>
+                  </div>
+                </div>
+                <Card className="mt-4 border-l-4 border-l-primary bg-primary/5">
+                  <CardContent className="pt-4">
+                    <p className="text-sm">
+                      <strong>Insight strategiczny:</strong> Trend w analizowanym okresie jest <strong>{trendInsight.trend}</strong>{" "}
+                      (zmiana {Number(trendInsight.diff) > 0 ? "+" : ""}{trendInsight.diff}★). Różnica między najlepszym
+                      a najgorszym miesiącem wynosi{" "}
+                      {(trendInsight.best.avgRating! - trendInsight.worst.avgRating!).toFixed(2)}★.
+                    </p>
+                  </CardContent>
+                </Card>
+              </CardContent>
+            </Card>
+          )}
+        </section>
+
+        <Separator />
+
+        {/* ── SEKCJA: Cytaty ── */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Quote className="h-6 w-6 text-primary" />
+            Cytaty klientów
+          </h2>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Quote className="h-5 w-5 text-green-500" />
+                Cytaty pozytywne
+              </CardTitle>
+              <CardDescription>Najnowsze opinie zadowolonych klientów (4–5★)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isLoadingQuotes ? (
+                [1,2,3].map(i => <Skeleton key={i} className="h-20 w-full" />)
+              ) : realQuotes?.positive?.length ? (
+                realQuotes.positive.slice(0, 6).map((q, idx) => (
+                  <div key={idx} className="p-4 rounded-lg bg-green-500/5 border-l-4 border-l-green-500">
+                    <p className="italic text-sm mb-1">„{q.content}"</p>
+                    <p className="text-xs text-muted-foreground">{q.author_name && `${q.author_name} · `}{fmtDate(q.review_date)}</p>
+                  </div>
+                ))
+              ) : <p className="text-sm text-muted-foreground">Brak pozytywnych cytatów w wybranym zakresie.</p>}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Quote className="h-5 w-5 text-red-500" />
+                Cytaty krytyczne
+              </CardTitle>
+              <CardDescription>Najnowsze opinie niezadowolonych klientów (1–2★)</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isLoadingQuotes ? (
+                [1,2].map(i => <Skeleton key={i} className="h-20 w-full" />)
+              ) : realQuotes?.negative?.length ? (
+                realQuotes.negative.slice(0, 4).map((q, idx) => (
+                  <div key={idx} className="p-4 rounded-lg bg-red-500/5 border-l-4 border-l-red-500">
+                    <p className="italic text-sm mb-1">„{q.content}"</p>
+                    <p className="text-xs text-muted-foreground">{q.author_name && `${q.author_name} · `}{fmtDate(q.review_date)}</p>
+                  </div>
+                ))
+              ) : <p className="text-sm text-muted-foreground">Brak negatywnych cytatów w wybranym zakresie.</p>}
+            </CardContent>
+          </Card>
+        </section>
+
+        <Separator />
+
+        {/* ── SEKCJA: Rabaty ── */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Percent className="h-6 w-6 text-primary" />
+            Analiza rabatów
+          </h2>
+
+          {discountData?.stats && (
+            <div className="grid gap-4 md:grid-cols-4">
+              {[
+                { val: discountData.stats.count,                 label: "Aktywnych promocji",  color: "primary"  },
+                { val: `${discountData.stats.avg}%`,             label: "Średni rabat",         color: "green"    },
+                { val: `${discountData.stats.max}%`,             label: "Maksymalny rabat",     color: "orange"   },
+                { val: `${discountData.stats.min}%`,             label: "Minimalny rabat",      color: "blue"     },
+              ].map(({ val, label, color }, i) => (
+                <Card key={i} className={`bg-gradient-to-br from-${color}-500/10 to-${color}-500/5 border-${color}-500/20`}>
+                  <CardContent className="pt-6 text-center">
+                    <div className={`text-3xl font-bold text-${color === "primary" ? "primary" : `${color}-600`} mb-1`}>{val}</div>
+                    <div className="text-sm text-muted-foreground">{label}</div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* SEKCJA 5 — Discounts */}
-        {discounts.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Rabaty w okresie</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-muted-foreground">
-                    <th className="pb-2 text-left font-medium">Marka</th>
-                    <th className="pb-2 text-left font-medium">Kod</th>
-                    <th className="pb-2 text-right font-medium">Rabat</th>
-                    <th className="pb-2 text-right font-medium">Od</th>
-                    <th className="pb-2 text-right font-medium">Do</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {discounts.map((d: any, i: number) => (
-                    <tr key={i} className="border-b last:border-0">
-                      <td className="py-2">{d.brands?.name || brandName}</td>
-                      <td className="py-2 font-mono text-xs">{d.code || '—'}</td>
-                      <td className="py-2 text-right font-medium">{d.percentage != null ? `${d.percentage}%` : '—'}</td>
-                      <td className="py-2 text-right text-muted-foreground">{d.valid_from?.slice(0, 10) || '—'}</td>
-                      <td className="py-2 text-right text-muted-foreground">{d.valid_until?.slice(0, 10) || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        )}
+          {discountData?.comparison && discountData.comparison.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Porównanie rabatów z konkurencją</CardTitle>
+                <CardDescription>Średni rabat oferowany przez marki w okresie {dateFrom} – {dateTo}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingDiscounts ? <Skeleton className="h-[300px] w-full" /> : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={discountData.comparison.slice(0, 10)} layout="vertical"
+                                margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" tickFormatter={v => `${v}%`} />
+                        <YAxis dataKey="brand" type="category" width={95} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(v: any) => [`${v}%`, "Śr. rabat"]} />
+                        <Bar dataKey="avgDiscount" radius={[0, 4, 4, 0]}>
+                          {discountData.comparison.slice(0, 10).map((e: any, i: number) => (
+                            <Cell key={i} fill={e.brand === brandName ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-        {/* SEKCJA 6 — Prices */}
-        {brandId && prices.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Ceny w okresie</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-muted-foreground">
-                    <th className="pb-2 text-left font-medium">Pakiet</th>
-                    <th className="pb-2 text-right font-medium">Kcal od</th>
-                    <th className="pb-2 text-right font-medium">Cena</th>
-                    <th className="pb-2 text-right font-medium">Data</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {prices.slice(0, 20).map((p: any, i: number) => (
-                    <tr key={i} className="border-b last:border-0">
-                      <td className="py-2">{p.package_kcal_ranges?.packages?.name || '—'}</td>
-                      <td className="py-2 text-right">{p.package_kcal_ranges?.kcal_from ?? '—'}</td>
-                      <td className="py-2 text-right font-medium">
-                        {p.price != null ? `${Number(p.price).toFixed(2)} zł` : '—'}
-                      </td>
-                      <td className="py-2 text-right text-muted-foreground">
-                        {p.date_recorded?.slice(0, 10) || '—'}
-                      </td>
-                    </tr>
+          {discountData?.brandCodes && discountData.brandCodes.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Kody rabatowe w okresie</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {discountData.brandCodes.slice(0, 6).map((code: any, idx: number) => (
+                    <div key={idx} className="p-3 rounded-lg bg-muted/50 border">
+                      <div className="flex justify-between items-start mb-2">
+                        <code className="font-mono font-bold text-sm">{code.code || "Brak kodu"}</code>
+                        <Badge variant="secondary">{code.percentage}%</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {code.description || "Brak opisu"}{" "}
+                        | {code.valid_from ? format(new Date(code.valid_from), "d MMM", { locale: pl }) : "?"} –{" "}
+                        {code.valid_until ? format(new Date(code.valid_until), "d MMM", { locale: pl }) : "?"}
+                      </p>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!discountData?.comparison?.length && !isLoadingDiscounts && (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                Brak danych o rabatach w wybranym zakresie dat
+              </CardContent>
+            </Card>
+          )}
+        </section>
+
+        <Separator />
+
+        {/* ── SEKCJA: Ceny ── */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <DollarSign className="h-6 w-6 text-primary" />
+            Analiza cen
+          </h2>
+
+          {priceData?.brandStats && (
+            <div className="grid gap-4 md:grid-cols-4">
+              {[
+                { val: `${priceData.brandStats.avgPrice.toFixed(2)} zł`, label: "Śr. cena katalogowa", color: "primary" },
+                { val: `${priceData.brandStats.minPrice.toFixed(2)} zł`, label: "Cena minimalna",      color: "blue"    },
+                { val: `${priceData.brandStats.maxPrice.toFixed(2)} zł`, label: "Cena maksymalna",     color: "orange"  },
+                { val: discountData?.stats
+                    ? `~${(priceData.brandStats.avgPrice * (1 - discountData.stats.avg / 100)).toFixed(2)} zł`
+                    : "—",
+                  label: `Śr. cena po rabacie${discountData?.stats ? ` (${discountData.stats.avg}%)` : ""}`,
+                  color: "green" },
+              ].map(({ val, label, color }, i) => (
+                <Card key={i} className={`bg-gradient-to-br from-${color}-500/10 to-${color}-500/5 border-${color}-500/20`}>
+                  <CardContent className="pt-6 text-center">
+                    <div className={`text-2xl font-bold text-${color === "primary" ? "primary" : `${color}-600`} mb-1`}>{val}</div>
+                    <div className="text-sm text-muted-foreground">{label}</div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {priceData?.catalog && priceData.catalog.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Porównanie cen katalogowych</CardTitle>
+                <CardDescription>Średnia cena za dzień diety w okresie {dateFrom} – {dateTo}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {isLoadingPrices ? <Skeleton className="h-[300px] w-full" /> : (
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={priceData.catalog} layout="vertical"
+                                margin={{ top: 5, right: 30, left: 110, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" tickFormatter={v => `${v} zł`} />
+                        <YAxis dataKey="brand" type="category" width={105} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(v: any) => [`${(+v).toFixed(2)} zł`, "Śr. cena"]} />
+                        <Bar dataKey="avgPrice" radius={[0, 4, 4, 0]}>
+                          {priceData.catalog.map((e: any, i: number) => (
+                            <Cell key={i} fill={e.brand === brandName ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {priceData?.afterDiscount && priceData.afterDiscount.length > 0 && discountData?.stats && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Porównanie cen po rabacie</CardTitle>
+                <CardDescription>Cena efektywna uwzględniając średnie rabaty</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={priceData.afterDiscount} layout="vertical"
+                              margin={{ top: 5, right: 30, left: 110, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis type="number" tickFormatter={v => `${v} zł`} />
+                      <YAxis dataKey="brand" type="category" width={105} tick={{ fontSize: 11 }} />
+                      <Tooltip formatter={(v: any) => [`${(+v).toFixed(2)} zł`, "Cena po rabacie"]} />
+                      <Bar dataKey="avgPrice" radius={[0, 4, 4, 0]}>
+                        {priceData.afterDiscount.map((e: any, i: number) => (
+                          <Cell key={i} fill={e.brand === brandName ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))"} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!priceData?.catalog?.length && !isLoadingPrices && (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                Brak danych cenowych w wybranym zakresie dat
+              </CardContent>
+            </Card>
+          )}
+        </section>
+
       </div>
 
-      {/* Email Modal */}
-      <Dialog open={showEmail} onOpenChange={open => { setShowEmail(open); if (!open) { setSendResult(null); setSelectedUserEmails([]); setExtraEmails('') } }}>
+      {/* ── Email Modal ── */}
+      <Dialog open={showEmail} onOpenChange={open => { setShowEmail(open); if (!open) { setSendResult(null); setSelectedUserEmails([]); setExtraEmails("") } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Wyślij raport emailem</DialogTitle>
@@ -482,17 +1133,15 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
               <div className="space-y-1.5 max-h-48 overflow-y-auto border rounded-lg p-3">
                 {!usersData ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Ładowanie...
+                    <Loader2 className="h-4 w-4 animate-spin" /> Ładowanie…
                   </div>
                 ) : usersData.map((u: any) => (
                   <label key={u.id} className="flex items-center gap-2.5 cursor-pointer rounded px-1 py-0.5 hover:bg-muted/50">
                     <Checkbox
                       checked={selectedUserEmails.includes(u.email)}
-                      onCheckedChange={checked => {
-                        setSelectedUserEmails(prev =>
-                          checked ? [...prev, u.email] : prev.filter(e => e !== u.email)
-                        )
-                      }}
+                      onCheckedChange={checked => setSelectedUserEmails(prev =>
+                        checked ? [...prev, u.email] : prev.filter(e => e !== u.email)
+                      )}
                     />
                     <span className="text-sm flex-1 truncate">{u.full_name || u.email}</span>
                     <span className="text-xs text-muted-foreground flex-shrink-0">{u.email}</span>
@@ -501,30 +1150,20 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
               </div>
             </div>
             <div>
-              <Label htmlFor="extra-emails" className="text-sm font-medium mb-2 block">
-                Dodatkowe adresy email
-              </Label>
-              <Textarea
-                id="extra-emails"
-                placeholder={"email@example.com\nkolejny@email.pl"}
-                value={extraEmails}
-                onChange={e => setExtraEmails(e.target.value)}
-                rows={3}
-              />
+              <Label htmlFor="extra-emails" className="text-sm font-medium mb-2 block">Dodatkowe adresy email</Label>
+              <Textarea id="extra-emails" placeholder={"email@example.com\nkolejny@email.pl"}
+                        value={extraEmails} onChange={e => setExtraEmails(e.target.value)} rows={3} />
             </div>
             {sendResult && (
-              <div className={`text-sm p-3 rounded-lg ${sendResult.errors.length === 0 ? 'bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300' : 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300'}`}>
-                Wysłano: {sendResult.sent}.{sendResult.errors.length > 0 && ` Błędy: ${sendResult.errors.join('; ')}`}
+              <div className={`text-sm p-3 rounded-lg ${sendResult.errors.length === 0
+                ? "bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300"
+                : "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300"}`}>
+                Wysłano: {sendResult.sent}.{sendResult.errors.length > 0 && ` Błędy: ${sendResult.errors.join("; ")}`}
               </div>
             )}
-            <Button
-              className="w-full"
-              onClick={handleSendEmail}
-              disabled={sending || (selectedUserEmails.length === 0 && !extraEmails.trim())}
-            >
-              {sending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Wysyłanie…</>
-              ) : 'Wyślij'}
+            <Button className="w-full" onClick={handleSendEmail}
+              disabled={sending || (selectedUserEmails.length === 0 && !extraEmails.trim())}>
+              {sending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Wysyłanie…</> : "Wyślij"}
             </Button>
           </div>
         </DialogContent>
