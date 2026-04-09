@@ -15,8 +15,10 @@ import { Progress } from "@/components/ui/progress"
 import {
   Star, MessageSquare, TrendingUp, TrendingDown, Heart, ThumbsUp, ThumbsDown,
   AlertTriangle, Calendar, Sparkles, Clock, Target, Percent, DollarSign,
-  Quote, Printer, Mail, Loader2,
+  Quote, FileDown, Mail, Loader2,
 } from "lucide-react"
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import { useState, useRef, useMemo } from "react"
 import { format, startOfMonth, endOfMonth } from "date-fns"
 import { pl } from "date-fns/locale"
@@ -205,6 +207,7 @@ function ReviewAspectsSection({ brandId }: { brandId: string }) {
 
 export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, dateTo }: DynamicReportProps) {
   const [showEmail, setShowEmail] = useState(false)
+  const [generatingPDF, setGeneratingPDF] = useState(false)
   const [selectedUserEmails, setSelectedUserEmails] = useState<string[]>([])
   const [extraEmails, setExtraEmails] = useState("")
   const [sending, setSending] = useState(false)
@@ -435,7 +438,62 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
   })
 
   // ── Actions ─────────────────────────────────────────────────────────────────
-  const handlePrint = () => window.print()
+  const handleDownloadPDF = async () => {
+    const element = document.getElementById('report-print-root')
+    if (!element) return
+
+    setGeneratingPDF(true)
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        windowWidth: element.scrollWidth,
+        logging: false,
+      })
+
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      })
+
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      const pdfHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth = canvas.width
+      const imgHeight = canvas.height
+
+      let heightLeft = imgHeight
+      let page = 0
+
+      while (heightLeft > 0) {
+        if (page > 0) pdf.addPage()
+        const sourceY = page * (pdfHeight / pdfWidth) * imgWidth
+        const sourceHeight = Math.min((pdfHeight / pdfWidth) * imgWidth, imgHeight - sourceY)
+
+        const pageCanvas = document.createElement('canvas')
+        pageCanvas.width = imgWidth
+        pageCanvas.height = sourceHeight
+        const ctx = pageCanvas.getContext('2d')!
+        ctx.drawImage(canvas, 0, sourceY, imgWidth, sourceHeight, 0, 0, imgWidth, sourceHeight)
+
+        pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, pdfWidth, (sourceHeight / imgWidth) * pdfWidth)
+        heightLeft -= sourceHeight
+        page++
+      }
+
+      const brandSlug = brandName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+      pdf.save(`raport-${brandSlug}-${dateFrom}-${dateTo}.pdf`)
+    } catch (err) {
+      console.error('PDF error:', err)
+    } finally {
+      setGeneratingPDF(false)
+    }
+  }
 
   const handleSendEmail = async () => {
     setSending(true)
@@ -464,50 +522,12 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
 
   return (
     <>
-      <style>{`
-        @media print {
-          /* Ukryj tylko UI portalu */
-          nav, header, aside, footer,
-          [data-sidebar], [role="navigation"],
-          .no-print { display: none !important; }
-
-          /* Raport zajmuje całą szerokość */
-          #report-print-root {
-            display: block !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            padding: 8mm 12mm !important;
-            margin: 0 !important;
-          }
-
-          /* Reset marginów głównego layoutu */
-          main, [role="main"] {
-            padding: 0 !important;
-            margin: 0 !important;
-            max-width: 100% !important;
-          }
-
-          body { font-size: 10pt; background: #fff; }
-          h1 { font-size: 18pt; }
-          h2 { font-size: 14pt; margin-top: 16pt; }
-          p, span, td, li { font-size: 9pt; }
-
-          .recharts-wrapper, .recharts-responsive-container {
-            width: 100% !important;
-            page-break-inside: avoid;
-          }
-
-          section { page-break-inside: avoid; margin-bottom: 12pt; }
-          button { display: none !important; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          @page { margin: 10mm; size: A4; }
-        }
-      `}</style>
-
       {/* Action buttons */}
       <div className="flex gap-3 mb-6 no-print">
-        <Button variant="outline" onClick={handlePrint}>
-          <Printer className="h-4 w-4 mr-2" />Pobierz PDF
+        <Button onClick={handleDownloadPDF} disabled={generatingPDF} variant="outline">
+          {generatingPDF
+            ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generuję PDF...</>
+            : <><FileDown className="mr-2 h-4 w-4" />Pobierz PDF</>}
         </Button>
         <Button variant="outline" onClick={() => setShowEmail(true)}>
           <Mail className="h-4 w-4 mr-2" />Wyślij email
