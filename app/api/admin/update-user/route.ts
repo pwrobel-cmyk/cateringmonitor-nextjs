@@ -31,9 +31,9 @@ export async function POST(request: Request) {
     }
   }
 
-  // Role
+  // Role — stored in user_roles table (upsert)
   if (role !== undefined) {
-    const { error } = await service.from('profiles').update({ role }).eq('user_id', userId)
+    const { error } = await service.from('user_roles').upsert({ user_id: userId, role }, { onConflict: 'user_id' })
     if (error) errors.push(`role: ${error.message}`)
   }
 

@@ -18,8 +18,10 @@ export async function GET() {
   const { data: { users: authUsers } } = await service.auth.admin.listUsers({ perPage: 1000 })
 
   // Profiles
-  const { data: profiles, error: profilesError } = await service.from('profiles').select('user_id, full_name, avatar_url, status, trial_ends_at, company_name, role')
-  if (profilesError) console.error('[admin/users] profiles error:', profilesError.message)
+  const { data: profiles } = await service.from('profiles').select('user_id, full_name, avatar_url, status, trial_ends_at, company_name')
+
+  // Roles
+  const { data: roles } = await service.from('user_roles').select('user_id, role')
 
   // Brand assignments
   const { data: assignments } = await service.from('user_brand_assignments').select('user_id, brand_id, brands(name)')
@@ -37,6 +39,9 @@ export async function GET() {
   const profileMap: Record<string, any> = {}
   for (const p of (profiles || [])) profileMap[p.user_id] = p
 
+  const roleMap: Record<string, string> = {}
+  for (const r of (roles || [])) roleMap[(r as any).user_id] = (r as any).role
+
   const assignMap: Record<string, { id: string; name: string }> = {}
   for (const a of (assignments || [])) assignMap[a.user_id] = { id: (a as any).brand_id || '', name: (a.brands as any)?.name || '' }
 
@@ -52,7 +57,7 @@ export async function GET() {
     company_name: profileMap[u.id]?.company_name || '',
     brand_id: assignMap[u.id]?.id || '',
     brand_name: assignMap[u.id]?.name || '',
-    role: profileMap[u.id]?.role || (u as any).app_metadata?.role || (u as any).user_metadata?.role || 'user',
+    role: roleMap[u.id] || (u as any).app_metadata?.role || 'user',
     last_activity: lastVisit[u.id] || null,
   }))
 
