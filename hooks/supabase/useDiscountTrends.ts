@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { format, startOfWeek, startOfMonth, endOfWeek, endOfMonth, subDays } from "date-fns";
 import { useCountry } from "@/contexts/CountryContext";
-import { useUserBrands } from "../useUserBrands";
 
 interface DiscountTrendsFilters {
   dateFrom?: Date;
@@ -14,7 +13,6 @@ interface DiscountTrendsFilters {
 
 export function useDiscountTrends(filters: DiscountTrendsFilters = {}, enabled: boolean = true) {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery({
     queryKey: [
@@ -25,13 +23,9 @@ export function useDiscountTrends(filters: DiscountTrendsFilters = {}, enabled: 
       filters.brandNames?.join(','),
       filters.customerType,
       selectedCountry,
-      assignedBrandIds
     ],
     enabled,
     queryFn: async () => {
-      if (assignedBrandIds.length === 0) {
-        return { chartData: [], brands: [] };
-      }
 
       const defaultDateTo = new Date();
       const defaultDateFrom = subDays(defaultDateTo, 30);
@@ -50,7 +44,6 @@ export function useDiscountTrends(filters: DiscountTrendsFilters = {}, enabled: 
             country
           )
         `)
-        .in("brand_id", assignedBrandIds)
         .eq("is_active", true)
         .limit(10000);
 

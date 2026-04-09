@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useCountry } from "@/contexts/CountryContext";
-import { useUserBrands } from "@/hooks/useUserBrands";
 
 export interface PriceChange {
   brandId: string;
@@ -24,19 +23,14 @@ interface PriceChangesFilters {
 
 export function usePriceChanges(filters?: PriceChangesFilters) {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery({
-    queryKey: ["price-changes", filters, selectedCountry, assignedBrandIds],
+    queryKey: ["price-changes", filters, selectedCountry],
     queryFn: async () => {
-      if (assignedBrandIds.length === 0) return [];
-
       const { data, error } = await (supabase as any).rpc("get_price_changes");
       if (error) throw error;
 
       let changes = (data as any[]) || [];
-
-      changes = changes.filter((item: any) => assignedBrandIds.includes(item.brand_id));
 
       if (selectedCountry === "Czechy") {
         const { data: czechBrands } = await (supabase as any)
@@ -119,14 +113,12 @@ export interface KcalComparisonRow {
 
 export function usePackagePriceComparison(filters: PriceHistoryFilters = {}, enabled: boolean = true) {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery<KcalComparisonRow[]>({
-    queryKey: ["package-price-comparison", filters, selectedCountry, assignedBrandIds],
+    queryKey: ["package-price-comparison", filters, selectedCountry],
     enabled,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      if (assignedBrandIds.length === 0) return [];
 
       const dateFrom = filters.dateFrom || new Date();
       const dateTo = filters.dateTo || new Date();
@@ -192,7 +184,6 @@ export function usePackagePriceComparison(filters: PriceHistoryFilters = {}, ena
 
         if (selectedCountry === "Czechy" && brand.country !== "Czechy") return;
         if (selectedCountry !== "Czechy" && brand.country === "Czechy") return;
-        if (!assignedBrandIds.includes(brand.id)) return;
 
         const kcalRange = pkr.kcal_ranges;
         const kcal = kcalRange?.kcal_from === kcalRange?.kcal_to

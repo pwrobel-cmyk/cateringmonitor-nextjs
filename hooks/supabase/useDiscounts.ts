@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useCountry } from "@/contexts/CountryContext";
-import { useUserBrands } from "../useUserBrands";
 
 export interface Discount {
   id: string;
@@ -29,13 +28,10 @@ export interface Discount {
 
 export const useDiscounts = () => {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery({
-    queryKey: ["discounts", selectedCountry, assignedBrandIds],
+    queryKey: ["discounts", selectedCountry],
     queryFn: async () => {
-      if (assignedBrandIds.length === 0) return [];
-
       let query: any = supabase
         .from("discounts")
         .select(`
@@ -47,8 +43,7 @@ export const useDiscounts = () => {
             country
           )
         `)
-        .eq("is_active", true)
-        .in("brand_id", assignedBrandIds);
+        .eq("is_active", true);
 
       if (selectedCountry === "Czechy") {
         query = query.eq("brands.country", "Czechy");
@@ -65,15 +60,10 @@ export const useDiscounts = () => {
 
 export const useDiscountStats = () => {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery({
-    queryKey: ["discount-stats", selectedCountry, assignedBrandIds],
+    queryKey: ["discount-stats", selectedCountry],
     queryFn: async () => {
-      if (assignedBrandIds.length === 0) {
-        return { activeCount: 0, avgPercentage: 0, expiringSoon: 0 };
-      }
-
       let query: any = supabase
         .from("discounts")
         .select(`
@@ -85,8 +75,7 @@ export const useDiscountStats = () => {
             country
           )
         `)
-        .eq("is_active", true)
-        .in("brand_id", assignedBrandIds);
+        .eq("is_active", true);
 
       if (selectedCountry === "Czechy") {
         query = query.eq("brands.country", "Czechy");

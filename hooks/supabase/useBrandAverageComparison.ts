@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { format, subDays, eachDayOfInterval } from "date-fns";
 import { useCountry } from "@/contexts/CountryContext";
-import { useUserBrands } from "@/hooks/useUserBrands";
 
 export interface BrandAverageData {
   brandName: string;
@@ -24,7 +23,6 @@ interface BrandAverageComparisonFilters {
 
 export function useBrandAverageComparison(filters: BrandAverageComparisonFilters = {}) {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery({
     queryKey: [
@@ -34,20 +32,14 @@ export function useBrandAverageComparison(filters: BrandAverageComparisonFilters
       filters.selectedPackages,
       filters.customerType || "existing",
       selectedCountry,
-      assignedBrandIds,
     ],
     queryFn: async (): Promise<{ brands: string[]; data: BrandAverageData[] }> => {
-      if (assignedBrandIds.length === 0) {
-        return { brands: [], data: [] };
-      }
-
       try {
-        // 1. Get assigned active brands only
+        // 1. Get all active brands
         let brandsQuery: any = (supabase as any)
           .from("brands")
           .select("id, name")
-          .eq("is_active", true)
-          .in("id", assignedBrandIds);
+          .eq("is_active", true);
 
         if (selectedCountry === "Czechy") {
           brandsQuery = brandsQuery.eq("country", "Czechy");

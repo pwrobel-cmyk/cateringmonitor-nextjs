@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { matchesCustomerType, overlapsRange } from "@/lib/discounts";
 import { useCountry } from "@/contexts/CountryContext";
-import { useUserBrands } from "../useUserBrands";
 
 interface DiscountsFilteredParams {
   dateFrom: Date;
@@ -32,15 +31,10 @@ export function useDiscountsFiltered({
   customerType,
 }: DiscountsFilteredParams) {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery({
-    queryKey: ["discounts-filtered", dateFrom, dateTo, brandNames, customerType, selectedCountry, assignedBrandIds],
+    queryKey: ["discounts-filtered", dateFrom, dateTo, brandNames, customerType, selectedCountry],
     queryFn: async () => {
-      if (assignedBrandIds.length === 0) {
-        return { discounts: [], brands: [] };
-      }
-
       const dateFromStr = dateFrom.toISOString().split("T")[0];
       const dateToStr = dateTo.toISOString();
 
@@ -59,7 +53,6 @@ export function useDiscountsFiltered({
             country
           )
         `)
-        .in("brand_id", assignedBrandIds)
         .eq("is_active", true)
         .lte("valid_from", dateToStr)
         .or(`valid_until.gte.${dateFromStr},valid_until.is.null`);

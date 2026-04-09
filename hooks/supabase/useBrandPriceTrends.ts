@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useCountry } from "@/contexts/CountryContext";
-import { useUserBrands } from "../useUserBrands";
 
 interface BrandPriceTrendsFilters {
   dateFrom?: Date;
@@ -12,14 +11,10 @@ interface BrandPriceTrendsFilters {
 
 export function useBrandPriceTrends(filters: BrandPriceTrendsFilters = {}) {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery({
-    queryKey: ["brand-price-trends", filters, selectedCountry, assignedBrandIds],
+    queryKey: ["brand-price-trends", filters, selectedCountry],
     queryFn: async () => {
-      if (assignedBrandIds.length === 0) {
-        return { chartData: [], brands: [] };
-      }
 
       const twoWeeksAgo = new Date();
       twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
@@ -41,7 +36,6 @@ export function useBrandPriceTrends(filters: BrandPriceTrendsFilters = {}) {
             country
           )
         `)
-        .in("brand_id", assignedBrandIds)
         .gte("date", dateFrom.toISOString().split('T')[0])
         .lte("date", dateTo.toISOString().split('T')[0]);
 

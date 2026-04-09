@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useCountry } from "@/contexts/CountryContext";
-import { useUserBrands } from "../useUserBrands";
 
 export interface Review {
   id: string;
@@ -25,21 +24,15 @@ export function useReviews(
   limit: number = 50,
   brandId?: string,
   rating?: number,
-  sources?: string[],
-  skipAssignmentFilter: boolean = false
+  sources?: string[]
 ) {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
   const from = page * limit;
   const to = from + limit - 1;
 
   return useQuery({
-    queryKey: ["reviews", page, limit, brandId, rating, selectedCountry, skipAssignmentFilter ? null : assignedBrandIds, sources],
+    queryKey: ["reviews", page, limit, brandId, rating, selectedCountry, sources],
     queryFn: async () => {
-      if (!skipAssignmentFilter && assignedBrandIds.length === 0) {
-        return { reviews: [], total: 0, hasMore: false };
-      }
-
       let query = (supabase as any)
         .from("reviews")
         .select(`
@@ -52,10 +45,6 @@ export function useReviews(
           )
         `, { count: 'exact' })
         .eq("is_approved", true);
-
-      if (!skipAssignmentFilter) {
-        query = query.in("brand_id", assignedBrandIds);
-      }
 
       if (selectedCountry === "Czechy") {
         query = query.eq("brands.country", "Czechy");

@@ -75,9 +75,7 @@ export default function ReviewsPage() {
     page,
     20,
     selectedBrandId || undefined,
-    recentRating,
-    undefined,
-    true
+    recentRating
   );
 
   const reviews = reviewsData?.reviews || [];

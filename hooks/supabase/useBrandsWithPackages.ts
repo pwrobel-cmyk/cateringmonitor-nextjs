@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useCountry } from "@/contexts/CountryContext";
-import { useUserBrands } from "../useUserBrands";
 
 export interface CalorieVariant {
   kcal: number;
@@ -32,15 +31,10 @@ export interface BrandWithPackages {
 
 export function useBrandsWithPackages(filterDate?: string) {
   const { selectedCountry } = useCountry();
-  const { assignedBrandIds } = useUserBrands();
 
   return useQuery({
-    queryKey: ["brands-with-packages", filterDate, selectedCountry, assignedBrandIds],
+    queryKey: ["brands-with-packages", filterDate, selectedCountry],
     queryFn: async (): Promise<BrandWithPackages[]> => {
-      if (assignedBrandIds.length === 0) {
-        return [];
-      }
-
       let query = (supabase as any)
         .from("brands")
         .select(`
@@ -67,8 +61,7 @@ export function useBrandsWithPackages(filterDate?: string) {
           )
         `)
         .eq("is_active", true)
-        .eq("packages.is_active", true)
-        .in("id", assignedBrandIds);
+        .eq("packages.is_active", true);
 
       if (selectedCountry === "Czechy") {
         query = query.eq("country", "Czechy");
