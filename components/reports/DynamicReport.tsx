@@ -464,6 +464,80 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
 
   return (
     <>
+      <style>{`
+        @media print {
+          /* Ukryj wszystko poza raportem */
+          body > * { display: none !important; }
+          #report-print-root { display: block !important; }
+
+          /* Reset */
+          * { box-sizing: border-box; }
+
+          /* Typografia */
+          body { font-size: 10pt; font-family: Arial, sans-serif; color: #000; background: #fff; }
+          h1 { font-size: 18pt; }
+          h2 { font-size: 14pt; margin-top: 16pt; }
+          h3, h4 { font-size: 11pt; }
+          p, span, td, li { font-size: 9pt; }
+
+          /* Layout — pełna szerokość, bez overflow */
+          .report-content {
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 8mm 12mm !important;
+            margin: 0 !important;
+          }
+
+          /* Karty — border zamiast shadow */
+          .card, [class*="rounded"] {
+            border: 0.5pt solid #ddd !important;
+            box-shadow: none !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            margin-bottom: 8pt;
+          }
+
+          /* Gridy — 2 kolumny max w druku */
+          .grid-cols-4, .md\\:grid-cols-4 { grid-template-columns: repeat(2, 1fr) !important; }
+          .grid-cols-3, .md\\:grid-cols-3, .lg\\:grid-cols-3 { grid-template-columns: repeat(2, 1fr) !important; }
+          .grid-cols-2, .md\\:grid-cols-2 { grid-template-columns: repeat(2, 1fr) !important; }
+
+          /* Wykresy — stała wysokość, nie wylewają się */
+          .recharts-wrapper, .recharts-responsive-container {
+            width: 100% !important;
+            max-width: 100% !important;
+            page-break-inside: avoid;
+          }
+
+          /* Sekcje nie łamią się w środku */
+          section { page-break-inside: avoid; break-inside: avoid; margin-bottom: 12pt; }
+
+          /* Ukryj przyciski i nawigację */
+          button, nav, header, aside, .no-print { display: none !important; }
+
+          /* Kolory zachowane */
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+
+          /* Separator */
+          hr { border-top: 0.5pt solid #eee; margin: 8pt 0; }
+
+          /* Tabele */
+          table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+          td, th { padding: 3pt 4pt; border: 0.3pt solid #ddd; }
+
+          /* Badges/tags — nie ucinaj tekstu */
+          [class*="badge"], [class*="Badge"] {
+            display: inline-block !important;
+            white-space: normal !important;
+            font-size: 7pt !important;
+          }
+
+          /* Strony */
+          @page { margin: 10mm; size: A4; }
+          h2 { page-break-before: auto; }
+        }
+      `}</style>
+
       {/* Action buttons */}
       <div className="flex gap-3 mb-6 no-print">
         <Button variant="outline" onClick={handlePrint}>
@@ -475,7 +549,7 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
       </div>
 
       {/* ── Report content ── */}
-      <div ref={reportRef} className="report-content space-y-10">
+      <div id="report-print-root" ref={reportRef} className="report-content space-y-10">
 
         {/* HEADER */}
         <div className="flex items-start gap-6 pb-6 border-b">
