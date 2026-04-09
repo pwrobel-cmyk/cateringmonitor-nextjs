@@ -82,12 +82,12 @@ export default function MojeRaportyPage() {
                     {createdAt && <p>Utworzony {createdAt}</p>}
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" className="flex-1" asChild>
-                      <Link href={`/reports/custom/${r.id}`}>
+                    <Link href={`/reports/custom/${r.id}`} className="flex-1">
+                      <Button size="sm" className="w-full">
                         <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                         Otwórz raport
-                      </Link>
-                    </Button>
+                      </Button>
+                    </Link>
                     <Button size="sm" variant="outline" onClick={() => copyLink(r.id)}>
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
