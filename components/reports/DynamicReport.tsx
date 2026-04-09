@@ -17,8 +17,7 @@ import {
   AlertTriangle, Calendar, Sparkles, Clock, Target, Percent, DollarSign,
   Quote, FileDown, Mail, Loader2,
 } from "lucide-react"
-import html2canvas from 'html2canvas'
-import { jsPDF } from 'jspdf'
+import { useReactToPrint } from 'react-to-print'
 import { useState, useRef, useMemo } from "react"
 import { format, startOfMonth, endOfMonth } from "date-fns"
 import { pl } from "date-fns/locale"
@@ -207,7 +206,6 @@ function ReviewAspectsSection({ brandId }: { brandId: string }) {
 
 export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, dateTo }: DynamicReportProps) {
   const [showEmail, setShowEmail] = useState(false)
-  const [generatingPDF, setGeneratingPDF] = useState(false)
   const [selectedUserEmails, setSelectedUserEmails] = useState<string[]>([])
   const [extraEmails, setExtraEmails] = useState("")
   const [sending, setSending] = useState(false)
@@ -438,84 +436,18 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
   })
 
   // ── Actions ─────────────────────────────────────────────────────────────────
-  const handleDownloadPDF = async () => {
-    const element = document.getElementById('report-print-root')
-    if (!element) return
-
-    setGeneratingPDF(true)
-    try {
-      // Zastąp wszystkie oklab/oklch kolory na hex przed renderem
-      const allElements = element.querySelectorAll('*')
-      const originalStyles: { el: Element; prop: string; val: string }[] = []
-
-      const colorProps = ['color', 'background-color', 'border-color', 'fill', 'stroke', 'background']
-
-      allElements.forEach(el => {
-        const computed = window.getComputedStyle(el)
-        colorProps.forEach(prop => {
-          const val = computed.getPropertyValue(prop)
-          if (val && (val.includes('oklab') || val.includes('oklch'))) {
-            const htmlEl = el as HTMLElement
-            originalStyles.push({ el, prop, val: htmlEl.style.getPropertyValue(prop) })
-            htmlEl.style.setProperty(prop, '#888888')
-          }
-        })
-      })
-
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        onclone: (clonedDoc) => {
-          const clonedEl = clonedDoc.getElementById('report-print-root')
-          if (!clonedEl) return
-          clonedEl.querySelectorAll('*').forEach(el => {
-            const htmlEl = el as HTMLElement
-            const style = htmlEl.getAttribute('style') || ''
-            if (style.includes('oklab') || style.includes('oklch')) {
-              htmlEl.setAttribute('style', style.replace(/oklab\([^)]+\)/g, '#888').replace(/oklch\([^)]+\)/g, '#888'))
-            }
-          })
-          // Usuń wszystkie CSS variables z oklch/oklab
-          clonedEl.querySelectorAll('style').forEach(s => {
-            s.textContent = (s.textContent || '').replace(/oklab\([^)]+\)/g, '#6b7280').replace(/oklch\([^)]+\)/g, '#6b7280')
-          })
-        }
-      })
-
-      // Restore
-      originalStyles.forEach(({ el, prop, val }) => {
-        (el as HTMLElement).style.setProperty(prop, val)
-      })
-
-      const imgData = canvas.toDataURL('image/png')
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = pdf.internal.pageSize.getHeight()
-      const imgHeight = (canvas.height * pdfWidth) / canvas.width
-
-      let heightLeft = imgHeight
-      let position = 0
-      let page = 0
-
-      while (heightLeft > 0) {
-        if (page > 0) { pdf.addPage(); position = 0 }
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight)
-        heightLeft -= pdfHeight
-        position -= pdfHeight
-        page++
+  const handleDownloadPDF = useReactToPrint({
+    contentRef: reportRef,
+    documentTitle: `raport-${brandName}-${dateFrom}-${dateTo}`,
+    pageStyle: `
+      @page { size: A4; margin: 10mm; }
+      @media print {
+        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        button, nav, header, aside, .no-print { display: none !important; }
+        * { box-sizing: border-box; }
       }
-
-      const brandSlug = brandName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
-      pdf.save(`raport-${brandSlug}-${dateFrom}-${dateTo}.pdf`)
-    } catch (err) {
-      console.error('PDF error:', err)
-    } finally {
-      setGeneratingPDF(false)
-    }
-  }
+    `,
+  })
 
   const handleSendEmail = async () => {
     setSending(true)
@@ -546,10 +478,8 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
     <>
       {/* Action buttons */}
       <div className="flex gap-3 mb-6 no-print">
-        <Button onClick={handleDownloadPDF} disabled={generatingPDF} variant="outline">
-          {generatingPDF
-            ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generuję PDF...</>
-            : <><FileDown className="mr-2 h-4 w-4" />Pobierz PDF</>}
+        <Button onClick={() => handleDownloadPDF()} variant="outline">
+          <><FileDown className="mr-2 h-4 w-4" />Pobierz PDF</>
         </Button>
         <Button variant="outline" onClick={() => setShowEmail(true)}>
           <Mail className="h-4 w-4 mr-2" />Wyślij email
