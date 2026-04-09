@@ -150,6 +150,9 @@ export function Header() {
                       <button onClick={() => { router.push('/admin/scrapers'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
                         <Bot className="h-4 w-4" /> Scrapery
                       </button>
+                      <button onClick={() => { router.push('/admin/reports'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
+                        <FileBarChart2 className="h-4 w-4" /> Generator raportów
+                      </button>
                       <button onClick={() => { router.push('/admin/discounts'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
                         <ClipboardList className="h-4 w-4" /> Zarządzanie rabatami
                       </button>
