@@ -409,7 +409,7 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
           package_kcal_ranges!price_history_package_kcal_range_id_fkey(
             packages(
               name,
-              brands(id, name)
+              brands(id, name, country)
             )
           )
         `)
@@ -422,7 +422,9 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
       const rows = (data || []) as any[]
       const seen = new Set<string>()
       const latestRows = rows.filter((p: any) => {
-        const brandName = p.package_kcal_ranges?.packages?.brands?.name || "Unknown"
+        const brand = p.package_kcal_ranges?.packages?.brands
+        if (brand?.country === "Czechy") return false
+        const brandName = brand?.name || "Unknown"
         const pkgName   = p.package_kcal_ranges?.packages?.name || ""
         const key = `${brandName}||${pkgName}`
         if (seen.has(key)) return false
@@ -477,7 +479,7 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from("reviews")
-        .select("brand_id, rating, brands(name, logo_url)")
+        .select("brand_id, rating, brands(name, logo_url, country)")
         .eq("is_approved", true)
         .gte("review_date", dateFrom)
         .lte("review_date", dateTo)
@@ -487,6 +489,7 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
       rows.forEach((r: any) => {
         const bid = r.brand_id
         if (!bid) return
+        if (r.brands?.country === "Czechy") return
         if (!byBrand[bid]) byBrand[bid] = { name: r.brands?.name || "Unknown", logoUrl: r.brands?.logo_url || null, brandId: bid, ratings: [] }
         if (r.rating != null) byBrand[bid].ratings.push(r.rating)
       })
