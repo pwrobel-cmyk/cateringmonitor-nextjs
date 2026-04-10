@@ -556,6 +556,17 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
     },
   })
 
+  // ── Contacts (address book) ──────────────────────────────────────────────────
+  const { data: contactsData = [] } = useQuery({
+    queryKey: ["admin-contacts"],
+    enabled: showEmail,
+    queryFn: async () => {
+      const res = await fetch("/api/admin/contacts")
+      const json = await res.json()
+      return (json.contacts || []) as { id: string; first_name: string; last_name: string | null; company: string | null; email: string }[]
+    },
+  })
+
   // ── Actions ─────────────────────────────────────────────────────────────────
   const handleDownloadPDF = useReactToPrint({
     contentRef: reportRef,
@@ -1576,6 +1587,29 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
                 ))}
               </div>
             </div>
+            {contactsData.length > 0 && (
+              <div>
+                <Label className="text-sm font-medium mb-2 block">Książka adresowa</Label>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto border rounded-lg p-3">
+                  {contactsData.map(c => (
+                    <label key={c.id} className="flex items-center gap-2.5 cursor-pointer rounded px-1 py-0.5 hover:bg-muted/50">
+                      <Checkbox
+                        checked={extraEmails.includes(c.email)}
+                        onCheckedChange={checked => setExtraEmails(prev => {
+                          const lines = prev.split('\n').map(l => l.trim()).filter(Boolean)
+                          if (checked) return [...lines, c.email].join('\n')
+                          return lines.filter(l => l !== c.email).join('\n')
+                        })}
+                      />
+                      <span className="text-sm flex-1 truncate">
+                        {c.first_name} {c.last_name || ''}{c.company ? ` · ${c.company}` : ''}
+                      </span>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">{c.email}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <div>
               <Label htmlFor="extra-emails" className="text-sm font-medium mb-2 block">Dodatkowe adresy email</Label>
               <Textarea id="extra-emails" placeholder={"email@example.com\nkolejny@email.pl"}

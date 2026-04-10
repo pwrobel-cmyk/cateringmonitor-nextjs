@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye } from 'lucide-react'
+import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye, BookUser, Pencil, Trash2, Plus, X } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -70,8 +70,21 @@ const DATE_RANGE_OPTIONS: { value: DateRangeType; label: string }[] = [
   { value: 'year', label: 'Rok' },
 ]
 
+type Contact = {
+  id: string
+  first_name: string
+  last_name: string | null
+  company: string | null
+  email: string
+  notes: string | null
+  created_at: string
+}
+
+const EMPTY_CONTACT_FORM = { first_name: '', last_name: '', company: '', email: '', notes: '' }
+
 export default function AdminReportsPage() {
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const [brandId, setBrandId] = useState<string>('all')
   const [dateRangeType, setDateRangeType] = useState<DateRangeType>('last_month')
   const [specificMonth, setSpecificMonth] = useState(
@@ -181,6 +194,65 @@ export default function AdminReportsPage() {
 
   const fmtDt = (s: string) => new Date(s).toLocaleString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+  // ── Contacts (address book) ─────────────────────────────────────────────────
+  const { data: contacts = [], isLoading: contactsLoading } = useQuery({
+    queryKey: ['admin-contacts'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/contacts')
+      const json = await res.json()
+      return (json.contacts || []) as Contact[]
+    },
+  })
+
+  const [contactForm, setContactForm] = useState(EMPTY_CONTACT_FORM)
+  const [editContact, setEditContact] = useState<Contact | null>(null)
+  const [savingContact, setSavingContact] = useState(false)
+  const [contactSearch, setContactSearch] = useState('')
+
+  const filteredContacts = contacts.filter(c => {
+    const q = contactSearch.toLowerCase()
+    return !q || c.email.includes(q) || c.first_name.toLowerCase().includes(q) || (c.last_name || '').toLowerCase().includes(q) || (c.company || '').toLowerCase().includes(q)
+  })
+
+  const handleSaveContact = async () => {
+    setSavingContact(true)
+    try {
+      const method = editContact ? 'PATCH' : 'POST'
+      const body = editContact ? { id: editContact.id, ...contactForm } : contactForm
+      const res = await fetch('/api/admin/contacts', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      toast.success(editContact ? 'Kontakt zaktualizowany' : 'Kontakt dodany')
+      setContactForm(EMPTY_CONTACT_FORM)
+      setEditContact(null)
+      queryClient.invalidateQueries({ queryKey: ['admin-contacts'] })
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSavingContact(false)
+    }
+  }
+
+  const handleDeleteContact = async (id: string) => {
+    if (!confirm('Usunąć kontakt?')) return
+    await fetch('/api/admin/contacts', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    queryClient.invalidateQueries({ queryKey: ['admin-contacts'] })
+    toast.success('Kontakt usunięty')
+  }
+
+  const startEditContact = (c: Contact) => {
+    setEditContact(c)
+    setContactForm({ first_name: c.first_name, last_name: c.last_name || '', company: c.company || '', email: c.email, notes: c.notes || '' })
+  }
+
   // ── Compose state ───────────────────────────────────────────────────────────
   const [composeSubject, setComposeSubject] = useState('')
   const [composeParagraphs, setComposeParagraphs] = useState('')  // newline-separated
@@ -271,6 +343,10 @@ export default function AdminReportsPage() {
           <TabsTrigger value="compose" className="gap-2">
             <Send className="h-4 w-4" />Wyślij wiadomość
           </TabsTrigger>
+          <TabsTrigger value="contacts" className="gap-2">
+            <BookUser className="h-4 w-4" />Książka adresowa
+            {contacts.length > 0 && <Badge variant="secondary" className="ml-1 text-xs">{contacts.length}</Badge>}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="history" className="mt-4">
@@ -320,6 +396,136 @@ export default function AdminReportsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Contacts tab ── */}
+        <TabsContent value="contacts" className="mt-4">
+          <div className="grid lg:grid-cols-[380px_1fr] gap-6 items-start">
+
+            {/* Left: add/edit form */}
+            <Card className="lg:sticky lg:top-6">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    {editContact ? <><Pencil className="h-4 w-4" />Edytuj kontakt</> : <><Plus className="h-4 w-4" />Nowy kontakt</>}
+                  </span>
+                  {editContact && (
+                    <button onClick={() => { setEditContact(null); setContactForm(EMPTY_CONTACT_FORM) }} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Imię *</Label>
+                    <Input
+                      value={contactForm.first_name}
+                      onChange={e => setContactForm(f => ({ ...f, first_name: e.target.value }))}
+                      placeholder="Jan"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Nazwisko</Label>
+                    <Input
+                      value={contactForm.last_name}
+                      onChange={e => setContactForm(f => ({ ...f, last_name: e.target.value }))}
+                      placeholder="Kowalski"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Firma</Label>
+                  <Input
+                    value={contactForm.company}
+                    onChange={e => setContactForm(f => ({ ...f, company: e.target.value }))}
+                    placeholder="Nazwa firmy"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Email *</Label>
+                  <Input
+                    type="email"
+                    value={contactForm.email}
+                    onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                    placeholder="jan@firma.pl"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Notatki</Label>
+                  <Textarea
+                    value={contactForm.notes}
+                    onChange={e => setContactForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Opcjonalne notatki..."
+                    rows={2}
+                    className="text-sm"
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={handleSaveContact}
+                  disabled={savingContact || !contactForm.first_name.trim() || !contactForm.email.trim()}
+                >
+                  {savingContact
+                    ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Zapisuję...</>
+                    : editContact ? 'Zapisz zmiany' : <><Plus className="h-4 w-4 mr-2" />Dodaj kontakt</>
+                  }
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Right: contacts list */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Input
+                  placeholder="Szukaj po imieniu, emailu, firmie..."
+                  value={contactSearch}
+                  onChange={e => setContactSearch(e.target.value)}
+                  className="max-w-sm"
+                />
+                <span className="text-sm text-muted-foreground ml-auto">{filteredContacts.length} kontaktów</span>
+              </div>
+
+              <Card>
+                <CardContent className="p-0">
+                  {contactsLoading ? (
+                    <div className="p-8 text-center text-muted-foreground text-sm">Ładowanie...</div>
+                  ) : filteredContacts.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground text-sm">
+                      {contactSearch ? 'Brak wyników.' : 'Brak kontaktów — dodaj pierwszy po lewej.'}
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {filteredContacts.map(c => (
+                        <div key={c.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
+                          <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 text-sm font-semibold text-primary">
+                            {c.first_name[0]}{c.last_name?.[0] || ''}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">
+                              {c.first_name} {c.last_name || ''}
+                              {c.company && <span className="text-muted-foreground font-normal"> · {c.company}</span>}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">{c.email}</p>
+                            {c.notes && <p className="text-xs text-muted-foreground/70 truncate italic">{c.notes}</p>}
+                          </div>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => startEditContact(c)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleDeleteContact(c.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
 
         {/* ── Compose tab ── */}
@@ -453,6 +659,38 @@ export default function AdminReportsPage() {
                       Wyczyść
                     </Button>
                   </div>
+
+                  {/* Contacts from address book */}
+                  {contacts.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-xs flex items-center gap-1.5"><BookUser className="h-3.5 w-3.5" />Książka adresowa</Label>
+                      <div className="max-h-36 overflow-y-auto space-y-0.5 border rounded-md p-1">
+                        {contacts.map(c => (
+                          <label key={c.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 px-2 py-1.5 rounded">
+                            <input
+                              type="checkbox"
+                              checked={composeExtraEmails.includes(c.email)}
+                              onChange={e => {
+                                setComposeExtraEmails(prev => {
+                                  const lines = prev.split('\n').map(l => l.trim()).filter(Boolean)
+                                  if (e.target.checked) {
+                                    return [...lines, c.email].join('\n')
+                                  } else {
+                                    return lines.filter(l => l !== c.email).join('\n')
+                                  }
+                                })
+                              }}
+                            />
+                            <span className="flex-1 min-w-0 truncate">
+                              <span className="font-medium">{c.first_name} {c.last_name || ''}</span>
+                              {c.company && <span className="text-muted-foreground"> · {c.company}</span>}
+                              <span className="block text-muted-foreground">{c.email}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <Label className="text-xs">Dodatkowe emaile <span className="text-muted-foreground">(jeden na linię)</span></Label>
