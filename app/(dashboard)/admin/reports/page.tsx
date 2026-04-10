@@ -315,6 +315,7 @@ export default function AdminReportsPage() {
   const [composePrompt, setComposePrompt] = useState('')
   const [generating, setGenerating] = useState(false)
   const [composeRecipients, setComposeRecipients] = useState<Set<string>>(new Set())
+  const [composeContactIds, setComposeContactIds] = useState<Set<string>>(new Set())
   const [composeExtraEmails, setComposeExtraEmails] = useState('')
   const [showPreview, setShowPreview] = useState(false)
   const [sending, setSending] = useState(false)
@@ -351,7 +352,8 @@ export default function AdminReportsPage() {
   const handleSendCustom = async () => {
     const extraList = composeExtraEmails.split('\n').map(e => e.trim()).filter(Boolean)
     const selectedEmails = allUsers.filter(u => composeRecipients.has(u.id)).map(u => u.email)
-    const recipients = [...new Set([...selectedEmails, ...extraList])]
+    const contactEmails = contacts.filter(c => composeContactIds.has(c.id)).map(c => c.email)
+    const recipients = [...new Set([...selectedEmails, ...contactEmails, ...extraList])]
     if (!recipients.length) { toast.error('Brak odbiorców'); return }
     if (!composeSubject.trim()) { toast.error('Brak tematu'); return }
     if (!composeParagraphs.trim()) { toast.error('Brak treści'); return }
@@ -764,85 +766,88 @@ export default function AdminReportsPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm">Odbiorcy</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* User checkboxes */}
-                  <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
-                    {allUsers.filter(u => u.status === 'active' || u.status === 'trial').map(u => (
-                      <label key={u.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-2 py-1.5 rounded-md">
-                        <input
-                          type="checkbox"
-                          checked={composeRecipients.has(u.id)}
-                          onChange={e => setComposeRecipients(prev => {
-                            const next = new Set(prev)
-                            e.target.checked ? next.add(u.id) : next.delete(u.id)
-                            return next
-                          })}
-                          className="rounded"
-                        />
-                        <span className="flex-1 min-w-0">
-                          <span className="font-medium truncate block">{u.full_name || u.email}</span>
-                          {u.full_name && <span className="text-xs text-muted-foreground">{u.email}</span>}
-                        </span>
-                        <Badge variant="outline" className="text-xs flex-shrink-0">{u.status}</Badge>
-                      </label>
-                    ))}
+                <CardContent className="space-y-5">
+
+                  {/* 1. System users */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">1. Użytkownicy systemu</Label>
+                      <div className="flex gap-1">
+                        <button className="text-xs text-primary hover:underline" onClick={() => setComposeRecipients(new Set(allUsers.filter(u => u.status === 'active').map(u => u.id)))}>
+                          Zaznacz aktywnych
+                        </button>
+                        <span className="text-muted-foreground text-xs">·</span>
+                        <button className="text-xs text-muted-foreground hover:underline" onClick={() => setComposeRecipients(new Set())}>
+                          Wyczyść
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-0.5 max-h-48 overflow-y-auto border rounded-md p-1">
+                      {allUsers.filter(u => u.status === 'active' || u.status === 'trial').map(u => (
+                        <label key={u.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-2 py-1.5 rounded">
+                          <input
+                            type="checkbox"
+                            checked={composeRecipients.has(u.id)}
+                            onChange={e => setComposeRecipients(prev => {
+                              const next = new Set(prev)
+                              e.target.checked ? next.add(u.id) : next.delete(u.id)
+                              return next
+                            })}
+                            className="rounded flex-shrink-0"
+                          />
+                          <span className="flex-1 min-w-0">
+                            <span className="font-medium truncate block">{u.full_name || u.email}</span>
+                            {u.full_name && <span className="text-xs text-muted-foreground">{u.email}</span>}
+                          </span>
+                          <Badge variant="outline" className="text-xs flex-shrink-0">{u.status}</Badge>
+                        </label>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => setComposeRecipients(new Set(allUsers.filter(u => u.status === 'active').map(u => u.id)))}
-                    >
-                      Zaznacz aktywnych
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => setComposeRecipients(new Set())}
-                    >
-                      Wyczyść
-                    </Button>
-                  </div>
-
-                  {/* Contacts from address book */}
-                  {contacts.length > 0 && (
-                    <div className="space-y-2">
-                      <Label className="text-xs flex items-center gap-1.5"><BookUser className="h-3.5 w-3.5" />Książka adresowa</Label>
-                      <div className="max-h-36 overflow-y-auto space-y-0.5 border rounded-md p-1">
+                  {/* 2. Address book */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                        <BookUser className="h-3.5 w-3.5" />2. Książka adresowa
+                      </Label>
+                      {composeContactIds.size > 0 && (
+                        <button className="text-xs text-muted-foreground hover:underline" onClick={() => setComposeContactIds(new Set())}>
+                          Wyczyść
+                        </button>
+                      )}
+                    </div>
+                    {contacts.length === 0 ? (
+                      <p className="text-xs text-muted-foreground px-2">Brak kontaktów — dodaj w zakładce "Książka adresowa".</p>
+                    ) : (
+                      <div className="space-y-0.5 max-h-48 overflow-y-auto border rounded-md p-1">
                         {contacts.map(c => (
                           <label key={c.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 px-2 py-1.5 rounded">
                             <input
                               type="checkbox"
-                              checked={composeExtraEmails.includes(c.email)}
-                              onChange={e => {
-                                setComposeExtraEmails(prev => {
-                                  const lines = prev.split('\n').map(l => l.trim()).filter(Boolean)
-                                  if (e.target.checked) {
-                                    return [...lines, c.email].join('\n')
-                                  } else {
-                                    return lines.filter(l => l !== c.email).join('\n')
-                                  }
-                                })
-                              }}
+                              checked={composeContactIds.has(c.id)}
+                              onChange={e => setComposeContactIds(prev => {
+                                const next = new Set(prev)
+                                e.target.checked ? next.add(c.id) : next.delete(c.id)
+                                return next
+                              })}
+                              className="rounded flex-shrink-0"
                             />
-                            <span className="flex-1 min-w-0 truncate">
-                              <span className="font-medium">{c.first_name} {c.last_name || ''}</span>
-                              {c.company && <span className="text-muted-foreground"> · {c.company}</span>}
+                            <span className="flex-1 min-w-0">
+                              <span className="font-medium">{c.first_name} {c.last_name || ''}{c.company ? ` · ${c.company}` : ''}</span>
                               <span className="block text-muted-foreground">{c.email}</span>
                             </span>
                           </label>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
+                  {/* 3. Extra emails */}
                   <div className="space-y-2">
-                    <Label className="text-xs">Dodatkowe emaile <span className="text-muted-foreground">(jeden na linię)</span></Label>
+                    <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">3. Dodatkowe emaile</Label>
                     <Textarea
-                      placeholder="email@example.com"
+                      placeholder={"email@example.com\nkolejny@firma.pl"}
                       value={composeExtraEmails}
                       onChange={e => setComposeExtraEmails(e.target.value)}
                       rows={3}
@@ -852,7 +857,7 @@ export default function AdminReportsPage() {
 
                   <div className="pt-2 border-t">
                     <p className="text-xs text-muted-foreground mb-3">
-                      {composeRecipients.size + composeExtraEmails.split('\n').filter(e => e.trim()).length} odbiorców
+                      {composeRecipients.size + composeContactIds.size + composeExtraEmails.split('\n').filter(e => e.trim()).length} odbiorców łącznie
                     </p>
                     <Button
                       className="w-full"
