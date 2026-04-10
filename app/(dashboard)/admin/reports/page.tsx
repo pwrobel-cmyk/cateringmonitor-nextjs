@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye, BookUser, Pencil, Trash2, Plus, X } from 'lucide-react'
+import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye, BookUser, Pencil, Trash2, Plus, X, Save, ChevronDown } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -251,6 +251,62 @@ export default function AdminReportsPage() {
   const startEditContact = (c: Contact) => {
     setEditContact(c)
     setContactForm({ first_name: c.first_name, last_name: c.last_name || '', company: c.company || '', email: c.email, notes: c.notes || '' })
+  }
+
+  // ── Email templates ─────────────────────────────────────────────────────────
+  type EmailTemplate = { id: string; name: string; subject: string; paragraphs: string; created_at: string }
+
+  const { data: templates = [], isLoading: templatesLoading } = useQuery({
+    queryKey: ['admin-email-templates'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/email-templates')
+      const json = await res.json()
+      return (json.templates || []) as EmailTemplate[]
+    },
+  })
+
+  const [saveName, setSaveName] = useState('')
+  const [showSaveInput, setShowSaveInput] = useState(false)
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+
+  const handleSaveTemplate = async () => {
+    if (!saveName.trim() || !composeSubject.trim() || !composeParagraphs.trim()) return
+    setSavingTemplate(true)
+    try {
+      const res = await fetch('/api/admin/email-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: saveName, subject: composeSubject, paragraphs: composeParagraphs }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      toast.success('Szablon zapisany')
+      setSaveName('')
+      setShowSaveInput(false)
+      queryClient.invalidateQueries({ queryKey: ['admin-email-templates'] })
+    } catch (e: any) {
+      toast.error(e.message)
+    } finally {
+      setSavingTemplate(false)
+    }
+  }
+
+  const handleDeleteTemplate = async (id: string) => {
+    await fetch('/api/admin/email-templates', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    queryClient.invalidateQueries({ queryKey: ['admin-email-templates'] })
+    toast.success('Szablon usunięty')
+  }
+
+  const loadTemplate = (t: EmailTemplate) => {
+    setComposeSubject(t.subject)
+    setComposeParagraphs(t.paragraphs)
+    setShowTemplates(false)
+    toast.success(`Wczytano: ${t.name}`)
   }
 
   // ── Compose state ───────────────────────────────────────────────────────────
@@ -558,7 +614,90 @@ export default function AdminReportsPage() {
               {/* Subject + content */}
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Treść emaila</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm">Treść emaila</CardTitle>
+                    {/* Templates dropdown */}
+                    <div className="relative">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs h-7 gap-1"
+                        onClick={() => setShowTemplates(v => !v)}
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        Szablony
+                        {templates.length > 0 && <Badge variant="secondary" className="text-xs px-1 py-0">{templates.length}</Badge>}
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                      {showTemplates && (
+                        <div className="absolute right-0 top-8 z-50 w-72 bg-background border rounded-lg shadow-lg">
+                          <div className="p-2 border-b flex items-center justify-between">
+                            <span className="text-xs font-medium text-muted-foreground">Zapisane szablony</span>
+                            <button onClick={() => setShowTemplates(false)} className="text-muted-foreground hover:text-foreground">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          {templatesLoading ? (
+                            <div className="p-3 text-xs text-muted-foreground text-center">Ładowanie...</div>
+                          ) : templates.length === 0 ? (
+                            <div className="p-3 text-xs text-muted-foreground text-center">Brak zapisanych szablonów</div>
+                          ) : (
+                            <div className="max-h-56 overflow-y-auto divide-y">
+                              {templates.map(t => (
+                                <div key={t.id} className="flex items-center gap-2 px-3 py-2 hover:bg-muted/40 group">
+                                  <button
+                                    className="flex-1 text-left min-w-0"
+                                    onClick={() => loadTemplate(t)}
+                                  >
+                                    <p className="text-sm font-medium truncate">{t.name}</p>
+                                    <p className="text-xs text-muted-foreground truncate">{t.subject}</p>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTemplate(t.id)}
+                                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 flex-shrink-0"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="p-2 border-t">
+                            {showSaveInput ? (
+                              <div className="flex gap-1.5">
+                                <Input
+                                  autoFocus
+                                  placeholder="Nazwa szablonu..."
+                                  value={saveName}
+                                  onChange={e => setSaveName(e.target.value)}
+                                  className="h-7 text-xs"
+                                  onKeyDown={e => { if (e.key === 'Enter') handleSaveTemplate(); if (e.key === 'Escape') setShowSaveInput(false) }}
+                                />
+                                <Button
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={handleSaveTemplate}
+                                  disabled={savingTemplate || !saveName.trim() || !composeSubject.trim() || !composeParagraphs.trim()}
+                                >
+                                  {savingTemplate ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Zapisz'}
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="w-full h-7 text-xs"
+                                onClick={() => setShowSaveInput(true)}
+                                disabled={!composeSubject.trim() || !composeParagraphs.trim()}
+                              >
+                                <Save className="h-3.5 w-3.5 mr-1.5" />Zapisz bieżącą treść
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
@@ -579,7 +718,7 @@ export default function AdminReportsPage() {
                       className="font-mono text-sm"
                     />
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <Button
                       variant="outline"
                       size="sm"
@@ -587,6 +726,14 @@ export default function AdminReportsPage() {
                       disabled={!composeSubject || !composeParagraphs}
                     >
                       <Eye className="h-4 w-4 mr-2" />{showPreview ? 'Ukryj podgląd' : 'Podgląd'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setShowTemplates(true); setShowSaveInput(true) }}
+                      disabled={!composeSubject.trim() || !composeParagraphs.trim()}
+                    >
+                      <Save className="h-4 w-4 mr-2" />Zapisz szablon
                     </Button>
                   </div>
 
