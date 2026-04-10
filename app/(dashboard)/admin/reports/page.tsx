@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink } from 'lucide-react'
+import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { DynamicReport } from '@/components/reports/DynamicReport'
@@ -180,6 +181,70 @@ export default function AdminReportsPage() {
 
   const fmtDt = (s: string) => new Date(s).toLocaleString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+  // ── Compose state ───────────────────────────────────────────────────────────
+  const [composeSubject, setComposeSubject] = useState('')
+  const [composeParagraphs, setComposeParagraphs] = useState('')  // newline-separated
+  const [composePrompt, setComposePrompt] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [composeRecipients, setComposeRecipients] = useState<Set<string>>(new Set())
+  const [composeExtraEmails, setComposeExtraEmails] = useState('')
+  const [showPreview, setShowPreview] = useState(false)
+  const [sending, setSending] = useState(false)
+
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ['admin-users-list'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/users')
+      const json = await res.json()
+      return (json.users || []) as { id: string; email: string; full_name?: string; status?: string }[]
+    },
+  })
+
+  const handleGenerateText = async () => {
+    if (!composePrompt.trim()) return
+    setGenerating(true)
+    try {
+      const res = await fetch('/api/admin/generate-email-text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: composePrompt }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      if (data.subject) setComposeSubject(data.subject)
+      if (data.paragraphs) setComposeParagraphs(data.paragraphs.join('\n\n'))
+    } catch (e: any) {
+      toast.error(e.message || 'Błąd generowania')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleSendCustom = async () => {
+    const extraList = composeExtraEmails.split('\n').map(e => e.trim()).filter(Boolean)
+    const selectedEmails = allUsers.filter(u => composeRecipients.has(u.id)).map(u => u.email)
+    const recipients = [...new Set([...selectedEmails, ...extraList])]
+    if (!recipients.length) { toast.error('Brak odbiorców'); return }
+    if (!composeSubject.trim()) { toast.error('Brak tematu'); return }
+    if (!composeParagraphs.trim()) { toast.error('Brak treści'); return }
+    setSending(true)
+    try {
+      const paragraphs = composeParagraphs.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+      const res = await fetch('/api/admin/send-custom-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipients, subject: composeSubject, paragraphs }),
+      })
+      const data = await res.json()
+      if (data.sent > 0) toast.success(`Wysłano do ${data.sent} odbiorców`)
+      if (data.errors?.length) toast.error(`Błędy: ${data.errors.join(', ')}`)
+    } catch (e: any) {
+      toast.error(e.message || 'Błąd wysyłki')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -202,6 +267,9 @@ export default function AdminReportsPage() {
             {emailHistory.length > 0 && (
               <Badge variant="secondary" className="ml-1 text-xs">{emailHistory.length}</Badge>
             )}
+          </TabsTrigger>
+          <TabsTrigger value="compose" className="gap-2">
+            <Send className="h-4 w-4" />Wyślij wiadomość
           </TabsTrigger>
         </TabsList>
 
@@ -252,6 +320,170 @@ export default function AdminReportsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Compose tab ── */}
+        <TabsContent value="compose" className="mt-4">
+          <div className="grid lg:grid-cols-[1fr_380px] gap-6 items-start">
+
+            {/* Left: editor */}
+            <div className="space-y-5">
+              {/* AI prompt */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Generator treści (AI)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Textarea
+                    placeholder="Opisz o czym ma być email, np. &quot;Napisz email o nowej funkcji Review Manager — pozwala zarządzać opiniami Google i moderować je z poziomu platformy&quot;"
+                    value={composePrompt}
+                    onChange={e => setComposePrompt(e.target.value)}
+                    rows={3}
+                  />
+                  <Button onClick={handleGenerateText} disabled={generating || !composePrompt.trim()} size="sm">
+                    {generating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generuję...</> : <><Sparkles className="h-4 w-4 mr-2" />Generuj treść</>}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Subject + content */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Treść emaila</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Temat</Label>
+                    <Input
+                      placeholder="Temat wiadomości"
+                      value={composeSubject}
+                      onChange={e => setComposeSubject(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Treść <span className="text-muted-foreground font-normal text-xs">(oddziel akapity pustą linią)</span></Label>
+                    <Textarea
+                      placeholder="Treść wiadomości..."
+                      value={composeParagraphs}
+                      onChange={e => setComposeParagraphs(e.target.value)}
+                      rows={10}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowPreview(v => !v)}
+                      disabled={!composeSubject || !composeParagraphs}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />{showPreview ? 'Ukryj podgląd' : 'Podgląd'}
+                    </Button>
+                  </div>
+
+                  {/* Preview */}
+                  {showPreview && composeParagraphs && (
+                    <div className="border rounded-lg p-5 bg-muted/30 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Podgląd</p>
+                      <div className="bg-[#1a3557] rounded-t-lg px-6 py-4 text-center">
+                        <p className="text-white font-bold">Catering Monitor</p>
+                        <p className="text-blue-300 text-xs mt-1">{composeSubject}</p>
+                      </div>
+                      <div className="border border-t-0 rounded-b-lg px-6 py-4 bg-white space-y-3">
+                        <p className="text-sm text-gray-700">Cześć,</p>
+                        {composeParagraphs.split(/\n{2,}/).filter(Boolean).map((p, i) => (
+                          <p key={i} className="text-sm text-gray-700 leading-relaxed">{p}</p>
+                        ))}
+                        <p className="text-sm text-gray-700">Pozdrawiamy,<br/><strong>Zespół Catering Monitor</strong></p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Right: recipients + send */}
+            <div className="space-y-4 lg:sticky lg:top-6">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Odbiorcy</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* User checkboxes */}
+                  <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
+                    {allUsers.filter(u => u.status === 'active' || u.status === 'trial').map(u => (
+                      <label key={u.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-2 py-1.5 rounded-md">
+                        <input
+                          type="checkbox"
+                          checked={composeRecipients.has(u.id)}
+                          onChange={e => setComposeRecipients(prev => {
+                            const next = new Set(prev)
+                            e.target.checked ? next.add(u.id) : next.delete(u.id)
+                            return next
+                          })}
+                          className="rounded"
+                        />
+                        <span className="flex-1 min-w-0">
+                          <span className="font-medium truncate block">{u.full_name || u.email}</span>
+                          {u.full_name && <span className="text-xs text-muted-foreground">{u.email}</span>}
+                        </span>
+                        <Badge variant="outline" className="text-xs flex-shrink-0">{u.status}</Badge>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => setComposeRecipients(new Set(allUsers.filter(u => u.status === 'active').map(u => u.id)))}
+                    >
+                      Zaznacz aktywnych
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => setComposeRecipients(new Set())}
+                    >
+                      Wyczyść
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs">Dodatkowe emaile <span className="text-muted-foreground">(jeden na linię)</span></Label>
+                    <Textarea
+                      placeholder="email@example.com"
+                      value={composeExtraEmails}
+                      onChange={e => setComposeExtraEmails(e.target.value)}
+                      rows={3}
+                      className="text-sm"
+                    />
+                  </div>
+
+                  <div className="pt-2 border-t">
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {composeRecipients.size + composeExtraEmails.split('\n').filter(e => e.trim()).length} odbiorców
+                    </p>
+                    <Button
+                      className="w-full"
+                      onClick={handleSendCustom}
+                      disabled={sending || !composeSubject.trim() || !composeParagraphs.trim()}
+                    >
+                      {sending
+                        ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Wysyłam...</>
+                        : <><Send className="h-4 w-4 mr-2" />Wyślij wiadomość</>
+                      }
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="generator" className="mt-4">
