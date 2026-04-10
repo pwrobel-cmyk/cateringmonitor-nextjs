@@ -24,8 +24,9 @@ import { pl } from "date-fns/locale"
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
 } from "recharts"
-import { useReviewAspects } from "@/hooks/supabase/useReviewAspects"
+import { useReviewAspects, ASPECT_KEYWORDS, analyzeAspects } from "@/hooks/supabase/useReviewAspects"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -405,17 +406,17 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
         .select(`
           price,
           date_recorded,
-          package_kcal_ranges!fk_price_history_package_kcal_range(
-            kcal_from,
-            packages!inner(
+          package_kcal_ranges!price_history_package_kcal_range_id_fkey(
+            packages(
               name,
-              brands!inner(id, name)
+              brands(id, name)
             )
           )
         `)
         .lte("date_recorded", dateTo)
         .not("price", "is", null)
         .order("date_recorded", { ascending: false })
+        .limit(5000)
 
       // Results are ordered by date_recorded DESC — keep only the most recent record per (brand, package)
       const rows = (data || []) as any[]
@@ -467,7 +468,7 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
 
       return { catalog, afterDiscount, brandStats }
     },
-    enabled: !!discountData, // wait for discount data so after-discount chart is correct
+    staleTime: 1000 * 60 * 30,
   })
 
   // ── Brand ranking query ─────────────────────────────────────────────────────
@@ -510,6 +511,36 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
         .sort((a, b) => b.avgRating - a.avgRating)
     },
   })
+
+  // ── Brand aspects (all-time, reuses same query key as ReviewAspectsSection) ──
+  const { data: brandAspects = [] } = useReviewAspects(brandId ?? undefined)
+
+  // ── Market reviews for aspect comparison (all-time, all brands) ──────────────
+  const { data: marketReviews = [] } = useQuery({
+    queryKey: ["dynamic-report-market-reviews-alltime"],
+    queryFn: async () => {
+      const all: Array<{ content: string | null; rating: number | null }> = []
+      let from = 0
+      const size = 1000
+      while (true) {
+        const { data, error } = await (supabase as any)
+          .from("reviews")
+          .select("content, rating")
+          .not("content", "is", null)
+          .range(from, from + size - 1)
+        if (error) throw error
+        if (!data?.length) break
+        all.push(...data)
+        if (data.length < size || all.length >= 5000) break
+        from += size
+      }
+      return all
+    },
+    enabled: !!brandId,
+    staleTime: 1000 * 60 * 60, // 1h — rarely changes
+  })
+
+  const marketAspects = useMemo(() => analyzeAspects(marketReviews), [marketReviews])
 
   // ── Users (for email modal) ─────────────────────────────────────────────────
   const { data: usersData } = useQuery({
@@ -884,6 +915,171 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
         {brandId && (
           <>
             <ReviewAspectsSection brandId={brandId} />
+            <Separator />
+          </>
+        )}
+
+        {/* ── SEKCJA: Co klienci chwalą, a co krytykują? ── */}
+        {brandId && brandAspects.length > 0 && (
+          <>
+            <section className="space-y-6">
+              <h2 className="text-2xl font-bold flex items-center gap-2">
+                <ThumbsUp className="h-6 w-6 text-primary" />
+                Co klienci chwalą, a co krytykują?
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Analiza 6 kluczowych aspektów — porównanie Twojej marki z rynkiem ({marketReviews.length.toLocaleString("pl-PL")} opinii).
+              </p>
+
+              {/* Aspect cards */}
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {(["smak", "dostawa", "cena", "jakość", "obsługa", "porcje"] as const).map(aspectKey => {
+                  const ASPECT_ICONS: Record<string, string> = {
+                    smak: "🍽️", dostawa: "🚚", cena: "💰", jakość: "⭐", obsługa: "🤝", porcje: "🍱",
+                  }
+                  const brand = brandAspects.find(a => a.aspect === aspectKey)
+                  const market = marketAspects.find(a => a.aspect === aspectKey)
+                  if (!brand || brand.mentions === 0) return null
+                  const delta = market && market.positive > 0 ? brand.positive - market.positive : null
+                  const quote = allReviews.find(r =>
+                    (r.rating ?? 0) >= 4 &&
+                    (r.content?.length ?? 0) > 20 &&
+                    ASPECT_KEYWORDS[aspectKey]?.some(kw => r.content?.toLowerCase().includes(kw))
+                  )?.content
+                  const badQuote = allReviews.find(r =>
+                    (r.rating ?? 0) <= 2 &&
+                    (r.content?.length ?? 0) > 20 &&
+                    ASPECT_KEYWORDS[aspectKey]?.some(kw => r.content?.toLowerCase().includes(kw))
+                  )?.content
+                  const displayQuote = brand.negative > brand.positive ? (badQuote || quote) : (quote || badQuote)
+                  const isBetter = delta !== null && delta > 5
+                  const isWorse  = delta !== null && delta < -5
+
+                  return (
+                    <Card key={aspectKey} className={isBetter ? "border-green-200 dark:border-green-800" : isWorse ? "border-red-200 dark:border-red-800" : ""}>
+                      <CardContent className="pt-5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{ASPECT_ICONS[aspectKey]}</span>
+                            <div>
+                              <p className="font-semibold capitalize">{aspectKey}</p>
+                              <p className="text-xs text-muted-foreground">{brand.mentions} wzmianek</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xl font-bold text-green-600">{brand.positive}%</p>
+                            <p className="text-xs text-muted-foreground">pozytywnych</p>
+                          </div>
+                        </div>
+
+                        {/* sentiment bar */}
+                        <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+                          <div className="bg-green-500 transition-all" style={{ width: `${brand.positive}%` }} />
+                          <div className="bg-red-500 transition-all"   style={{ width: `${brand.negative}%` }} />
+                        </div>
+
+                        {/* market comparison */}
+                        {delta !== null && (
+                          <p className={`text-xs font-medium ${isBetter ? "text-green-600" : isWorse ? "text-red-500" : "text-muted-foreground"}`}>
+                            {isBetter
+                              ? `+${delta}pp lepiej niż rynek (${market!.positive}%)`
+                              : isWorse
+                                ? `${delta}pp gorzej niż rynek (${market!.positive}%)`
+                                : `Podobnie do rynku (${market!.positive}%)`
+                            }
+                          </p>
+                        )}
+
+                        {/* quote */}
+                        {displayQuote && (
+                          <p className="text-xs text-muted-foreground italic border-l-2 border-muted pl-2 line-clamp-2">
+                            „{displayQuote}"
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+
+              {/* Radar chart */}
+              {marketAspects.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Target className="h-5 w-5 text-primary" />
+                      Twoja marka vs Rynek — porównanie aspektów
+                    </CardTitle>
+                    <CardDescription>% pozytywnych wzmianek w każdym aspekcie</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[320px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart data={
+                          (["smak", "dostawa", "cena", "jakość", "obsługa", "porcje"] as const)
+                            .map(key => ({
+                              subject: key,
+                              brand: brandAspects.find(a => a.aspect === key)?.positive ?? 0,
+                              rynek: marketAspects.find(a => a.aspect === key)?.positive ?? 0,
+                            }))
+                        }>
+                          <PolarGrid />
+                          <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
+                          <PolarRadiusAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
+                          <Radar name={brandName} dataKey="brand" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.3} />
+                          <Radar name="Rynek" dataKey="rynek" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.2} />
+                          <Legend />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Comparison table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Tabela porównawcza aspektów</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left pb-2 font-medium text-muted-foreground">Parametr</th>
+                        <th className="text-right pb-2 font-medium text-muted-foreground">Twoja marka</th>
+                        <th className="text-right pb-2 font-medium text-muted-foreground">Rynek</th>
+                        <th className="text-right pb-2 font-medium text-muted-foreground">Różnica</th>
+                        <th className="text-right pb-2 font-medium text-muted-foreground">Ocena</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(["smak", "dostawa", "cena", "jakość", "obsługa", "porcje"] as const).map(key => {
+                        const brand = brandAspects.find(a => a.aspect === key)
+                        const market = marketAspects.find(a => a.aspect === key)
+                        if (!brand || brand.mentions === 0) return null
+                        const delta = market && market.positive > 0 ? brand.positive - market.positive : null
+                        const ASPECT_ICONS: Record<string, string> = {
+                          smak: "🍽️", dostawa: "🚚", cena: "💰", jakość: "⭐", obsługa: "🤝", porcje: "🍱",
+                        }
+                        return (
+                          <tr key={key} className="border-b last:border-0">
+                            <td className="py-2.5">{ASPECT_ICONS[key]} {key}</td>
+                            <td className="text-right py-2.5 font-medium text-green-600">{brand.positive}%</td>
+                            <td className="text-right py-2.5 text-muted-foreground">{market?.positive ?? "—"}%</td>
+                            <td className={`text-right py-2.5 font-medium ${delta === null ? "text-muted-foreground" : delta > 5 ? "text-green-600" : delta < -5 ? "text-red-500" : "text-muted-foreground"}`}>
+                              {delta === null ? "—" : delta > 0 ? `+${delta}pp` : `${delta}pp`}
+                            </td>
+                            <td className="text-right py-2.5">
+                              {delta === null ? "—" : delta > 10 ? "✅ Mocna strona" : delta > 0 ? "👍 Powyżej" : delta > -10 ? "➡️ Podobnie" : "⚠️ Do poprawy"}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
+            </section>
             <Separator />
           </>
         )}

@@ -8,7 +8,7 @@ interface AspectData {
   negative: number;
 }
 
-const ASPECT_KEYWORDS: Record<string, string[]> = {
+export const ASPECT_KEYWORDS: Record<string, string[]> = {
   smak: ['smak', 'smaczn', 'pyszn', 'delicious', 'tasty', 'smaczne', 'pyszne', 'smaczny'],
   dostawa: ['dostaw', 'delivery', 'kurier', 'przesyłk', 'transport'],
   cena: ['cen', 'drogie', 'tanie', 'price', 'kosztuj', 'drogo', 'tanio', 'koszty'],
@@ -44,7 +44,7 @@ async function fetchAllReviews(brandId: string) {
   return allReviews;
 }
 
-function analyzeAspects(reviews: Array<{ content: string | null; rating: number | null }>): AspectData[] {
+export function analyzeAspects(reviews: Array<{ content: string | null; rating: number | null }>): AspectData[] {
   const results: Record<string, { total: number; positive: number; negative: number }> = {};
 
   // Initialize results for each aspect
