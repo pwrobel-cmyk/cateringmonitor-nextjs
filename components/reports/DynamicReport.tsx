@@ -19,7 +19,7 @@ import {
 } from "lucide-react"
 import { useReactToPrint } from 'react-to-print'
 import { useState, useRef, useMemo } from "react"
-import { format, startOfMonth, endOfMonth } from "date-fns"
+import { format, startOfMonth, endOfMonth, subDays, differenceInDays, subMonths } from "date-fns"
 import { pl } from "date-fns/locale"
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -219,6 +219,19 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
   const lastMonthStart = useMemo(() => startOfMonth(new Date(dateTo)), [dateTo])
   const lastMonthLabel = useMemo(() => format(lastMonthStart, "LLLL yyyy", { locale: pl }), [lastMonthStart])
 
+  // ── Previous period helpers ─────────────────────────────────────────────────
+  const prevPeriodTo   = useMemo(() => format(subDays(new Date(dateFrom), 1), 'yyyy-MM-dd'), [dateFrom])
+  const prevPeriodFrom = useMemo(() => {
+    const days = differenceInDays(new Date(dateTo), new Date(dateFrom))
+    return format(subDays(new Date(dateFrom), days + 1), 'yyyy-MM-dd')
+  }, [dateFrom, dateTo])
+  const prevLastMonthStart = useMemo(() => subMonths(lastMonthStart, 1), [lastMonthStart])
+  const prevMidMs = useMemo(() => {
+    const f = new Date(prevPeriodFrom).getTime()
+    const t = new Date(prevPeriodTo).getTime()
+    return (f + t) / 2
+  }, [prevPeriodFrom, prevPeriodTo])
+
   // ── Reviews query ───────────────────────────────────────────────────────────
   const { data: allReviews = [], isLoading: isLoadingReviews } = useQuery({
     queryKey: ["dynamic-report-reviews", brandId, dateFrom, dateTo],
@@ -242,6 +255,29 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
       computeStats(lastMonth,  lastMonthLabel),
     ]
   }, [allReviews, midMs, lastMonthStart, lastMonthLabel])
+
+  // ── Previous period reviews & stats ────────────────────────────────────────
+  const { data: prevReviews = [] } = useQuery({
+    queryKey: ["dynamic-report-prev-reviews", brandId, prevPeriodFrom, prevPeriodTo],
+    queryFn: () => fetchAllReviews(brandId, prevPeriodFrom, prevPeriodTo),
+  })
+
+  const prevPeriodStats = useMemo((): PeriodStats[] | null => {
+    if (!prevReviews.length) return null
+    const prevFirstHalf  = prevReviews.filter(r => r.review_date && new Date(r.review_date).getTime() <= prevMidMs)
+    const prevSecondHalf = prevReviews.filter(r => r.review_date && new Date(r.review_date).getTime() >  prevMidMs)
+    const prevLastMonth  = prevReviews.filter(r => {
+      if (!r.review_date) return false
+      const t = new Date(r.review_date).getTime()
+      return t >= prevLastMonthStart.getTime() && t < lastMonthStart.getTime()
+    })
+    return [
+      computeStats(prevReviews,    "prev"),
+      computeStats(prevFirstHalf,  "prev"),
+      computeStats(prevSecondHalf, "prev"),
+      computeStats(prevLastMonth,  "prev"),
+    ]
+  }, [prevReviews, prevMidMs, prevLastMonthStart, lastMonthStart])
 
   // ── Derived: monthly trends ─────────────────────────────────────────────────
   const monthlyTrends = useMemo((): MonthlyPoint[] => {
@@ -657,29 +693,46 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
               [1,2,3,4].map(i => <Card key={i}><CardContent className="pt-6"><Skeleton className="h-12 w-full" /></CardContent></Card>)
             ) : (
               [
-                { stats: allTimeStats,  label: "Wybrany okres",    icon: Clock,      color: "" },
-                { stats: firstHalf,     label: "Pierwsza połowa",  icon: TrendingUp, color: "" },
-                { stats: secondHalf,    label: "Druga połowa",     icon: TrendingUp, color: "border-green-200 dark:border-green-800" },
-                { stats: lastMonthStat, label: lastMonthLabel,     icon: Star,       color: "border-primary/30 bg-primary/5" },
-              ].map(({ stats: s, label, icon: Icon, color }, idx) => (
-                <Card key={idx} className={color}>
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium capitalize">{s?.label ?? label}</CardTitle>
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-baseline gap-2">
-                      <span className={`text-3xl font-bold ${idx === 3 ? "text-primary" : idx === 2 ? "text-green-600" : ""}`}>
-                        {s?.avgRating ?? "—"}
-                      </span>
-                      <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {s?.count?.toLocaleString("pl-PL") ?? "0"} opinii
-                    </p>
-                  </CardContent>
-                </Card>
-              ))
+                { stats: allTimeStats,  prev: prevPeriodStats?.[0], label: "Wybrany okres",   icon: Clock,      color: "" },
+                { stats: firstHalf,     prev: prevPeriodStats?.[1], label: "Pierwsza połowa", icon: TrendingUp, color: "" },
+                { stats: secondHalf,    prev: prevPeriodStats?.[2], label: "Druga połowa",    icon: TrendingUp, color: "border-green-200 dark:border-green-800" },
+                { stats: lastMonthStat, prev: prevPeriodStats?.[3], label: lastMonthLabel,    icon: Star,       color: "border-primary/30 bg-primary/5" },
+              ].map(({ stats: s, prev: p, label, icon: Icon, color }, idx) => {
+                const diff = s?.count && p?.count
+                  ? parseFloat(s.avgRating) - parseFloat(p.avgRating)
+                  : null
+                const diffLabel = diff === null
+                  ? "N/A"
+                  : Math.abs(diff) < 0.005
+                    ? "bez zmian"
+                    : `${diff > 0 ? "+" : ""}${diff.toFixed(2)}`
+                const diffColor = diff === null
+                  ? "text-muted-foreground"
+                  : diff > 0.005 ? "text-green-600" : diff < -0.005 ? "text-red-500" : "text-muted-foreground"
+                return (
+                  <Card key={idx} className={color}>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium capitalize">{s?.label ?? label}</CardTitle>
+                      <Icon className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-baseline gap-2">
+                        <span className={`text-3xl font-bold ${idx === 3 ? "text-primary" : idx === 2 ? "text-green-600" : ""}`}>
+                          {s?.avgRating ?? "—"}
+                        </span>
+                        <Star className="h-5 w-5 text-yellow-500 fill-yellow-500" />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {s?.count?.toLocaleString("pl-PL") ?? "0"} opinii
+                      </p>
+                      <p className={`text-xs font-medium mt-1 ${diffColor}`}>
+                        {diffLabel} vs. poprzedni okres
+                        {p?.count ? ` (${p.avgRating}★, ${p.count.toLocaleString("pl-PL")} op.)` : ""}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )
+              })
             )}
           </div>
         </section>
