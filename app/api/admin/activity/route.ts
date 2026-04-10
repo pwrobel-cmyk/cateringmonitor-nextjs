@@ -40,13 +40,14 @@ export async function GET(request: Request) {
       .limit(200)
 
     const entries: { page: string; visited_at: string }[] = logs || []
+    const TZ = 'Europe/Warsaw'
 
     // Group by day label
     const byDay: Record<string, { time: string; page: string }[]> = {}
     for (const e of entries) {
       const d = new Date(e.visited_at)
-      const day = d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' })
-      const time = d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
+      const day = d.toLocaleDateString('pl-PL', { timeZone: TZ, day: 'numeric', month: 'short' })
+      const time = d.toLocaleTimeString('pl-PL', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })
       if (!byDay[day]) byDay[day] = []
       byDay[day].push({ time, page: e.page })
     }
@@ -59,9 +60,12 @@ export async function GET(request: Request) {
       .sort((a, b) => b.count - a.count)
       .slice(0, 5)
 
-    // Hourly
+    // Hourly — use Warsaw hour
     const hourly = Array.from({ length: 24 }, (_, h) => ({ hour: h, count: 0 }))
-    for (const e of entries) hourly[new Date(e.visited_at).getHours()].count++
+    for (const e of entries) {
+      const h = parseInt(new Date(e.visited_at).toLocaleString('en-US', { timeZone: TZ, hour: 'numeric', hour12: false }))
+      hourly[h % 24].count++
+    }
 
     return Response.json({
       totalVisits: entries.length,
@@ -81,8 +85,12 @@ export async function GET(request: Request) {
 
   const entries = allLogs || []
 
+  const TZ = 'Europe/Warsaw'
+  const toWarsawDate = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ })
+
   const sparkDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().slice(0, 10)
+    const d = new Date(); d.setDate(d.getDate() - (6 - i))
+    return d.toLocaleDateString('en-CA', { timeZone: TZ })
   })
 
   const stats: Record<string, { visits: number; pages: Record<string, number>; last: string; daily: Record<string, number> }> = {}
@@ -92,7 +100,7 @@ export async function GET(request: Request) {
     s.visits++
     s.pages[e.page] = (s.pages[e.page] || 0) + 1
     if (e.visited_at > s.last) s.last = e.visited_at
-    const day = e.visited_at.slice(0, 10)
+    const day = toWarsawDate(e.visited_at)
     s.daily[day] = (s.daily[day] || 0) + 1
   }
 
