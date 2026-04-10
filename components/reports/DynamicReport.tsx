@@ -514,7 +514,15 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
       title: `${brandName} · ${dateFrom} – ${dateTo}`,
       stats,
       trend: trendInsight?.trend,
-      bestMonth: trendInsight?.best ? `${trendInsight.best.month} (${trendInsight.best.avgRating?.toFixed(2)}★)` : undefined,
+      bestMonth: trendInsight?.best ? `${trendInsight.best.month} (${trendInsight.best.avgRating?.toFixed(2)})` : undefined,
+      ranking: brandRanking?.map(b => ({
+        name: b.name,
+        count: b.count,
+        avgRating: b.avgRating,
+        positivePercent: b.positivePercent,
+        negativePercent: b.negativePercent,
+        isSelected: brandId ? b.brandId === brandId : false,
+      })) ?? [],
     }
     const res = await fetch("/api/admin/send-report", {
       method: "POST",

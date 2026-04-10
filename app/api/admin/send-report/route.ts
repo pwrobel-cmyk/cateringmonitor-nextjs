@@ -21,6 +21,14 @@ interface ReportSummary {
   }
   trend?: string
   bestMonth?: string
+  ranking?: {
+    name: string
+    count: number
+    avgRating: number
+    positivePercent: number
+    negativePercent: number
+    isSelected: boolean
+  }[]
 }
 
 function buildEmailHtml(summary: ReportSummary, reportLink: string): string {
@@ -111,6 +119,42 @@ function buildEmailHtml(summary: ReportSummary, reportLink: string): string {
             </td>
           </tr>
         </table>
+      </td>
+    </tr>` : ''}
+
+    ${summary.ranking && summary.ranking.length > 0 ? `
+    <!-- RANKING HEADING -->
+    <tr>
+      <td style="padding:16px 32px 8px;">
+        <p style="margin:0 0 10px;font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1a3557;text-transform:uppercase;letter-spacing:1px;">RANKING MAREK W TYM OKRESIE</p>
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr><td bgcolor="#d1d5db" height="1" style="font-size:1px;line-height:1px;">&nbsp;</td></tr>
+        </table>
+      </td>
+    </tr>
+    <!-- RANKING TABLE -->
+    <tr>
+      <td style="padding:0 32px 16px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr bgcolor="#f8fafc" style="background-color:#f8fafc;">
+            <td width="28" style="padding:6px 4px;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;font-weight:bold;">#</td>
+            <td style="padding:6px 4px;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;font-weight:bold;">MARKA</td>
+            <td width="50" align="right" style="padding:6px 4px;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;font-weight:bold;">OCENA</td>
+            <td width="46" align="right" style="padding:6px 4px;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;font-weight:bold;">POZ.</td>
+            <td width="46" align="right" style="padding:6px 4px;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;font-weight:bold;">NEG.</td>
+            <td width="52" align="right" style="padding:6px 4px;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;font-weight:bold;">OPINII</td>
+          </tr>
+          ${summary.ranking.map((b, i) => `
+          <tr bgcolor="${b.isSelected ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#f9fafb'}" style="background-color:${b.isSelected ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#f9fafb'};${b.isSelected ? 'border-left:3px solid #1a3557;' : ''}">
+            <td style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#6b7280;">${i + 1}</td>
+            <td style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#111827;font-weight:${b.isSelected ? 'bold' : 'normal'};">${b.name}${b.isSelected ? ' *' : ''}</td>
+            <td align="right" style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#1a3557;font-weight:bold;">${b.avgRating.toFixed(2)}</td>
+            <td align="right" style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#16a34a;">${b.positivePercent}%</td>
+            <td align="right" style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#ea580c;">${b.negativePercent}%</td>
+            <td align="right" style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#374151;">${b.count.toLocaleString('pl-PL')}</td>
+          </tr>`).join('')}
+        </table>
+        ${summary.ranking.some(b => b.isSelected) ? `<p style="margin:6px 0 0;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;">* Twoja marka</p>` : ''}
       </td>
     </tr>` : ''}
 
