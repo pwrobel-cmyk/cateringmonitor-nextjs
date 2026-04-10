@@ -216,6 +216,7 @@ export async function POST(request: Request) {
         .from('custom_reports')
         .insert({
           user_id: recipient.userId || null,
+          recipient_email: recipient.email,
           brand_id: reportSummary.brandId,
           brand_name: reportSummary.brandName,
           date_from: reportSummary.dateFrom,

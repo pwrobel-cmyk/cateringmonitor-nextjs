@@ -11,7 +11,9 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { FileBarChart2, UserPlus, Copy, Check } from 'lucide-react'
+import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
 import { DynamicReport } from '@/components/reports/DynamicReport'
 import { toast } from 'sonner'
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, startOfWeek, endOfWeek, subWeeks, subMonths, subQuarters, startOfQuarter, endOfQuarter } from 'date-fns'
@@ -164,6 +166,20 @@ export default function AdminReportsPage() {
     }
   }
 
+  const { data: emailHistory = [], isLoading: historyLoading } = useQuery({
+    queryKey: ['admin-email-history'],
+    queryFn: async () => {
+      const res = await fetch('/api/admin/email-history')
+      const json = await res.json()
+      return (json.rows || []) as {
+        id: string; brandName: string; brandId: string | null
+        dateFrom: string; dateTo: string; recipientEmail: string; sentAt: string
+      }[]
+    },
+  })
+
+  const fmtDt = (s: string) => new Date(s).toLocaleString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
   return (
     <div className="space-y-6">
       <div>
@@ -176,6 +192,69 @@ export default function AdminReportsPage() {
         </p>
       </div>
 
+      <Tabs defaultValue="generator">
+        <TabsList>
+          <TabsTrigger value="generator" className="gap-2">
+            <FileBarChart2 className="h-4 w-4" />Generator
+          </TabsTrigger>
+          <TabsTrigger value="history" className="gap-2">
+            <Mail className="h-4 w-4" />Historia wysyłek
+            {emailHistory.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs">{emailHistory.length}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="history" className="mt-4">
+          <Card>
+            <CardContent className="p-0">
+              {historyLoading ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">Ładowanie...</div>
+              ) : emailHistory.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground text-sm">Brak wysłanych raportów.</div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Marka</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Okres</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Odbiorca</th>
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Wysłano</th>
+                        <th className="px-4 py-3" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {emailHistory.map(row => (
+                        <tr key={row.id} className="border-b hover:bg-muted/20 transition-colors">
+                          <td className="px-4 py-3 font-medium">{row.brandName}</td>
+                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                            {row.dateFrom} – {row.dateTo}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">{row.recipientEmail}</td>
+                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap text-xs">{fmtDt(row.sentAt)}</td>
+                          <td className="px-4 py-3">
+                            <a
+                              href={`/reports/custom/${row.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Otwórz
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="generator" className="mt-4">
       <div className="grid lg:grid-cols-[300px_1fr] gap-6 items-start">
         {/* Left: Config form */}
         <Card className="no-print lg:sticky lg:top-6">
@@ -274,6 +353,9 @@ export default function AdminReportsPage() {
           )}
         </div>
       </div>
+
+        </TabsContent>
+      </Tabs>
 
       {/* Assign modal */}
       <Dialog open={showAssign} onOpenChange={setShowAssign}>
