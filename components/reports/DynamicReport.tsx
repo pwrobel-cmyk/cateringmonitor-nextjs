@@ -377,15 +377,25 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
             )
           )
         `)
-        .gte("date_recorded", dateFrom)
         .lte("date_recorded", dateTo)
         .not("price", "is", null)
+        .order("date_recorded", { ascending: false })
 
+      // Results are ordered by date_recorded DESC — keep only the most recent record per (brand, package)
       const rows = (data || []) as any[]
+      const seen = new Set<string>()
+      const latestRows = rows.filter((p: any) => {
+        const brandName = p.package_kcal_ranges?.packages?.brands?.name || "Unknown"
+        const pkgName   = p.package_kcal_ranges?.packages?.name || ""
+        const key = `${brandName}||${pkgName}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
 
       // Aggregate avg price per brand
       const byBrand: Record<string, { sum: number; count: number; min: number; max: number; name: string }> = {}
-      rows.forEach((p: any) => {
+      latestRows.forEach((p: any) => {
         const name = p.package_kcal_ranges?.packages?.brands?.name || "Unknown"
         if (!byBrand[name]) byBrand[name] = { sum: 0, count: 0, min: Infinity, max: -Infinity, name }
         byBrand[name].sum   += p.price
