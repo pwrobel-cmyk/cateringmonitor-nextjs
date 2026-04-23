@@ -31,7 +31,7 @@ interface ReportSummary {
   }[]
 }
 
-function buildEmailHtml(summary: ReportSummary, reportLink: string): string {
+function buildEmailHtml(summary: ReportSummary, reportLink?: string): string {
   const bestMonthText = summary.bestMonth
     ? summary.bestMonth.replace(/[★☆]/g, '').trim()
     : ''
@@ -159,7 +159,7 @@ function buildEmailHtml(summary: ReportSummary, reportLink: string): string {
     </tr>` : ''}
 
     <!-- CTA -->
-    <tr>
+    ${reportLink ? `<tr>
       <td align="center" style="padding:20px 32px 32px;">
         <table border="0" cellpadding="0" cellspacing="0">
           <tr>
@@ -170,7 +170,7 @@ function buildEmailHtml(summary: ReportSummary, reportLink: string): string {
         </table>
         <p style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:12px;color:#9ca3af;">Raport dostepny w Catering Monitor w sekcji Moje raporty</p>
       </td>
-    </tr>
+    </tr>` : ''}
 
     <!-- FOOTER -->
     <tr>
@@ -211,28 +211,33 @@ export async function POST(request: Request) {
 
   for (const recipient of recipients) {
     try {
-      // Create custom_reports record for this recipient
-      const { data: reportRecord, error: insertError } = await (supabase as any)
-        .from('custom_reports')
-        .insert({
-          user_id: recipient.userId || null,
-          recipient_email: recipient.email,
-          brand_id: reportSummary.brandId,
-          brand_name: reportSummary.brandName,
-          date_from: reportSummary.dateFrom,
-          date_to: reportSummary.dateTo,
-          title: reportSummary.title,
-          created_by: user.id,
-        })
-        .select('id')
-        .single()
+      let reportLink: string | undefined
 
-      if (insertError) {
-        errors.push(`${recipient.email}: insert error: ${insertError.message}`)
-        continue
+      if (recipient.userId) {
+        // Create custom_reports record only for known system users
+        const { data: reportRecord, error: insertError } = await (supabase as any)
+          .from('custom_reports')
+          .insert({
+            user_id: recipient.userId,
+            recipient_email: recipient.email,
+            brand_id: reportSummary.brandId,
+            brand_name: reportSummary.brandName,
+            date_from: reportSummary.dateFrom,
+            date_to: reportSummary.dateTo,
+            title: reportSummary.title,
+            created_by: user.id,
+          })
+          .select('id')
+          .single()
+
+        if (insertError) {
+          errors.push(`${recipient.email}: insert error: ${insertError.message}`)
+          continue
+        }
+
+        reportLink = `https://cateringmonitor.pl/reports/custom/${reportRecord.id}`
       }
 
-      const reportLink = `https://cateringmonitor.pl/reports/custom/${reportRecord.id}`
       const html = buildEmailHtml(reportSummary, reportLink)
 
       const { error: sendError } = await resend.emails.send({
