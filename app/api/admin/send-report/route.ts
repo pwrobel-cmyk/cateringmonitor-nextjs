@@ -13,6 +13,7 @@ interface ReportSummary {
   dateFrom: string
   dateTo: string
   title: string
+  reportType?: string
   stats: {
     count: number
     avgRating: string
@@ -122,7 +123,7 @@ function buildEmailHtml(summary: ReportSummary, reportLink?: string): string {
       </td>
     </tr>` : ''}
 
-    ${summary.ranking && summary.ranking.length > 0 ? `
+    ${summary.ranking && summary.ranking.filter(b => b.count >= 10).length > 0 ? `
     <!-- RANKING HEADING -->
     <tr>
       <td style="padding:16px 32px 8px;">
@@ -144,7 +145,7 @@ function buildEmailHtml(summary: ReportSummary, reportLink?: string): string {
             <td width="46" align="right" style="padding:6px 4px;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;font-weight:bold;">NEG.</td>
             <td width="52" align="right" style="padding:6px 4px;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;font-weight:bold;">OPINII</td>
           </tr>
-          ${summary.ranking.map((b, i) => `
+          ${summary.ranking.filter(b => b.count >= 10).map((b, i) => `
           <tr bgcolor="${b.isSelected ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#f9fafb'}" style="background-color:${b.isSelected ? '#eff6ff' : i % 2 === 0 ? '#ffffff' : '#f9fafb'};${b.isSelected ? 'border-left:3px solid #1a3557;' : ''}">
             <td style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#6b7280;">${i + 1}</td>
             <td style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#111827;font-weight:${b.isSelected ? 'bold' : 'normal'};">${b.name}${b.isSelected ? ' *' : ''}</td>
@@ -154,7 +155,7 @@ function buildEmailHtml(summary: ReportSummary, reportLink?: string): string {
             <td align="right" style="padding:7px 4px;font-family:Arial,sans-serif;font-size:12px;color:#374151;">${b.count.toLocaleString('pl-PL')}</td>
           </tr>`).join('')}
         </table>
-        ${summary.ranking.some(b => b.isSelected) ? `<p style="margin:6px 0 0;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;">* Twoja marka</p>` : ''}
+        ${summary.ranking.filter(b => b.count >= 10).some(b => b.isSelected) ? `<p style="margin:6px 0 0;font-family:Arial,sans-serif;font-size:10px;color:#6b7280;">* Twoja marka</p>` : ''}
       </td>
     </tr>` : ''}
 
@@ -164,11 +165,11 @@ function buildEmailHtml(summary: ReportSummary, reportLink?: string): string {
         <table border="0" cellpadding="0" cellspacing="0">
           <tr>
             <td bgcolor="#1a3557" align="center" style="background-color:#1a3557;padding:14px 32px;">
-              <a href="${reportLink}" style="font-family:Arial,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;display:inline-block;">Zobacz pelny raport</a>
+              <a href="${reportLink}" style="font-family:Arial,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;display:inline-block;">${summary.reportType === 'ranking' ? 'Zobacz ranking' : 'Zobacz pelny raport'}</a>
             </td>
           </tr>
         </table>
-        <p style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:12px;color:#9ca3af;">Raport dostepny w Catering Monitor w sekcji Moje raporty</p>
+        <p style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:12px;color:#9ca3af;">${summary.reportType === 'ranking' ? 'Ranking dostepny w panelu Catering Monitor' : 'Raport dostepny w Catering Monitor w sekcji Moje raporty'}</p>
       </td>
     </tr>` : ''}
 
@@ -225,6 +226,7 @@ export async function POST(request: Request) {
             date_from: reportSummary.dateFrom,
             date_to: reportSummary.dateTo,
             title: reportSummary.title,
+            report_type: reportSummary.reportType || 'opinions',
             created_by: user.id,
           })
           .select('id')
@@ -235,7 +237,9 @@ export async function POST(request: Request) {
           continue
         }
 
-        reportLink = `https://cateringmonitor.pl/reports/custom/${reportRecord.id}`
+        reportLink = reportSummary.reportType === 'ranking'
+          ? `https://cateringmonitor.pl/admin/reports?tab=ranking`
+          : `https://cateringmonitor.pl/reports/custom/${reportRecord.id}`
       }
 
       const html = buildEmailHtml(reportSummary, reportLink)
