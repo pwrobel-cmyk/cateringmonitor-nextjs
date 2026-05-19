@@ -34,7 +34,7 @@ export default function MojeRaportyPage() {
 
   const copyLink = async (id: string, title?: string) => {
     const link = title?.startsWith('[RANKING]')
-      ? `${window.location.origin}/admin/reports?tab=ranking&reportId=${id}`
+      ? `${window.location.origin}/reports/ranking/${id}`
       : `${window.location.origin}/reports/custom/${id}`
     try {
       await navigator.clipboard.writeText(link)
@@ -91,7 +91,7 @@ export default function MojeRaportyPage() {
                     {createdAt && <p>Utworzony {createdAt}</p>}
                   </div>
                   <div className="flex gap-2">
-                    <Link href={r.title?.startsWith('[RANKING]') ? `/admin/reports?tab=ranking&reportId=${r.id}` : `/reports/custom/${r.id}`} className="flex-1">
+                    <Link href={r.title?.startsWith('[RANKING]') ? `/reports/ranking/${r.id}` : `/reports/custom/${r.id}`} className="flex-1">
                       <Button size="sm" className="w-full">
                         <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                         {r.title?.startsWith('[RANKING]') ? 'Otwórz ranking' : 'Otwórz raport'}
