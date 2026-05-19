@@ -251,12 +251,13 @@ function PriceHeatmapChart({ data, brands, months }: {
 
 // ── Main component ───────────────────────────────────────────────────────────────
 export function RankingReport({
-  dateFrom, dateTo, highlightBrandId, autoGenerate,
+  dateFrom, dateTo, highlightBrandId, autoGenerate, isPublic,
 }: {
   dateFrom: string
   dateTo: string
   highlightBrandId?: string | null
   autoGenerate?: boolean
+  isPublic?: boolean
 }) {
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RankingData | null>(null)
@@ -701,29 +702,47 @@ export function RankingReport({
   return (
     <div className="space-y-6">
       {/* Controls */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Button onClick={generate} disabled={loading}>
-          {loading
-            ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generuję...</>
-            : <><TrendingUp className="h-4 w-4 mr-2" />Generuj ranking</>}
-        </Button>
-        {data && (
-          <>
-            <Button variant="outline" onClick={() => handlePrint()}>
-              <Printer className="h-4 w-4 mr-2" />Pobierz PDF
-            </Button>
-            <Button variant="outline" onClick={() => setShowEmailModal(true)}>
-              <Send className="h-4 w-4 mr-2" />Wyślij email
-            </Button>
-          </>
-        )}
-        {dateFrom && dateTo && (
-          <span className="text-sm text-muted-foreground">{dateFrom} – {dateTo}</span>
-        )}
-      </div>
+      {!isPublic && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button onClick={generate} disabled={loading}>
+            {loading
+              ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generuję...</>
+              : <><TrendingUp className="h-4 w-4 mr-2" />Generuj ranking</>}
+          </Button>
+          {data && (
+            <>
+              <Button variant="outline" onClick={() => handlePrint()}>
+                <Printer className="h-4 w-4 mr-2" />Pobierz PDF
+              </Button>
+              <Button variant="outline" onClick={() => setShowEmailModal(true)}>
+                <Send className="h-4 w-4 mr-2" />Wyślij email
+              </Button>
+            </>
+          )}
+          {dateFrom && dateTo && (
+            <span className="text-sm text-muted-foreground">{dateFrom} – {dateTo}</span>
+          )}
+        </div>
+      )}
 
-      {/* Empty state */}
-      {!data && !loading && (
+      {/* Public mode: PDF button only (shown after data loads) */}
+      {isPublic && data && (
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => handlePrint()}>
+            <Printer className="h-4 w-4 mr-2" />Pobierz PDF
+          </Button>
+        </div>
+      )}
+
+      {/* Loading state for public mode */}
+      {isPublic && loading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />Generuję ranking…
+        </div>
+      )}
+
+      {/* Empty state (admin only) */}
+      {!isPublic && !data && !loading && (
         <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed rounded-xl text-center text-muted-foreground">
           <TrendingUp className="h-14 w-14 mb-4 opacity-20" />
           <p className="text-lg font-medium">Wybierz zakres dat i kliknij „Generuj ranking"</p>

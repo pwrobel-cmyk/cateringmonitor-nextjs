@@ -91,6 +91,7 @@ export default function RankingReportPage() {
         dateFrom={report.date_from}
         dateTo={report.date_to}
         autoGenerate={true}
+        isPublic={true}
       />
     </div>
   )
