@@ -300,7 +300,7 @@ export function RankingReport({
       const hist12From = hist12Months[0] + '-01'
       const hist12To = format(now, 'yyyy-MM-dd')
 
-      const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes, histReviewsRes, discHistRes, priceHistRes12] = await Promise.all([
+      const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes, histReviewsRes, discHistRes] = await Promise.all([
         // A — current period ratings
         supabase.from('reviews')
           .select('brand_id, rating, brands(name, logo_url)')
@@ -341,19 +341,28 @@ export function RankingReport({
           .gte('valid_from', hist12From)
           .not('percentage', 'is', null),
 
-        // G — last 12 months price history for price heatmap
-        supabase.from('price_history')
-          .select('price, date_recorded, package_kcal_ranges!price_history_package_kcal_range_id_fkey(packages(brand_id, brands(name)))')
-          .gte('date_recorded', hist12From)
-          .lte('date_recorded', hist12To),
       ])
 
-      // Debug
-      console.log('[RankingReport] price_history rows:', priceHistRes.data?.length, priceHistRes.error)
-      console.log('[RankingReport] discounts rows:', discountsRes.data?.length, discountsRes.error)
-      console.log('[RankingReport] discounts sample:', JSON.stringify(discountsRes.data?.slice(0, 2)))
-      console.log('[queryG] raw rows:', priceHistRes12.data?.length, priceHistRes12.data?.[0])
-      console.log('[queryG] error:', priceHistRes12.error)
+      // G — last 12 months price history (paginated to bypass 1000-row default limit)
+      async function fetchAllPriceHistory(from: string, to: string) {
+        let all: any[] = []
+        let page = 0
+        const pageSize = 1000
+        while (true) {
+          const { data, error } = await supabase
+            .from('price_history')
+            .select('price, date_recorded, package_kcal_ranges!price_history_package_kcal_range_id_fkey(packages(brand_id, brands(name)))')
+            .gte('date_recorded', from)
+            .lte('date_recorded', to)
+            .range(page * pageSize, (page + 1) * pageSize - 1)
+          if (error || !data || data.length === 0) break
+          all = [...all, ...data]
+          if (data.length < pageSize) break
+          page++
+        }
+        return all
+      }
+      const priceHistory12 = await fetchAllPriceHistory(hist12From, hist12To)
 
       // ── Current period ratings ─────────────────────────────────────────────
       const byBrand = new Map<string, { name: string; logo: string | null; rs: number[] }>()
@@ -556,7 +565,7 @@ export function RankingReport({
 
       // ── Price heatmap (12 months) ──────────────────────────────────────────
       const priceHmByBrand = new Map<string, { name: string; byMonth: Map<string, number[]> }>()
-      for (const ph of priceHistRes12.data ?? []) {
+      for (const ph of priceHistory12) {
         const pkr = (ph as any).package_kcal_ranges
         if (!pkr) continue
         const pkg = Array.isArray(pkr) ? pkr[0]?.packages : pkr.packages
@@ -573,7 +582,6 @@ export function RankingReport({
         }
       }
 
-      console.log('[queryG] priceHmByBrand size:', priceHmByBrand.size)
       const priceHmBrands = Array.from(priceHmByBrand.values())
         .map(v => {
           const allPs = Array.from(v.byMonth.values()).flat()
