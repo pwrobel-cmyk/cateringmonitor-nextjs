@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, Printer, TrendingUp, ArrowUp, ArrowDown, Send } from 'lucide-react'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer, LabelList,
 } from 'recharts'
 import { format, subDays, differenceInDays, parseISO } from 'date-fns'
 import { useReactToPrint } from 'react-to-print'
@@ -145,17 +145,18 @@ export function RankingReport({
           .gte('date_recorded', dateFrom)
           .lte('date_recorded', dateTo),
 
-        // E — discounts
+        // E — discounts  (column name: percentage, not discount_percentage)
         supabase.from('discounts')
-          .select('brand_id, discount_percentage, brands(name, logo_url)')
+          .select('brand_id, percentage, brands(name, logo_url)')
           .gte('valid_from', dateFrom)
           .lte('valid_from', dateTo)
-          .not('discount_percentage', 'is', null),
+          .not('percentage', 'is', null),
       ])
 
       // Debug
       console.log('[RankingReport] price_history rows:', priceHistRes.data?.length, priceHistRes.error)
       console.log('[RankingReport] discounts rows:', discountsRes.data?.length, discountsRes.error)
+      console.log('[RankingReport] discounts sample:', JSON.stringify(discountsRes.data?.slice(0, 2)))
 
       // ── Current period ratings ─────────────────────────────────────────────
       const byBrand = new Map<string, { name: string; logo: string | null; rs: number[] }>()
@@ -221,10 +222,11 @@ export function RankingReport({
       const discMap = new Map<string, { name: string; logo: string | null; ds: number[] }>()
       for (const d of discountsRes.data ?? []) {
         const b = (d as any).brands
-        if (!b || d.discount_percentage == null) continue
+        const pct = (d as any).percentage
+        if (!b || pct == null) continue
         const ex = discMap.get(d.brand_id)
-        if (ex) ex.ds.push(d.discount_percentage)
-        else discMap.set(d.brand_id, { name: b.name, logo: b.logo_url ?? null, ds: [d.discount_percentage] })
+        if (ex) ex.ds.push(pct)
+        else discMap.set(d.brand_id, { name: b.name, logo: b.logo_url ?? null, ds: [pct] })
       }
 
       const discounts: BrandDiscount[] = Array.from(discMap.entries())
@@ -315,13 +317,18 @@ export function RankingReport({
     }
   }
 
-  // Bar chart data (top 8 by avgRating)
-  const barData = data?.ratings.slice(0, 8).map(r => ({
-    name: r.brandName.length > 14 ? r.brandName.slice(0, 13) + '…' : r.brandName,
+  // Qualified = >=10 reviews; re-number positions
+  const qualifiedRatings = (data?.ratings ?? []).filter(r => r.count >= 10).map((r, i) => ({ ...r, position: i + 1 }))
+  const excludedRatings = (data?.ratings ?? []).filter(r => r.count < 10)
+
+  // Horizontal bar chart data — all qualified brands sorted best→worst (already sorted)
+  const barData = qualifiedRatings.map(r => ({
+    name: r.brandName.length > 22 ? r.brandName.slice(0, 21) + '…' : r.brandName,
     fullName: r.brandName,
     avgRating: Math.round(r.avgRating * 100) / 100,
     count: r.count,
-  })) ?? []
+  }))
+  const chartHeight = Math.max(160, barData.length * 40)
 
   return (
     <div className="space-y-6">
@@ -360,79 +367,111 @@ export function RankingReport({
       {data && (
         <div ref={printRef} className="space-y-10">
 
-          {/* SECTION 1 — Rating ranking table */}
+          {/* SECTION 1 — Rating ranking table (only brands with >=10 reviews) */}
           <Card>
             <CardHeader>
               <CardTitle>Ranking ocen marek</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/30">
-                      <th className="text-center px-4 py-3 font-medium text-muted-foreground w-10">#</th>
-                      <th className="text-center px-4 py-3 font-medium text-muted-foreground w-20">Zmiana</th>
-                      <th className="px-3 py-3 w-10" />
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Marka</th>
-                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Śr. ocena</th>
-                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Opinii</th>
-                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">% poz.</th>
-                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">% neg.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.ratings.map(r => (
-                      <tr
-                        key={r.brandId}
-                        className={`border-b transition-colors ${r.brandId === highlightBrandId ? 'bg-primary/10' : 'hover:bg-muted/20'}`}
-                      >
-                        <td className="text-center px-4 py-3 font-bold text-muted-foreground">{r.position}</td>
-                        <td className="text-center px-4 py-3">
-                          <ChangeIndicator change={r.change} prevPosition={r.prevPosition} />
-                        </td>
-                        <td className="px-3 py-3"><BrandLogo url={r.brandLogo} name={r.brandName} /></td>
-                        <td className="px-4 py-3 font-medium">{r.brandName}</td>
-                        <td className="text-right px-4 py-3 font-semibold">{r.avgRating.toFixed(2)}</td>
-                        <td className="text-right px-4 py-3">{r.count}</td>
-                        <td className="text-right px-4 py-3 text-green-600 font-medium">{r.positivePercent}%</td>
-                        <td className="text-right px-4 py-3 text-red-600 font-medium">{r.negativePercent}%</td>
+              {qualifiedRatings.length === 0 ? (
+                <p className="p-6 text-sm text-muted-foreground">Brak marek z wystarczającą liczbą opinii (min. 10).</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/30">
+                        <th className="text-center px-4 py-3 font-medium text-muted-foreground w-10">#</th>
+                        <th className="text-center px-4 py-3 font-medium text-muted-foreground w-20">Zmiana</th>
+                        <th className="px-3 py-3 w-10" />
+                        <th className="text-left px-4 py-3 font-medium text-muted-foreground">Marka</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">Śr. ocena</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">Opinii</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">% poz.</th>
+                        <th className="text-right px-4 py-3 font-medium text-muted-foreground">% neg.</th>
                       </tr>
+                    </thead>
+                    <tbody>
+                      {qualifiedRatings.map(r => (
+                        <tr
+                          key={r.brandId}
+                          className={`border-b transition-colors ${r.brandId === highlightBrandId ? 'bg-primary/10' : 'hover:bg-muted/20'}`}
+                        >
+                          <td className="text-center px-4 py-3 font-bold text-muted-foreground">{r.position}</td>
+                          <td className="text-center px-4 py-3">
+                            <ChangeIndicator change={r.change} prevPosition={r.prevPosition} />
+                          </td>
+                          <td className="px-3 py-3"><BrandLogo url={r.brandLogo} name={r.brandName} /></td>
+                          <td className="px-4 py-3 font-medium">{r.brandName}</td>
+                          <td className="text-right px-4 py-3 font-semibold">{r.avgRating.toFixed(2)}</td>
+                          <td className="text-right px-4 py-3">{r.count}</td>
+                          <td className="text-right px-4 py-3 text-green-600 font-medium">{r.positivePercent}%</td>
+                          <td className="text-right px-4 py-3 text-red-600 font-medium">{r.negativePercent}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Brands excluded due to insufficient reviews */}
+              {excludedRatings.length > 0 && (
+                <div className="px-4 py-3 border-t bg-muted/20">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Zbyt mało opinii do rankingu (min. 10)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {excludedRatings.map(r => (
+                      <span key={r.brandId} className="text-xs px-2 py-1 rounded-full border bg-background text-muted-foreground">
+                        {r.brandName} <span className="font-medium">{r.count}</span>
+                      </span>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* SECTION 2 — Bar chart: avgRating per brand (top 8) */}
+          {/* SECTION 2 — Horizontal bar chart: avgRating per brand */}
           {barData.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Średnia ocena marek w wybranym okresie</CardTitle>
+                <CardTitle>Ranking ocen — {dateFrom} do {dateTo}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-72">
+                <div style={{ height: chartHeight }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={barData} margin={{ top: 5, right: 20, left: 0, bottom: 50 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis
+                    <BarChart
+                      layout="vertical"
+                      data={barData}
+                      margin={{ top: 4, right: 60, left: 8, bottom: 4 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                      <YAxis
+                        type="category"
                         dataKey="name"
-                        tick={{ fontSize: 11 }}
-                        interval={0}
-                        angle={-30}
-                        textAnchor="end"
+                        width={140}
+                        tick={{ fontSize: 12 }}
                       />
-                      <YAxis domain={[0, 5]} tickCount={6} tick={{ fontSize: 12 }} />
+                      <XAxis
+                        type="number"
+                        domain={[0, 5]}
+                        tickCount={6}
+                        tick={{ fontSize: 11 }}
+                      />
                       <Tooltip content={<RatingTooltip />} />
-                      <Bar dataKey="avgRating" radius={[4, 4, 0, 0]}>
+                      <Bar dataKey="avgRating" radius={[0, 4, 4, 0]} maxBarSize={28}>
                         {barData.map((entry, i) => (
                           <Cell key={i} fill={getRatingColor(entry.avgRating)} />
                         ))}
+                        <LabelList
+                          dataKey="avgRating"
+                          position="right"
+                          formatter={(v: unknown) => `${Number(v).toFixed(2)}★`}
+                          style={{ fontSize: 12, fontWeight: 600, fill: '#374151' }}
+                        />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="flex gap-4 justify-center mt-1 text-xs text-muted-foreground">
+                <div className="flex gap-4 justify-center mt-2 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block bg-[#16a34a]" />≥ 4.0 (wysoka)</span>
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block bg-[#d97706]" />3.5 – 4.0 (średnia)</span>
                   <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block bg-[#dc2626]" />{'< 3.5 (niska)'}</span>
