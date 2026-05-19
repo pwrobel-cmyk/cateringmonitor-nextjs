@@ -98,7 +98,7 @@ function HeatmapChart({ data, brands, months }: {
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 1, fontSize: 11, width: '100%' }}>
         <thead>
           <tr>
             <th style={{ width: 140, textAlign: 'right', paddingRight: 8, fontWeight: 400, color: 'var(--muted-foreground)' }} />
@@ -123,7 +123,7 @@ function HeatmapChart({ data, brands, months }: {
                     width: 44, height: 24, textAlign: 'center', fontSize: 10, fontWeight: 500,
                     backgroundColor: col ? col.bg : 'var(--color-background-secondary)',
                     color: col ? col.text : 'var(--color-text-tertiary)',
-                    border: '1px solid var(--color-background-primary)', borderRadius: 2,
+                    border: '1px solid white', borderRadius: 2,
                   }}>
                     {v != null ? v.toFixed(1) : ''}
                   </td>
@@ -153,7 +153,7 @@ function DiscountHeatmapChart({ data, brands, months }: {
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 1, fontSize: 11, width: '100%' }}>
         <thead>
           <tr>
             <th style={{ width: 145, textAlign: 'right', paddingRight: 8, fontWeight: 400, color: 'var(--muted-foreground)' }} />
@@ -178,7 +178,7 @@ function DiscountHeatmapChart({ data, brands, months }: {
                     width: 44, height: 24, textAlign: 'center', fontSize: 10, fontWeight: 500,
                     backgroundColor: col ? col.bg : 'var(--color-background-secondary)',
                     color: col ? col.text : 'var(--color-text-tertiary)',
-                    border: '1px solid var(--color-background-primary)', borderRadius: 2,
+                    border: '1px solid white', borderRadius: 2,
                   }}>
                     {v != null ? Math.round(v) + '%' : ''}
                   </td>
