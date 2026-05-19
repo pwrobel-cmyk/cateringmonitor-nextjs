@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,9 +10,6 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Loader2, Printer, TrendingUp, ArrowUp, ArrowDown, Send } from 'lucide-react'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer, LabelList,
-} from 'recharts'
 import { format, subDays, differenceInDays, parseISO } from 'date-fns'
 import { useReactToPrint } from 'react-to-print'
 import { toast } from 'sonner'
@@ -36,8 +33,15 @@ interface BrandPriceAfterDiscount {
   avgCatalog: number; avgDiscount: number; avgAfterDiscount: number; position: number
 }
 
+interface HeatmapData {
+  data: Record<string, Record<string, number | null>>
+  brands: string[]
+  months: string[]
+}
+
 interface RankingData {
   ratings: BrandRank[]
+  heatmap: HeatmapData
   prices: BrandPrice[]
   discounts: BrandDiscount[]
   pricesAfterDiscount: BrandPriceAfterDiscount[]
@@ -70,16 +74,89 @@ function ChangeIndicator({ change, prevPosition }: { change: number | null; prev
   )
 }
 
-function RatingTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
-  if (!active || !payload?.[0]) return null
-  const d = payload[0].payload
-  return (
-    <div className="bg-white border rounded shadow-lg p-3 text-sm">
-      <p className="font-semibold mb-1">{d.fullName}</p>
-      <p>Śr. ocena: <strong>{d.avgRating.toFixed(2)}</strong></p>
-      <p>Opinii: <strong>{d.count}</strong></p>
-    </div>
-  )
+// ── Heatmap (canvas) ────────────────────────────────────────────────────────────
+function HeatmapChart({ data, brands, months }: {
+  data: Record<string, Record<string, number | null>>
+  brands: string[]
+  months: string[]
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const PAD_LEFT = 130
+    const PAD_TOP = 36
+    const PAD_RIGHT = 16
+    const PAD_BOTTOM = 8
+    const CELL_H = 28
+    const CELL_W = Math.max(48, (canvas.offsetWidth - PAD_LEFT - PAD_RIGHT) / months.length)
+
+    canvas.width = PAD_LEFT + months.length * CELL_W + PAD_RIGHT
+    canvas.height = PAD_TOP + brands.length * CELL_H + PAD_BOTTOM
+
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    const textColor = isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.65)'
+    const bgColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
+
+    function ratingColor(v: number): string {
+      if (v >= 4.5) return '#1D9E75'
+      if (v >= 4.0) return '#639922'
+      if (v >= 3.5) return '#BA7517'
+      if (v >= 3.0) return '#D85A30'
+      return '#A32D2D'
+    }
+
+    // Header — months
+    ctx.font = '11px sans-serif'
+    ctx.fillStyle = textColor
+    ctx.textAlign = 'center'
+    months.forEach((m, j) => {
+      const parts = m.split('-')
+      const label = parts[1] + '/' + parts[0].slice(2)
+      ctx.fillText(label, PAD_LEFT + j * CELL_W + CELL_W / 2, 20)
+    })
+
+    // Brands + cells
+    brands.forEach((brand, i) => {
+      ctx.font = '11px sans-serif'
+      ctx.fillStyle = textColor
+      ctx.textAlign = 'right'
+      const shortName = brand.length > 16 ? brand.slice(0, 15) + '…' : brand
+      ctx.fillText(shortName, PAD_LEFT - 8, PAD_TOP + i * CELL_H + CELL_H / 2 + 4)
+
+      months.forEach((m, j) => {
+        const v = data[brand]?.[m]
+        const x = PAD_LEFT + j * CELL_W + 1
+        const y = PAD_TOP + i * CELL_H + 1
+        const w = CELL_W - 2
+        const h = CELL_H - 2
+
+        if (v == null) {
+          ctx.globalAlpha = 1
+          ctx.fillStyle = bgColor
+          ctx.fillRect(x, y, w, h)
+          return
+        }
+
+        ctx.fillStyle = ratingColor(v)
+        ctx.globalAlpha = 0.85
+        ctx.fillRect(x, y, w, h)
+        ctx.globalAlpha = 1
+
+        ctx.font = '10px sans-serif'
+        ctx.fillStyle = '#fff'
+        ctx.textAlign = 'center'
+        ctx.fillText(v.toFixed(1), x + w / 2, y + h / 2 + 4)
+      })
+    })
+  }, [data, brands, months])
+
+  const height = 36 + brands.length * 28 + 8
+  return <canvas ref={canvasRef} style={{ width: '100%', height: `${height}px` }} />
 }
 
 // ── Main component ───────────────────────────────────────────────────────────────
@@ -124,7 +201,16 @@ export function RankingReport({
       const prevDateFrom = format(prevFrom, 'yyyy-MM-dd')
       const prevDateTo = format(prevTo, 'yyyy-MM-dd')
 
-      const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes] = await Promise.all([
+      // 12-month window for heatmap (always fixed, independent of selected date range)
+      const now = new Date()
+      const hist12Months: string[] = []
+      for (let i = 11; i >= 0; i--) {
+        hist12Months.push(format(new Date(now.getFullYear(), now.getMonth() - i, 1), 'yyyy-MM'))
+      }
+      const hist12From = hist12Months[0] + '-01'
+      const hist12To = format(now, 'yyyy-MM-dd')
+
+      const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes, histReviewsRes] = await Promise.all([
         // A — current period ratings
         supabase.from('reviews')
           .select('brand_id, rating, brands(name, logo_url)')
@@ -151,6 +237,13 @@ export function RankingReport({
           .gte('valid_from', dateFrom)
           .lte('valid_from', dateTo)
           .not('percentage', 'is', null),
+
+        // C — last 12 months for heatmap
+        supabase.from('reviews')
+          .select('brand_id, rating, review_date, brands(name)')
+          .eq('is_approved', true)
+          .gte('review_date', hist12From)
+          .lte('review_date', hist12To),
       ])
 
       // Debug
@@ -258,7 +351,52 @@ export function RankingReport({
         .sort((a, b) => a.avgAfterDiscount - b.avgAfterDiscount)
         .map((e, i) => ({ ...e, position: i + 1 }))
 
-      setData({ ratings, prices, discounts, pricesAfterDiscount })
+      // ── Heatmap (12 months) ────────────────────────────────────────────────
+      const hmByBrand = new Map<string, { name: string; byMonth: Map<string, number[]> }>()
+      for (const r of histReviewsRes.data ?? []) {
+        const b = (r as any).brands
+        if (!b || !r.review_date) continue
+        const month = (r.review_date as string).slice(0, 7)
+        const ex = hmByBrand.get(r.brand_id)
+        if (ex) {
+          const mx = ex.byMonth.get(month)
+          if (mx) mx.push(r.rating); else ex.byMonth.set(month, [r.rating])
+        } else {
+          hmByBrand.set(r.brand_id, { name: b.name, byMonth: new Map([[month, [r.rating]]]) })
+        }
+      }
+
+      const hmBrands = Array.from(hmByBrand.values())
+        .map(v => {
+          const allRs = Array.from(v.byMonth.values()).flat()
+          return {
+            name: v.name,
+            totalCount: allRs.length,
+            overallAvg: allRs.reduce((a, b) => a + b, 0) / allRs.length,
+            byMonth: v.byMonth,
+          }
+        })
+        .filter(b => b.totalCount >= 10)
+        .sort((a, b) => b.overallAvg - a.overallAvg)
+
+      const heatmapCells: Record<string, Record<string, number | null>> = {}
+      for (const brand of hmBrands) {
+        heatmapCells[brand.name] = {}
+        for (const month of hist12Months) {
+          const rs = brand.byMonth.get(month)
+          heatmapCells[brand.name][month] = rs
+            ? Math.round(rs.reduce((a, b) => a + b, 0) / rs.length * 100) / 100
+            : null
+        }
+      }
+
+      const heatmap: HeatmapData = {
+        data: heatmapCells,
+        brands: hmBrands.map(b => b.name),
+        months: hist12Months,
+      }
+
+      setData({ ratings, heatmap, prices, discounts, pricesAfterDiscount })
     } catch (e) {
       console.error('[RankingReport] error:', e)
     } finally {
@@ -321,14 +459,6 @@ export function RankingReport({
   const qualifiedRatings = (data?.ratings ?? []).filter(r => r.count >= 10).map((r, i) => ({ ...r, position: i + 1 }))
   const excludedRatings = (data?.ratings ?? []).filter(r => r.count < 10)
 
-  // Horizontal bar chart data — all qualified brands sorted best→worst (already sorted)
-  const barData = qualifiedRatings.map(r => ({
-    name: r.brandName.length > 22 ? r.brandName.slice(0, 21) + '…' : r.brandName,
-    fullName: r.brandName,
-    avgRating: Math.round(r.avgRating * 100) / 100,
-    count: r.count,
-  }))
-  const chartHeight = Math.max(160, barData.length * 40)
 
   return (
     <div className="space-y-6">
@@ -429,52 +559,29 @@ export function RankingReport({
             </CardContent>
           </Card>
 
-          {/* SECTION 2 — Horizontal bar chart: avgRating per brand */}
-          {barData.length > 0 && (
+          {/* SECTION 2 — Heatmap: 12-month rating history */}
+          {data.heatmap.brands.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Ranking ocen — {dateFrom} do {dateTo}</CardTitle>
+                <CardTitle>Historia ocen — ostatnie 12 miesięcy</CardTitle>
+                <p className="text-sm text-muted-foreground">Wszystkie marki z min. 10 opiniami w okresie</p>
               </CardHeader>
               <CardContent>
-                <div style={{ height: chartHeight }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      layout="vertical"
-                      data={barData}
-                      margin={{ top: 4, right: 60, left: 8, bottom: 4 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        width={140}
-                        tick={{ fontSize: 12 }}
-                      />
-                      <XAxis
-                        type="number"
-                        domain={[0, 5]}
-                        tickCount={6}
-                        tick={{ fontSize: 11 }}
-                      />
-                      <Tooltip content={<RatingTooltip />} />
-                      <Bar dataKey="avgRating" radius={[0, 4, 4, 0]} maxBarSize={28}>
-                        {barData.map((entry, i) => (
-                          <Cell key={i} fill={getRatingColor(entry.avgRating)} />
-                        ))}
-                        <LabelList
-                          dataKey="avgRating"
-                          position="right"
-                          formatter={(v: unknown) => `${Number(v).toFixed(2)}★`}
-                          style={{ fontSize: 12, fontWeight: 600, fill: '#374151' }}
-                        />
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="overflow-x-auto">
+                  <HeatmapChart
+                    data={data.heatmap.data}
+                    brands={data.heatmap.brands}
+                    months={data.heatmap.months}
+                  />
                 </div>
-                <div className="flex gap-4 justify-center mt-2 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block bg-[#16a34a]" />≥ 4.0 (wysoka)</span>
-                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block bg-[#d97706]" />3.5 – 4.0 (średnia)</span>
-                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block bg-[#dc2626]" />{'< 3.5 (niska)'}</span>
+                <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, flexWrap: 'wrap' }}>
+                  {([['≥4.5', '#1D9E75'], ['4.0–4.5', '#639922'], ['3.5–4.0', '#BA7517'], ['3.0–3.5', '#D85A30'], ['<3.0', '#A32D2D']] as [string, string][]).map(([label, color]) => (
+                    <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--muted-foreground)' }}>
+                      <span style={{ width: 14, height: 14, borderRadius: 2, background: color, display: 'inline-block' }} />
+                      {label}★
+                    </span>
+                  ))}
+                  <span style={{ color: 'var(--muted-foreground)', marginLeft: 'auto', fontSize: 11 }}>Brak danych = szary</span>
                 </div>
               </CardContent>
             </Card>
