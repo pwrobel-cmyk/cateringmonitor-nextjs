@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 interface BrandRank {
   brandId: string; brandName: string; brandLogo: string | null
   avgRating: number; count: number; positivePercent: number; negativePercent: number
-  position: number; prevPosition: number | null; change: number | null
+  position: number; prevPosition: number | null; change: number | null; isNew: boolean
 }
 interface BrandPrice {
   brandId: string; brandName: string; brandLogo: string | null
@@ -60,8 +60,8 @@ function BrandLogo({ url, name }: { url: string | null; name: string }) {
   )
 }
 
-function ChangeIndicator({ change, prevPosition }: { change: number | null; prevPosition: number | null }) {
-  if (prevPosition === null) return <Badge className="text-xs bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">NEW</Badge>
+function ChangeIndicator({ change, isNew }: { change: number | null; prevPosition: number | null; isNew: boolean }) {
+  if (isNew) return <Badge className="text-xs bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100">NEW</Badge>
   if (change === null || change === 0) return <span className="text-muted-foreground text-sm">→</span>
   if (change > 0) return (
     <span className="text-green-600 text-sm font-medium flex items-center gap-0.5">
@@ -328,9 +328,10 @@ export function RankingReport({
       const ratings: BrandRank[] = [
         ...qualifiedEntries.map((e, i) => {
           const prev = prevRankMap.get(e.brandId) ?? null
-          return { ...e, position: i + 1, prevPosition: prev, change: prev !== null ? prev - (i + 1) : null }
+          const hadAnyPrevReviews = prevMap.has(e.brandId)
+          return { ...e, position: i + 1, prevPosition: prev, change: prev !== null ? prev - (i + 1) : null, isNew: !hadAnyPrevReviews }
         }),
-        ...excludedEntries.map(e => ({ ...e, position: 0, prevPosition: null, change: null })),
+        ...excludedEntries.map(e => ({ ...e, position: 0, prevPosition: null, change: null, isNew: !prevMap.has(e.brandId) })),
       ]
 
       // ── Catalog prices ─────────────────────────────────────────────────────
@@ -620,7 +621,7 @@ export function RankingReport({
                         >
                           <td className="text-center px-4 py-3 font-bold text-muted-foreground">{r.position}</td>
                           <td className="text-center px-4 py-3">
-                            <ChangeIndicator change={r.change} prevPosition={r.prevPosition} />
+                            <ChangeIndicator change={r.change} prevPosition={r.prevPosition} isNew={r.isNew} />
                           </td>
                           <td className="px-3 py-3"><BrandLogo url={r.brandLogo} name={r.brandName} /></td>
                           <td className="px-4 py-3 font-medium">{r.brandName}</td>
