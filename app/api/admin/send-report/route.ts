@@ -237,7 +237,7 @@ export async function POST(request: Request) {
         }
 
         reportLink = reportSummary.title?.startsWith('[RANKING]')
-          ? `https://cateringmonitor.pl/moje-raporty`
+          ? `https://cateringmonitor.pl/admin/reports?tab=ranking&reportId=${reportRecord.id}`
           : `https://cateringmonitor.pl/reports/custom/${reportRecord.id}`
       }
 

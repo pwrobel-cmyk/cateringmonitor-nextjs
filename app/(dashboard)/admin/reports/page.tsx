@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
@@ -86,6 +87,9 @@ const EMPTY_CONTACT_FORM = { first_name: '', last_name: '', company: '', email: 
 export default function AdminReportsPage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'opinions')
+  const [rankingOverrideDates, setRankingOverrideDates] = useState<{ from: string; to: string } | null>(null)
   const [brandId, setBrandId] = useState<string>('all')
   const [dateRangeType, setDateRangeType] = useState<DateRangeType>('last_month')
   const [specificMonth, setSpecificMonth] = useState(
@@ -100,6 +104,19 @@ export default function AdminReportsPage() {
   const [assignTitle, setAssignTitle] = useState('')
   const [assigning, setAssigning] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    const reportId = searchParams.get('reportId')
+    if (!reportId) return
+    ;(async () => {
+      const { data } = await (supabase as any)
+        .from('custom_reports')
+        .select('date_from, date_to')
+        .eq('id', reportId)
+        .single()
+      if (data) setRankingOverrideDates({ from: data.date_from, to: data.date_to })
+    })()
+  }, [searchParams])
 
   const { data: brands = [] } = useQuery({
     queryKey: ['brands-for-report'],
@@ -388,7 +405,7 @@ export default function AdminReportsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="opinions">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-2">
           <TabsTrigger value="opinions" className="gap-2">
             <FileBarChart2 className="h-4 w-4" />Raport opinii
@@ -1001,9 +1018,16 @@ export default function AdminReportsPage() {
                 <CardTitle className="text-base">Zakres dat</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {rankingOverrideDates && (
+                  <div className="rounded-md border bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-sm space-y-1">
+                    <p className="font-medium text-blue-800 dark:text-blue-300">Zakres z raportu:</p>
+                    <p className="text-blue-700 dark:text-blue-400">{rankingOverrideDates.from} – {rankingOverrideDates.to}</p>
+                    <button className="text-xs text-blue-600 underline" onClick={() => setRankingOverrideDates(null)}>Zmień zakres</button>
+                  </div>
+                )}
                 <RadioGroup
                   value={dateRangeType}
-                  onValueChange={v => setDateRangeType(v as DateRangeType)}
+                  onValueChange={v => { setRankingOverrideDates(null); setDateRangeType(v as DateRangeType) }}
                   className="space-y-2"
                 >
                   {DATE_RANGE_OPTIONS.map(opt => (
@@ -1039,8 +1063,8 @@ export default function AdminReportsPage() {
 
             {/* Right: ranking */}
             <RankingReport
-              dateFrom={computeDateRange(dateRangeType, specificMonth, specificYear).from}
-              dateTo={computeDateRange(dateRangeType, specificMonth, specificYear).to}
+              dateFrom={rankingOverrideDates?.from ?? computeDateRange(dateRangeType, specificMonth, specificYear).from}
+              dateTo={rankingOverrideDates?.to ?? computeDateRange(dateRangeType, specificMonth, specificYear).to}
               highlightBrandId={brandId === 'all' ? null : brandId}
             />
           </div>
