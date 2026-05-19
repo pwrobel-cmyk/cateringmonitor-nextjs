@@ -279,6 +279,7 @@ export function RankingReport({
   })
 
   const generate = useCallback(async () => {
+    console.log('[generate] START', { dateFrom, dateTo })
     setLoading(true)
     setData(null)
     try {
@@ -646,7 +647,7 @@ export function RankingReport({
 
       setData({ ratings, heatmap, discountHeatmap, priceHeatmap, priceAfterDiscountHeatmap, prices, discounts, pricesAfterDiscount })
     } catch (e) {
-      console.error('[RankingReport] error:', e)
+      console.error('[generate] ERROR:', e)
     } finally {
       setLoading(false)
     }
