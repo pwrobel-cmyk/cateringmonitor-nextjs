@@ -352,6 +352,8 @@ export function RankingReport({
       console.log('[RankingReport] price_history rows:', priceHistRes.data?.length, priceHistRes.error)
       console.log('[RankingReport] discounts rows:', discountsRes.data?.length, discountsRes.error)
       console.log('[RankingReport] discounts sample:', JSON.stringify(discountsRes.data?.slice(0, 2)))
+      console.log('[queryG] raw rows:', priceHistRes12.data?.length, priceHistRes12.data?.[0])
+      console.log('[queryG] error:', priceHistRes12.error)
 
       // ── Current period ratings ─────────────────────────────────────────────
       const byBrand = new Map<string, { name: string; logo: string | null; rs: number[] }>()
@@ -571,6 +573,7 @@ export function RankingReport({
         }
       }
 
+      console.log('[queryG] priceHmByBrand size:', priceHmByBrand.size)
       const priceHmBrands = Array.from(priceHmByBrand.values())
         .map(v => {
           const allPs = Array.from(v.byMonth.values()).flat()
