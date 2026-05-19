@@ -344,7 +344,7 @@ function MyReports({ userId }: { userId: string | undefined }) {
 
   const copyLink = async (id: string, title?: string) => {
     const link = title?.startsWith('[RANKING]')
-      ? `${window.location.origin}/admin/reports?tab=ranking`
+      ? `${window.location.origin}/moje-raporty`
       : `${window.location.origin}/reports/custom/${id}`
     try {
       await navigator.clipboard.writeText(link)
@@ -391,7 +391,7 @@ function MyReports({ userId }: { userId: string | undefined }) {
                     )}
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
-                    <Link href={r.title?.startsWith('[RANKING]') ? '/admin/reports?tab=ranking' : `/reports/custom/${r.id}`}>
+                    <Link href={r.title?.startsWith('[RANKING]') ? '/moje-raporty' : `/reports/custom/${r.id}`}>
                       <Button size="sm" variant="outline">
                         <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                         Otwórz

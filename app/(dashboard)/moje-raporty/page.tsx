@@ -32,8 +32,10 @@ export default function MojeRaportyPage() {
     },
   })
 
-  const copyLink = async (id: string) => {
-    const link = `${window.location.origin}/reports/custom/${id}`
+  const copyLink = async (id: string, title?: string) => {
+    const link = title?.startsWith('[RANKING]')
+      ? `${window.location.origin}/moje-raporty`
+      : `${window.location.origin}/reports/custom/${id}`
     try {
       await navigator.clipboard.writeText(link)
       toast.success('Link skopiowany do schowka')
@@ -73,7 +75,14 @@ export default function MojeRaportyPage() {
             return (
               <Card key={r.id} className="flex flex-col">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base leading-snug">{r.title}</CardTitle>
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-base leading-snug">
+                      {r.title?.startsWith('[RANKING]') ? r.title.replace('[RANKING] ', '') : r.title}
+                    </CardTitle>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 mt-0.5 ${r.title?.startsWith('[RANKING]') ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                      {r.title?.startsWith('[RANKING]') ? 'Ranking' : 'Opinie'}
+                    </span>
+                  </div>
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col justify-between gap-4">
                   <div className="space-y-1 text-sm text-muted-foreground">
@@ -82,13 +91,13 @@ export default function MojeRaportyPage() {
                     {createdAt && <p>Utworzony {createdAt}</p>}
                   </div>
                   <div className="flex gap-2">
-                    <Link href={`/reports/custom/${r.id}`} className="flex-1">
+                    <Link href={r.title?.startsWith('[RANKING]') ? '/moje-raporty' : `/reports/custom/${r.id}`} className="flex-1">
                       <Button size="sm" className="w-full">
                         <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                        Otwórz raport
+                        {r.title?.startsWith('[RANKING]') ? 'Otwórz ranking' : 'Otwórz raport'}
                       </Button>
                     </Link>
-                    <Button size="sm" variant="outline" onClick={() => copyLink(r.id)}>
+                    <Button size="sm" variant="outline" onClick={() => copyLink(r.id, r.title)}>
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
                   </div>
