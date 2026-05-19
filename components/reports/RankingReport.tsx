@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -75,175 +75,121 @@ function ChangeIndicator({ change, prevPosition }: { change: number | null; prev
   )
 }
 
-// ── Heatmap (canvas) ────────────────────────────────────────────────────────────
+// ── Heatmap helpers ──────────────────────────────────────────────────────────────
+function formatMonthLabel(m: string): string {
+  const [year, month] = m.split('-')
+  const names = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru']
+  return names[parseInt(month) - 1] + ' ' + year.slice(2)
+}
+
+// ── Heatmap (HTML table) ─────────────────────────────────────────────────────────
 function HeatmapChart({ data, brands, months }: {
   data: Record<string, Record<string, number | null>>
   brands: string[]
   months: string[]
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  function ratingColor(v: number): { bg: string; text: string } {
+    if (v >= 4.5) return { bg: '#1D9E75', text: '#fff' }
+    if (v >= 4.0) return { bg: '#639922', text: '#fff' }
+    if (v >= 3.5) return { bg: '#BA7517', text: '#fff' }
+    if (v >= 3.0) return { bg: '#D85A30', text: '#fff' }
+    return { bg: '#A32D2D', text: '#fff' }
+  }
 
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const PAD_LEFT = 130
-    const PAD_TOP = 36
-    const PAD_RIGHT = 16
-    const PAD_BOTTOM = 8
-    const CELL_H = 28
-    const CELL_W = Math.max(48, (canvas.offsetWidth - PAD_LEFT - PAD_RIGHT) / months.length)
-
-    canvas.width = PAD_LEFT + months.length * CELL_W + PAD_RIGHT
-    canvas.height = PAD_TOP + brands.length * CELL_H + PAD_BOTTOM
-
-    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    const textColor = isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.65)'
-    const bgColor = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
-
-    function ratingColor(v: number): string {
-      if (v >= 4.5) return '#1D9E75'
-      if (v >= 4.0) return '#639922'
-      if (v >= 3.5) return '#BA7517'
-      if (v >= 3.0) return '#D85A30'
-      return '#A32D2D'
-    }
-
-    // Header — months
-    ctx.font = '11px sans-serif'
-    ctx.fillStyle = textColor
-    ctx.textAlign = 'center'
-    months.forEach((m, j) => {
-      const parts = m.split('-')
-      const label = parts[1] + '/' + parts[0].slice(2)
-      ctx.fillText(label, PAD_LEFT + j * CELL_W + CELL_W / 2, 20)
-    })
-
-    // Brands + cells
-    brands.forEach((brand, i) => {
-      ctx.font = '11px sans-serif'
-      ctx.fillStyle = textColor
-      ctx.textAlign = 'right'
-      const shortName = brand.length > 16 ? brand.slice(0, 15) + '…' : brand
-      ctx.fillText(shortName, PAD_LEFT - 8, PAD_TOP + i * CELL_H + CELL_H / 2 + 4)
-
-      months.forEach((m, j) => {
-        const v = data[brand]?.[m]
-        const x = PAD_LEFT + j * CELL_W + 1
-        const y = PAD_TOP + i * CELL_H + 1
-        const w = CELL_W - 2
-        const h = CELL_H - 2
-
-        if (v == null) {
-          ctx.globalAlpha = 1
-          ctx.fillStyle = bgColor
-          ctx.fillRect(x, y, w, h)
-          return
-        }
-
-        ctx.fillStyle = ratingColor(v)
-        ctx.globalAlpha = 0.85
-        ctx.fillRect(x, y, w, h)
-        ctx.globalAlpha = 1
-
-        ctx.font = '10px sans-serif'
-        ctx.fillStyle = '#fff'
-        ctx.textAlign = 'center'
-        ctx.fillText(v.toFixed(1), x + w / 2, y + h / 2 + 4)
-      })
-    })
-  }, [data, brands, months])
-
-  const height = 36 + brands.length * 28 + 8
-  return <canvas ref={canvasRef} style={{ width: '100%', height: `${height}px` }} />
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
+        <thead>
+          <tr>
+            <th style={{ width: 140, textAlign: 'right', paddingRight: 8, fontWeight: 400, color: 'var(--muted-foreground)' }} />
+            {months.map(m => (
+              <th key={m} style={{ width: 46, textAlign: 'center', fontWeight: 500, color: 'var(--muted-foreground)', paddingBottom: 4 }}>
+                {formatMonthLabel(m)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {brands.map(brand => (
+            <tr key={brand}>
+              <td style={{ textAlign: 'right', paddingRight: 8, color: 'var(--foreground)', whiteSpace: 'nowrap', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {brand.length > 18 ? brand.slice(0, 17) + '…' : brand}
+              </td>
+              {months.map(m => {
+                const v = data[brand]?.[m]
+                const col = v != null ? ratingColor(v) : null
+                return (
+                  <td key={m} style={{
+                    width: 44, height: 24, textAlign: 'center', fontSize: 10, fontWeight: 500,
+                    backgroundColor: col ? col.bg : 'var(--color-background-secondary)',
+                    color: col ? col.text : 'var(--color-text-tertiary)',
+                    border: '1px solid var(--color-background-primary)', borderRadius: 2,
+                  }}>
+                    {v != null ? v.toFixed(1) : ''}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
-// ── Discount heatmap (canvas) ────────────────────────────────────────────────────
+// ── Discount heatmap (HTML table) ────────────────────────────────────────────────
 function DiscountHeatmapChart({ data, brands, months }: {
   data: Record<string, Record<string, number | null>>
   brands: string[]
   months: string[]
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  function discountColor(v: number): { bg: string; text: string } {
+    if (v <= 15) return { bg: '#FFF3CD', text: '#7A5800' }
+    if (v <= 20) return { bg: '#BA7517', text: '#fff' }
+    if (v <= 25) return { bg: '#D85A30', text: '#fff' }
+    if (v <= 30) return { bg: '#A32D2D', text: '#fff' }
+    return { bg: '#501313', text: '#fff' }
+  }
 
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    const PAD_LEFT = 145
-    const PAD_TOP = 36
-    const PAD_RIGHT = 16
-    const PAD_BOTTOM = 8
-    const CELL_H = 26
-    const CELL_W = 46
-
-    canvas.width = PAD_LEFT + months.length * CELL_W + PAD_RIGHT
-    canvas.height = PAD_TOP + brands.length * CELL_H + PAD_BOTTOM
-
-    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    const textColor = isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.65)'
-    const emptyBg = isDark ? 'rgba(255,255,255,0.06)' : '#f0f0f0'
-
-    function discountColor(v: number): { bg: string; text: string } {
-      if (v <= 15) return { bg: '#FFF3CD', text: '#7A5800' }
-      if (v <= 20) return { bg: '#BA7517', text: '#fff' }
-      if (v <= 25) return { bg: '#D85A30', text: '#fff' }
-      if (v <= 30) return { bg: '#A32D2D', text: '#fff' }
-      return { bg: '#501313', text: '#fff' }
-    }
-
-    // Header — months
-    ctx.font = '11px sans-serif'
-    ctx.fillStyle = textColor
-    ctx.textAlign = 'center'
-    months.forEach((m, j) => {
-      const parts = m.split('-')
-      const label = parts[1] + '/' + parts[0].slice(2)
-      ctx.fillText(label, PAD_LEFT + j * CELL_W + CELL_W / 2, 20)
-    })
-
-    // Brands + cells
-    brands.forEach((brand, i) => {
-      ctx.font = '11px sans-serif'
-      ctx.fillStyle = textColor
-      ctx.textAlign = 'right'
-      const shortName = brand.length > 18 ? brand.slice(0, 17) + '…' : brand
-      ctx.fillText(shortName, PAD_LEFT - 8, PAD_TOP + i * CELL_H + CELL_H / 2 + 4)
-
-      months.forEach((m, j) => {
-        const v = data[brand]?.[m]
-        const x = PAD_LEFT + j * CELL_W + 1
-        const y = PAD_TOP + i * CELL_H + 1
-        const w = CELL_W - 2
-        const h = CELL_H - 2
-
-        if (v == null) {
-          ctx.globalAlpha = 1
-          ctx.fillStyle = emptyBg
-          ctx.fillRect(x, y, w, h)
-          return
-        }
-
-        const { bg, text } = discountColor(v)
-        ctx.fillStyle = bg
-        ctx.globalAlpha = 0.9
-        ctx.fillRect(x, y, w, h)
-        ctx.globalAlpha = 1
-
-        ctx.font = '10px sans-serif'
-        ctx.fillStyle = text
-        ctx.textAlign = 'center'
-        ctx.fillText(Math.round(v) + '%', x + w / 2, y + h / 2 + 4)
-      })
-    })
-  }, [data, brands, months])
-
-  const height = 36 + brands.length * 26 + 8
-  return <canvas ref={canvasRef} style={{ width: '100%', height: `${height}px` }} />
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
+        <thead>
+          <tr>
+            <th style={{ width: 145, textAlign: 'right', paddingRight: 8, fontWeight: 400, color: 'var(--muted-foreground)' }} />
+            {months.map(m => (
+              <th key={m} style={{ width: 46, textAlign: 'center', fontWeight: 500, color: 'var(--muted-foreground)', paddingBottom: 4 }}>
+                {formatMonthLabel(m)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {brands.map(brand => (
+            <tr key={brand}>
+              <td style={{ textAlign: 'right', paddingRight: 8, color: 'var(--foreground)', whiteSpace: 'nowrap', maxWidth: 145, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {brand.length > 18 ? brand.slice(0, 17) + '…' : brand}
+              </td>
+              {months.map(m => {
+                const v = data[brand]?.[m]
+                const col = v != null ? discountColor(v) : null
+                return (
+                  <td key={m} style={{
+                    width: 44, height: 24, textAlign: 'center', fontSize: 10, fontWeight: 500,
+                    backgroundColor: col ? col.bg : 'var(--color-background-secondary)',
+                    color: col ? col.text : 'var(--color-text-tertiary)',
+                    border: '1px solid var(--color-background-primary)', borderRadius: 2,
+                  }}>
+                    {v != null ? Math.round(v) + '%' : ''}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 // ── Main component ───────────────────────────────────────────────────────────────
