@@ -349,15 +349,25 @@ export function RankingReport({
         data: { brand_id: string; brand_name: string; month: string; avg_price: number }[]
       }
 
+      // Brands excluded from all rankings and heatmaps (foreign markets)
+      const EXCLUDED_BRANDS = new Set(['Nice To Fit You CZ', 'Zdravestravovani'])
+
       // ── Current period ratings ─────────────────────────────────────────────
       const byBrand = new Map<string, { name: string; logo: string | null; rs: number[] }>()
       for (const r of reviewsRes.data ?? []) {
         const b = (r as any).brands
-        if (!b) continue
+        if (!b || EXCLUDED_BRANDS.has(b.name)) continue
         const ex = byBrand.get(r.brand_id)
         if (ex) ex.rs.push(r.rating)
         else byBrand.set(r.brand_id, { name: b.name, logo: b.logo_url ?? null, rs: [r.rating] })
       }
+
+      // Build excluded brand IDs from current reviews to filter prev period
+      const excludedBrandIds = new Set(
+        Array.from(byBrand.entries())
+          .filter(([, v]) => EXCLUDED_BRANDS.has(v.name))
+          .map(([id]) => id)
+      )
 
       const rEntries = Array.from(byBrand.entries())
         .map(([id, v]) => ({
@@ -372,6 +382,7 @@ export function RankingReport({
       // Previous period ranks — apply same ≥10 review threshold
       const prevMap = new Map<string, number[]>()
       for (const r of prevReviewsRes.data ?? []) {
+        if (excludedBrandIds.has(r.brand_id)) continue
         const ex = prevMap.get(r.brand_id); if (ex) ex.push(r.rating); else prevMap.set(r.brand_id, [r.rating])
       }
       const prevSorted = Array.from(prevMap.entries())
@@ -401,7 +412,7 @@ export function RankingReport({
         const pkg = Array.isArray(pkr) ? pkr[0]?.packages : pkr.packages
         if (!pkg?.brand_id) continue
         const b = Array.isArray(pkg.brands) ? pkg.brands[0] : pkg.brands
-        if (!b || !ph.price) continue
+        if (!b || !ph.price || EXCLUDED_BRANDS.has(b.name)) continue
         const ex = priceMap.get(pkg.brand_id)
         if (ex) ex.ps.push(ph.price)
         else priceMap.set(pkg.brand_id, { name: b.name, logo: b.logo_url ?? null, ps: [ph.price] })
@@ -423,7 +434,7 @@ export function RankingReport({
       for (const d of discountsRes.data ?? []) {
         const b = (d as any).brands
         const pct = (d as any).percentage
-        if (!b || pct == null) continue
+        if (!b || pct == null || EXCLUDED_BRANDS.has(b.name)) continue
         const ex = discMap.get(d.brand_id)
         if (ex) ex.ds.push(pct)
         else discMap.set(d.brand_id, { name: b.name, logo: b.logo_url ?? null, ds: [pct] })
@@ -462,7 +473,7 @@ export function RankingReport({
       const hmByBrand = new Map<string, { name: string; byMonth: Map<string, number[]> }>()
       for (const r of histReviewsRes.data ?? []) {
         const b = (r as any).brands
-        if (!b || !r.review_date) continue
+        if (!b || !r.review_date || EXCLUDED_BRANDS.has(b.name)) continue
         const month = (r.review_date as string).slice(0, 7)
         const ex = hmByBrand.get(r.brand_id)
         if (ex) {
@@ -509,7 +520,7 @@ export function RankingReport({
         const b = (d as any).brands
         const pct = (d as any).percentage
         const vf = (d as any).valid_from
-        if (!b || pct == null || !vf) continue
+        if (!b || pct == null || !vf || EXCLUDED_BRANDS.has(b.name)) continue
         const month = (vf as string).slice(0, 7)
         const ex = discHmByBrand.get(d.brand_id)
         if (ex) {
@@ -551,6 +562,7 @@ export function RankingReport({
       // ── Price heatmap (12 months) ──────────────────────────────────────────
       const priceMonthlyByBrand = new Map<string, Map<string, number>>()
       for (const row of (priceMonthly ?? [])) {
+        if (EXCLUDED_BRANDS.has(row.brand_name)) continue
         const ex = priceMonthlyByBrand.get(row.brand_name)
         if (ex) {
           ex.set(row.month, Number(row.avg_price))
