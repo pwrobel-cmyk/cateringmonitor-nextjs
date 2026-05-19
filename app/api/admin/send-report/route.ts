@@ -165,11 +165,11 @@ function buildEmailHtml(summary: ReportSummary, reportLink?: string): string {
         <table border="0" cellpadding="0" cellspacing="0">
           <tr>
             <td bgcolor="#1a3557" align="center" style="background-color:#1a3557;padding:14px 32px;">
-              <a href="${reportLink}" style="font-family:Arial,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;display:inline-block;">${summary.reportType === 'ranking' ? 'Zobacz ranking' : 'Zobacz pelny raport'}</a>
+              <a href="${reportLink}" style="font-family:Arial,sans-serif;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none;display:inline-block;">${summary.title?.startsWith('[RANKING]') ? 'Zobacz ranking' : 'Zobacz pelny raport'}</a>
             </td>
           </tr>
         </table>
-        <p style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:12px;color:#9ca3af;">${summary.reportType === 'ranking' ? 'Ranking dostepny w panelu Catering Monitor' : 'Raport dostepny w Catering Monitor w sekcji Moje raporty'}</p>
+        <p style="margin:12px 0 0;font-family:Arial,sans-serif;font-size:12px;color:#9ca3af;">${summary.title?.startsWith('[RANKING]') ? 'Ranking dostepny w panelu Catering Monitor' : 'Raport dostepny w Catering Monitor w sekcji Moje raporty'}</p>
       </td>
     </tr>` : ''}
 
@@ -226,7 +226,6 @@ export async function POST(request: Request) {
             date_from: reportSummary.dateFrom,
             date_to: reportSummary.dateTo,
             title: reportSummary.title,
-            report_type: reportSummary.reportType || 'opinions',
             created_by: user.id,
           })
           .select('id')
@@ -237,7 +236,7 @@ export async function POST(request: Request) {
           continue
         }
 
-        reportLink = reportSummary.reportType === 'ranking'
+        reportLink = reportSummary.title?.startsWith('[RANKING]')
           ? `https://cateringmonitor.pl/admin/reports?tab=ranking`
           : `https://cateringmonitor.pl/reports/custom/${reportRecord.id}`
       }

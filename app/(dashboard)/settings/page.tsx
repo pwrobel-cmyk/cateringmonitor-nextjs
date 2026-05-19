@@ -338,13 +338,12 @@ function MyReports({ userId }: { userId: string | undefined }) {
         date_from: string
         date_to: string
         created_at: string
-        report_type?: string
       }[]
     },
   })
 
-  const copyLink = async (id: string, reportType?: string) => {
-    const link = reportType === 'ranking'
+  const copyLink = async (id: string, title?: string) => {
+    const link = title?.startsWith('[RANKING]')
       ? `${window.location.origin}/admin/reports?tab=ranking`
       : `${window.location.origin}/reports/custom/${id}`
     try {
@@ -380,8 +379,8 @@ function MyReports({ userId }: { userId: string | undefined }) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-sm truncate">{r.title}</p>
-                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${r.report_type === 'ranking' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
-                        {r.report_type === 'ranking' ? 'Ranking' : 'Opinie'}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${r.title?.startsWith('[RANKING]') ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                        {r.title?.startsWith('[RANKING]') ? 'Ranking' : 'Opinie'}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -392,13 +391,13 @@ function MyReports({ userId }: { userId: string | undefined }) {
                     )}
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
-                    <Link href={r.report_type === 'ranking' ? '/admin/reports?tab=ranking' : `/reports/custom/${r.id}`}>
+                    <Link href={r.title?.startsWith('[RANKING]') ? '/admin/reports?tab=ranking' : `/reports/custom/${r.id}`}>
                       <Button size="sm" variant="outline">
                         <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                         Otwórz
                       </Button>
                     </Link>
-                    <Button size="sm" variant="ghost" onClick={() => copyLink(r.id, r.report_type)}>
+                    <Button size="sm" variant="ghost" onClick={() => copyLink(r.id, r.title)}>
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
                   </div>

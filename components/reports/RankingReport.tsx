@@ -649,8 +649,7 @@ export function RankingReport({
         brandName: 'Ranking marek',
         dateFrom,
         dateTo,
-        title: `Ranking marek · ${dateFrom} – ${dateTo}`,
-        reportType: 'ranking',
+        title: `[RANKING] Ranking marek · ${dateFrom} – ${dateTo}`,
         stats: {
           count: data.ratings.reduce((a, b) => a + b.count, 0),
           avgRating: (data.ratings[0]?.avgRating ?? 0).toFixed(2),
