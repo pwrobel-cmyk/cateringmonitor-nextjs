@@ -43,6 +43,8 @@ interface RankingData {
   ratings: BrandRank[]
   heatmap: HeatmapData
   discountHeatmap: HeatmapData
+  priceHeatmap: HeatmapData
+  priceAfterDiscountHeatmap: HeatmapData
   prices: BrandPrice[]
   discounts: BrandDiscount[]
   pricesAfterDiscount: BrandPriceAfterDiscount[]
@@ -192,6 +194,61 @@ function DiscountHeatmapChart({ data, brands, months }: {
   )
 }
 
+// ── Price heatmap (HTML table) ───────────────────────────────────────────────────
+function PriceHeatmapChart({ data, brands, months }: {
+  data: Record<string, Record<string, number | null>>
+  brands: string[]
+  months: string[]
+}) {
+  function priceColor(v: number): { bg: string; text: string } {
+    if (v <= 60)  return { bg: '#DBEAFE', text: '#1e40af' }
+    if (v <= 80)  return { bg: '#93C5FD', text: '#1e3a8a' }
+    if (v <= 100) return { bg: '#3B82F6', text: '#fff' }
+    if (v <= 130) return { bg: '#1D4ED8', text: '#fff' }
+    return { bg: '#1e3a5f', text: '#fff' }
+  }
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 1, fontSize: 11, width: '100%' }}>
+        <thead>
+          <tr>
+            <th style={{ width: 145, textAlign: 'right', paddingRight: 8, fontWeight: 400, color: 'var(--muted-foreground)' }} />
+            {months.map(m => (
+              <th key={m} style={{ width: 46, textAlign: 'center', fontWeight: 500, color: 'var(--muted-foreground)', paddingBottom: 4 }}>
+                {formatMonthLabel(m)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {brands.map(brand => (
+            <tr key={brand}>
+              <td style={{ textAlign: 'right', paddingRight: 8, color: 'var(--foreground)', whiteSpace: 'nowrap', maxWidth: 145, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {brand.length > 18 ? brand.slice(0, 17) + '…' : brand}
+              </td>
+              {months.map(m => {
+                const v = data[brand]?.[m]
+                const col = v != null ? priceColor(v) : null
+                return (
+                  <td key={m} style={{
+                    width: 44, height: 24, textAlign: 'center', fontSize: 10, fontWeight: 500,
+                    backgroundColor: col ? col.bg : 'var(--color-background-secondary)',
+                    color: col ? col.text : 'var(--color-text-tertiary)',
+                    border: '1px solid white', borderRadius: 2,
+                  }}>
+                    {v != null ? Math.round(v) : ''}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ── Main component ───────────────────────────────────────────────────────────────
 export function RankingReport({
   dateFrom, dateTo, highlightBrandId,
@@ -243,7 +300,7 @@ export function RankingReport({
       const hist12From = hist12Months[0] + '-01'
       const hist12To = format(now, 'yyyy-MM-dd')
 
-      const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes, histReviewsRes, discHistRes] = await Promise.all([
+      const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes, histReviewsRes, discHistRes, priceHistRes12] = await Promise.all([
         // A — current period ratings
         supabase.from('reviews')
           .select('brand_id, rating, brands(name, logo_url)')
@@ -283,6 +340,12 @@ export function RankingReport({
           .select('brand_id, percentage, valid_from, brands(name)')
           .gte('valid_from', hist12From)
           .not('percentage', 'is', null),
+
+        // G — last 12 months price history for price heatmap
+        supabase.from('price_history')
+          .select('price, date_recorded, package_kcal_ranges!price_history_package_kcal_range_id_fkey(packages(brand_id, brands(name)))')
+          .gte('date_recorded', hist12From)
+          .lte('date_recorded', hist12To),
       ])
 
       // Debug
@@ -489,7 +552,88 @@ export function RankingReport({
         months: hist12Months,
       }
 
-      setData({ ratings, heatmap, discountHeatmap, prices, discounts, pricesAfterDiscount })
+      // ── Price heatmap (12 months) ──────────────────────────────────────────
+      const priceHmByBrand = new Map<string, { name: string; byMonth: Map<string, number[]> }>()
+      for (const ph of priceHistRes12.data ?? []) {
+        const pkr = (ph as any).package_kcal_ranges
+        if (!pkr) continue
+        const pkg = Array.isArray(pkr) ? pkr[0]?.packages : pkr.packages
+        if (!pkg?.brand_id) continue
+        const b = Array.isArray(pkg.brands) ? pkg.brands[0] : pkg.brands
+        if (!b || !ph.price || !(ph as any).date_recorded) continue
+        const month = ((ph as any).date_recorded as string).slice(0, 7)
+        const ex = priceHmByBrand.get(pkg.brand_id)
+        if (ex) {
+          const mx = ex.byMonth.get(month)
+          if (mx) mx.push(ph.price); else ex.byMonth.set(month, [ph.price])
+        } else {
+          priceHmByBrand.set(pkg.brand_id, { name: b.name, byMonth: new Map([[month, [ph.price]]]) })
+        }
+      }
+
+      const priceHmBrands = Array.from(priceHmByBrand.values())
+        .map(v => {
+          const allPs = Array.from(v.byMonth.values()).flat()
+          return {
+            name: v.name,
+            overallAvg: allPs.reduce((a, b) => a + b, 0) / allPs.length,
+            byMonth: v.byMonth,
+          }
+        })
+        .sort((a, b) => b.overallAvg - a.overallAvg)
+
+      const priceHeatmapCells: Record<string, Record<string, number | null>> = {}
+      for (const brand of priceHmBrands) {
+        priceHeatmapCells[brand.name] = {}
+        for (const month of hist12Months) {
+          const ps = brand.byMonth.get(month)
+          priceHeatmapCells[brand.name][month] = ps
+            ? Math.round(ps.reduce((a, b) => a + b, 0) / ps.length)
+            : null
+        }
+      }
+
+      const priceHeatmap: HeatmapData = {
+        data: priceHeatmapCells,
+        brands: priceHmBrands.map(b => b.name),
+        months: hist12Months,
+      }
+
+      // ── Price after discount heatmap (12 months) ───────────────────────────
+      // Combine price heatmap + discount heatmap; if no discount in a month, use catalog price as-is
+      const padBrandSet = new Set(priceHmBrands.map(b => b.name))
+      const padBrands = priceHmBrands.map(brand => {
+        const allAfter: number[] = []
+        for (const month of hist12Months) {
+          const p = priceHeatmapCells[brand.name]?.[month]
+          if (p == null) continue
+          const d = discHeatmapCells[brand.name]?.[month] ?? 0
+          allAfter.push(Math.round(p * (1 - d / 100)))
+        }
+        return {
+          name: brand.name,
+          overallAvg: allAfter.length ? allAfter.reduce((a, b) => a + b, 0) / allAfter.length : 0,
+        }
+      }).filter(b => b.overallAvg > 0).sort((a, b) => a.overallAvg - b.overallAvg)
+
+      const padCells: Record<string, Record<string, number | null>> = {}
+      for (const brand of padBrands) {
+        padCells[brand.name] = {}
+        for (const month of hist12Months) {
+          const p = priceHeatmapCells[brand.name]?.[month]
+          if (p == null) { padCells[brand.name][month] = null; continue }
+          const d = discHeatmapCells[brand.name]?.[month] ?? 0
+          padCells[brand.name][month] = Math.round(p * (1 - d / 100))
+        }
+      }
+
+      const priceAfterDiscountHeatmap: HeatmapData = {
+        data: padCells,
+        brands: padBrands.map(b => b.name),
+        months: hist12Months,
+      }
+
+      setData({ ratings, heatmap, discountHeatmap, priceHeatmap, priceAfterDiscountHeatmap, prices, discounts, pricesAfterDiscount })
     } catch (e) {
       console.error('[RankingReport] error:', e)
     } finally {
@@ -726,6 +870,38 @@ export function RankingReport({
             </Card>
           )}
 
+          {/* SECTION 3b — Price heatmap: 12-month catalog price history */}
+          {data.priceHeatmap.brands.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Historia cen katalogowych — ostatnie 12 miesięcy</CardTitle>
+                <p className="text-sm text-muted-foreground">Średnia cena katalogowa per marka per miesiąc (zł/dzień)</p>
+              </CardHeader>
+              <CardContent>
+                <PriceHeatmapChart
+                  data={data.priceHeatmap.data}
+                  brands={data.priceHeatmap.brands}
+                  months={data.priceHeatmap.months}
+                />
+                <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {([
+                    ['≤60 zł', '#DBEAFE', '#1e40af'],
+                    ['61–80 zł', '#93C5FD', '#1e3a8a'],
+                    ['81–100 zł', '#3B82F6', '#fff'],
+                    ['101–130 zł', '#1D4ED8', '#fff'],
+                    ['>130 zł', '#1e3a5f', '#fff'],
+                  ] as [string, string, string][]).map(([label, bg, fg]) => (
+                    <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ width: 14, height: 14, borderRadius: 2, background: bg, border: '1px solid #ccc', display: 'inline-block' }} />
+                      <span style={{ color: 'var(--muted-foreground)' }}>{label}</span>
+                    </span>
+                  ))}
+                  <span style={{ color: 'var(--muted-foreground)', marginLeft: 'auto', fontSize: 11 }}>wartości w zł</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* SECTION 4 — Discount ranking */}
           {data.discounts.length > 0 ? (
             <Card>
@@ -830,6 +1006,38 @@ export function RankingReport({
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* SECTION 5b — Price after discount heatmap: 12-month history */}
+          {data.priceAfterDiscountHeatmap.brands.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Historia cen po rabacie — ostatnie 12 miesięcy</CardTitle>
+                <p className="text-sm text-muted-foreground">Średnia cena katalogowa pomniejszona o aktywny rabat per marka per miesiąc (zł/dzień)</p>
+              </CardHeader>
+              <CardContent>
+                <PriceHeatmapChart
+                  data={data.priceAfterDiscountHeatmap.data}
+                  brands={data.priceAfterDiscountHeatmap.brands}
+                  months={data.priceAfterDiscountHeatmap.months}
+                />
+                <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {([
+                    ['≤60 zł', '#DBEAFE', '#1e40af'],
+                    ['61–80 zł', '#93C5FD', '#1e3a8a'],
+                    ['81–100 zł', '#3B82F6', '#fff'],
+                    ['101–130 zł', '#1D4ED8', '#fff'],
+                    ['>130 zł', '#1e3a5f', '#fff'],
+                  ] as [string, string, string][]).map(([label, bg]) => (
+                    <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ width: 14, height: 14, borderRadius: 2, background: bg, border: '1px solid #ccc', display: 'inline-block' }} />
+                      <span style={{ color: 'var(--muted-foreground)' }}>{label}</span>
+                    </span>
+                  ))}
+                  <span style={{ color: 'var(--muted-foreground)', marginLeft: 'auto', fontSize: 11 }}>wartości w zł · marki bez danych cenowych są pominięte</span>
                 </div>
               </CardContent>
             </Card>
