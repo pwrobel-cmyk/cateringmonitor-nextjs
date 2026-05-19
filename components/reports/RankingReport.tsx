@@ -279,7 +279,6 @@ export function RankingReport({
   })
 
   const generate = useCallback(async () => {
-    console.log('[generate] START', { dateFrom, dateTo })
     setLoading(true)
     setData(null)
     try {
@@ -344,35 +343,11 @@ export function RankingReport({
 
       ])
 
-      // G — last 12 months price history (paginated to bypass 1000-row default limit)
-      async function fetchAllPriceHistory(from: string, to: string) {
-        let all: any[] = []
-        let page = 0
-        const pageSize = 1000
-        const MAX_PAGES = 50
-
-        while (page < MAX_PAGES) {
-          console.log('[fetchAllPriceHistory] page', page)
-          const { data, error } = await supabase
-            .from('price_history')
-            .select('price, date_recorded, package_kcal_ranges!price_history_package_kcal_range_id_fkey(packages(brand_id, brands(name)))')
-            .gte('date_recorded', from)
-            .lte('date_recorded', to)
-            .order('date_recorded', { ascending: true })
-            .range(page * pageSize, (page + 1) * pageSize - 1)
-
-          console.log('[fetchAllPriceHistory] got', data?.length, 'error:', error?.message)
-
-          if (error || !data || data.length === 0) break
-          all = [...all, ...data]
-          if (data.length < pageSize) break
-          page++
-        }
-
-        console.log('[fetchAllPriceHistory] DONE total:', all.length)
-        return all
+      // G — last 12 months price history (pre-aggregated by SQL function)
+      const priceMonthlyRes = await fetch(`/api/admin/price-history-monthly?from=${hist12From}&to=${hist12To}`)
+      const { data: priceMonthly } = await priceMonthlyRes.json() as {
+        data: { brand_id: string; brand_name: string; month: string; avg_price: number }[]
       }
-      const priceHistory12 = await fetchAllPriceHistory(hist12From, hist12To)
 
       // ── Current period ratings ─────────────────────────────────────────────
       const byBrand = new Map<string, { name: string; logo: string | null; rs: number[] }>()
@@ -574,32 +549,20 @@ export function RankingReport({
       }
 
       // ── Price heatmap (12 months) ──────────────────────────────────────────
-      const priceHmByBrand = new Map<string, { name: string; byMonth: Map<string, number[]> }>()
-      for (const ph of priceHistory12) {
-        const pkr = (ph as any).package_kcal_ranges
-        if (!pkr) continue
-        const pkg = Array.isArray(pkr) ? pkr[0]?.packages : pkr.packages
-        if (!pkg?.brand_id) continue
-        const b = Array.isArray(pkg.brands) ? pkg.brands[0] : pkg.brands
-        if (!b || !ph.price || !(ph as any).date_recorded) continue
-        const month = ((ph as any).date_recorded as string).slice(0, 7)
-        const ex = priceHmByBrand.get(pkg.brand_id)
+      const priceMonthlyByBrand = new Map<string, Map<string, number>>()
+      for (const row of (priceMonthly ?? [])) {
+        const ex = priceMonthlyByBrand.get(row.brand_name)
         if (ex) {
-          const mx = ex.byMonth.get(month)
-          if (mx) mx.push(ph.price); else ex.byMonth.set(month, [ph.price])
+          ex.set(row.month, Number(row.avg_price))
         } else {
-          priceHmByBrand.set(pkg.brand_id, { name: b.name, byMonth: new Map([[month, [ph.price]]]) })
+          priceMonthlyByBrand.set(row.brand_name, new Map([[row.month, Number(row.avg_price)]]))
         }
       }
 
-      const priceHmBrands = Array.from(priceHmByBrand.values())
-        .map(v => {
-          const allPs = Array.from(v.byMonth.values()).flat()
-          return {
-            name: v.name,
-            overallAvg: allPs.reduce((a, b) => a + b, 0) / allPs.length,
-            byMonth: v.byMonth,
-          }
+      const priceHmBrands = Array.from(priceMonthlyByBrand.entries())
+        .map(([name, byMonth]) => {
+          const allPs = Array.from(byMonth.values())
+          return { name, overallAvg: allPs.reduce((a, b) => a + b, 0) / allPs.length, byMonth }
         })
         .sort((a, b) => b.overallAvg - a.overallAvg)
 
@@ -607,10 +570,7 @@ export function RankingReport({
       for (const brand of priceHmBrands) {
         priceHeatmapCells[brand.name] = {}
         for (const month of hist12Months) {
-          const ps = brand.byMonth.get(month)
-          priceHeatmapCells[brand.name][month] = ps
-            ? Math.round(ps.reduce((a, b) => a + b, 0) / ps.length)
-            : null
+          priceHeatmapCells[brand.name][month] = brand.byMonth.get(month) ?? null
         }
       }
 
@@ -622,7 +582,6 @@ export function RankingReport({
 
       // ── Price after discount heatmap (12 months) ───────────────────────────
       // Combine price heatmap + discount heatmap; if no discount in a month, use catalog price as-is
-      const padBrandSet = new Set(priceHmBrands.map(b => b.name))
       const padBrands = priceHmBrands.map(brand => {
         const allAfter: number[] = []
         for (const month of hist12Months) {
