@@ -42,6 +42,7 @@ interface HeatmapData {
 interface RankingData {
   ratings: BrandRank[]
   heatmap: HeatmapData
+  discountHeatmap: HeatmapData
   prices: BrandPrice[]
   discounts: BrandDiscount[]
   pricesAfterDiscount: BrandPriceAfterDiscount[]
@@ -159,6 +160,92 @@ function HeatmapChart({ data, brands, months }: {
   return <canvas ref={canvasRef} style={{ width: '100%', height: `${height}px` }} />
 }
 
+// ── Discount heatmap (canvas) ────────────────────────────────────────────────────
+function DiscountHeatmapChart({ data, brands, months }: {
+  data: Record<string, Record<string, number | null>>
+  brands: string[]
+  months: string[]
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const PAD_LEFT = 145
+    const PAD_TOP = 36
+    const PAD_RIGHT = 16
+    const PAD_BOTTOM = 8
+    const CELL_H = 26
+    const CELL_W = 46
+
+    canvas.width = PAD_LEFT + months.length * CELL_W + PAD_RIGHT
+    canvas.height = PAD_TOP + brands.length * CELL_H + PAD_BOTTOM
+
+    const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    const textColor = isDark ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.65)'
+    const emptyBg = isDark ? 'rgba(255,255,255,0.06)' : '#f0f0f0'
+
+    function discountColor(v: number): { bg: string; text: string } {
+      if (v <= 15) return { bg: '#FFF3CD', text: '#7A5800' }
+      if (v <= 20) return { bg: '#BA7517', text: '#fff' }
+      if (v <= 25) return { bg: '#D85A30', text: '#fff' }
+      if (v <= 30) return { bg: '#A32D2D', text: '#fff' }
+      return { bg: '#501313', text: '#fff' }
+    }
+
+    // Header — months
+    ctx.font = '11px sans-serif'
+    ctx.fillStyle = textColor
+    ctx.textAlign = 'center'
+    months.forEach((m, j) => {
+      const parts = m.split('-')
+      const label = parts[1] + '/' + parts[0].slice(2)
+      ctx.fillText(label, PAD_LEFT + j * CELL_W + CELL_W / 2, 20)
+    })
+
+    // Brands + cells
+    brands.forEach((brand, i) => {
+      ctx.font = '11px sans-serif'
+      ctx.fillStyle = textColor
+      ctx.textAlign = 'right'
+      const shortName = brand.length > 18 ? brand.slice(0, 17) + '…' : brand
+      ctx.fillText(shortName, PAD_LEFT - 8, PAD_TOP + i * CELL_H + CELL_H / 2 + 4)
+
+      months.forEach((m, j) => {
+        const v = data[brand]?.[m]
+        const x = PAD_LEFT + j * CELL_W + 1
+        const y = PAD_TOP + i * CELL_H + 1
+        const w = CELL_W - 2
+        const h = CELL_H - 2
+
+        if (v == null) {
+          ctx.globalAlpha = 1
+          ctx.fillStyle = emptyBg
+          ctx.fillRect(x, y, w, h)
+          return
+        }
+
+        const { bg, text } = discountColor(v)
+        ctx.fillStyle = bg
+        ctx.globalAlpha = 0.9
+        ctx.fillRect(x, y, w, h)
+        ctx.globalAlpha = 1
+
+        ctx.font = '10px sans-serif'
+        ctx.fillStyle = text
+        ctx.textAlign = 'center'
+        ctx.fillText(Math.round(v) + '%', x + w / 2, y + h / 2 + 4)
+      })
+    })
+  }, [data, brands, months])
+
+  const height = 36 + brands.length * 26 + 8
+  return <canvas ref={canvasRef} style={{ width: '100%', height: `${height}px` }} />
+}
+
 // ── Main component ───────────────────────────────────────────────────────────────
 export function RankingReport({
   dateFrom, dateTo, highlightBrandId,
@@ -210,7 +297,7 @@ export function RankingReport({
       const hist12From = hist12Months[0] + '-01'
       const hist12To = format(now, 'yyyy-MM-dd')
 
-      const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes, histReviewsRes] = await Promise.all([
+      const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes, histReviewsRes, discHistRes] = await Promise.all([
         // A — current period ratings
         supabase.from('reviews')
           .select('brand_id, rating, brands(name, logo_url)')
@@ -238,12 +325,18 @@ export function RankingReport({
           .lte('valid_from', dateTo)
           .not('percentage', 'is', null),
 
-        // C — last 12 months for heatmap
+        // C — last 12 months reviews for rating heatmap
         supabase.from('reviews')
           .select('brand_id, rating, review_date, brands(name)')
           .eq('is_approved', true)
           .gte('review_date', hist12From)
           .lte('review_date', hist12To),
+
+        // F — last 12 months discounts for discount heatmap
+        supabase.from('discounts')
+          .select('brand_id, percentage, valid_from, brands(name)')
+          .gte('valid_from', hist12From)
+          .not('percentage', 'is', null),
       ])
 
       // Debug
@@ -396,7 +489,52 @@ export function RankingReport({
         months: hist12Months,
       }
 
-      setData({ ratings, heatmap, prices, discounts, pricesAfterDiscount })
+      // ── Discount heatmap (12 months) ───────────────────────────────────────
+      const discHmByBrand = new Map<string, { name: string; byMonth: Map<string, number[]> }>()
+      for (const d of discHistRes.data ?? []) {
+        const b = (d as any).brands
+        const pct = (d as any).percentage
+        const vf = (d as any).valid_from
+        if (!b || pct == null || !vf) continue
+        const month = (vf as string).slice(0, 7)
+        const ex = discHmByBrand.get(d.brand_id)
+        if (ex) {
+          const mx = ex.byMonth.get(month)
+          if (mx) mx.push(pct); else ex.byMonth.set(month, [pct])
+        } else {
+          discHmByBrand.set(d.brand_id, { name: b.name, byMonth: new Map([[month, [pct]]]) })
+        }
+      }
+
+      const discHmBrands = Array.from(discHmByBrand.values())
+        .map(v => {
+          const allDs = Array.from(v.byMonth.values()).flat()
+          return {
+            name: v.name,
+            overallAvg: allDs.reduce((a, b) => a + b, 0) / allDs.length,
+            byMonth: v.byMonth,
+          }
+        })
+        .sort((a, b) => b.overallAvg - a.overallAvg)
+
+      const discHeatmapCells: Record<string, Record<string, number | null>> = {}
+      for (const brand of discHmBrands) {
+        discHeatmapCells[brand.name] = {}
+        for (const month of hist12Months) {
+          const ds = brand.byMonth.get(month)
+          discHeatmapCells[brand.name][month] = ds
+            ? Math.round(ds.reduce((a, b) => a + b, 0) / ds.length * 10) / 10
+            : null
+        }
+      }
+
+      const discountHeatmap: HeatmapData = {
+        data: discHeatmapCells,
+        brands: discHmBrands.map(b => b.name),
+        months: hist12Months,
+      }
+
+      setData({ ratings, heatmap, discountHeatmap, prices, discounts, pricesAfterDiscount })
     } catch (e) {
       console.error('[RankingReport] error:', e)
     } finally {
@@ -669,6 +807,40 @@ export function RankingReport({
               <CardHeader><CardTitle>Ranking rabatów</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">Brak danych rabatowych dla wybranego okresu.</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* SECTION 4b — Discount heatmap: 12-month history */}
+          {data.discountHeatmap.brands.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Historia rabatów — ostatnie 12 miesięcy</CardTitle>
+                <p className="text-sm text-muted-foreground">Średni % rabatu per marka per miesiąc · tylko marki które stosowały promocje</p>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <DiscountHeatmapChart
+                    data={data.discountHeatmap.data}
+                    brands={data.discountHeatmap.brands}
+                    months={data.discountHeatmap.months}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {([
+                    ['Brak', '#f0f0f0', '#555'],
+                    ['1–15%', '#FFF3CD', '#7A5800'],
+                    ['16–20%', '#BA7517', '#fff'],
+                    ['21–25%', '#D85A30', '#fff'],
+                    ['26–30%', '#A32D2D', '#fff'],
+                    ['>30%', '#501313', '#fff'],
+                  ] as [string, string, string][]).map(([label, bg, fg]) => (
+                    <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--muted-foreground)' }}>
+                      <span style={{ width: 14, height: 14, borderRadius: 2, background: bg, border: label === 'Brak' ? '1px solid #ccc' : undefined, display: 'inline-block' }} />
+                      <span style={{ color: fg === '#fff' ? 'var(--foreground)' : 'var(--muted-foreground)' }}>{label}</span>
+                    </span>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
