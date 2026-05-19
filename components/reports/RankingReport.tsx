@@ -310,20 +310,28 @@ export function RankingReport({
         }))
         .sort((a, b) => b.avgRating - a.avgRating)
 
-      // Previous period ranks
+      // Previous period ranks — apply same ≥10 review threshold
       const prevMap = new Map<string, number[]>()
       for (const r of prevReviewsRes.data ?? []) {
         const ex = prevMap.get(r.brand_id); if (ex) ex.push(r.rating); else prevMap.set(r.brand_id, [r.rating])
       }
       const prevSorted = Array.from(prevMap.entries())
+        .filter(([, rs]) => rs.length >= 10)
         .map(([id, rs]): [string, number] => [id, rs.reduce((a, b) => a + b, 0) / rs.length])
         .sort((a, b) => b[1] - a[1])
       const prevRankMap = new Map<string, number>(prevSorted.map(([id], i) => [id, i + 1]))
 
-      const ratings: BrandRank[] = rEntries.map((e, i) => {
-        const prev = prevRankMap.get(e.brandId) ?? null
-        return { ...e, position: i + 1, prevPosition: prev, change: prev !== null ? prev - (i + 1) : null }
-      })
+      // Split into qualified (≥10 reviews) and excluded — positions and change are within qualified ranking only
+      const qualifiedEntries = rEntries.filter(e => e.count >= 10)
+      const excludedEntries = rEntries.filter(e => e.count < 10)
+
+      const ratings: BrandRank[] = [
+        ...qualifiedEntries.map((e, i) => {
+          const prev = prevRankMap.get(e.brandId) ?? null
+          return { ...e, position: i + 1, prevPosition: prev, change: prev !== null ? prev - (i + 1) : null }
+        }),
+        ...excludedEntries.map(e => ({ ...e, position: 0, prevPosition: null, change: null })),
+      ]
 
       // ── Catalog prices ─────────────────────────────────────────────────────
       const priceMap = new Map<string, { name: string; logo: string | null; ps: number[] }>()
