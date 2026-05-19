@@ -349,18 +349,27 @@ export function RankingReport({
         let all: any[] = []
         let page = 0
         const pageSize = 1000
-        while (true) {
+        const MAX_PAGES = 50
+
+        while (page < MAX_PAGES) {
+          console.log('[fetchAllPriceHistory] page', page)
           const { data, error } = await supabase
             .from('price_history')
             .select('price, date_recorded, package_kcal_ranges!price_history_package_kcal_range_id_fkey(packages(brand_id, brands(name)))')
             .gte('date_recorded', from)
             .lte('date_recorded', to)
+            .order('date_recorded', { ascending: true })
             .range(page * pageSize, (page + 1) * pageSize - 1)
+
+          console.log('[fetchAllPriceHistory] got', data?.length, 'error:', error?.message)
+
           if (error || !data || data.length === 0) break
           all = [...all, ...data]
           if (data.length < pageSize) break
           page++
         }
+
+        console.log('[fetchAllPriceHistory] DONE total:', all.length)
         return all
       }
       const priceHistory12 = await fetchAllPriceHistory(hist12From, hist12To)
