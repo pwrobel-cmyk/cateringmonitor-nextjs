@@ -11,11 +11,12 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye, BookUser, Pencil, Trash2, Plus, X, Save, ChevronDown } from 'lucide-react'
+import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye, BookUser, Pencil, Trash2, Plus, X, Save, ChevronDown, TrendingUp } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { DynamicReport } from '@/components/reports/DynamicReport'
+import { RankingReport } from '@/components/reports/RankingReport'
 import { toast } from 'sonner'
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, startOfWeek, endOfWeek, subWeeks, subMonths, subQuarters, startOfQuarter, endOfQuarter } from 'date-fns'
 
@@ -387,7 +388,18 @@ export default function AdminReportsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="generator">
+      <Tabs defaultValue="opinions">
+        <TabsList className="mb-2">
+          <TabsTrigger value="opinions" className="gap-2">
+            <FileBarChart2 className="h-4 w-4" />Raport opinii
+          </TabsTrigger>
+          <TabsTrigger value="ranking" className="gap-2">
+            <TrendingUp className="h-4 w-4" />Ranking marek
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="opinions">
+        <Tabs defaultValue="generator">
         <TabsList>
           <TabsTrigger value="generator" className="gap-2">
             <FileBarChart2 className="h-4 w-4" />Generator
@@ -976,6 +988,62 @@ export default function AdminReportsPage() {
         </div>
       </div>
 
+        </TabsContent>
+      </Tabs>
+        </TabsContent>
+
+        {/* ── Ranking marek tab ── */}
+        <TabsContent value="ranking" className="mt-4">
+          <div className="grid lg:grid-cols-[300px_1fr] gap-6 items-start">
+            {/* Left: date config */}
+            <Card className="lg:sticky lg:top-6">
+              <CardHeader>
+                <CardTitle className="text-base">Zakres dat</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <RadioGroup
+                  value={dateRangeType}
+                  onValueChange={v => setDateRangeType(v as DateRangeType)}
+                  className="space-y-2"
+                >
+                  {DATE_RANGE_OPTIONS.map(opt => (
+                    <div key={opt.value} className="flex items-center space-x-2">
+                      <RadioGroupItem value={opt.value} id={`rank-range-${opt.value}`} />
+                      <Label htmlFor={`rank-range-${opt.value}`} className="cursor-pointer font-normal">
+                        {opt.label}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+
+                {dateRangeType === 'specific_month' && (
+                  <input
+                    type="month"
+                    value={specificMonth}
+                    onChange={e => setSpecificMonth(e.target.value)}
+                    className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                )}
+                {dateRangeType === 'year' && (
+                  <Select value={specificYear} onValueChange={v => v && setSpecificYear(v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2024">2024</SelectItem>
+                      <SelectItem value="2025">2025</SelectItem>
+                      <SelectItem value="2026">2026</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Right: ranking */}
+            <RankingReport
+              dateFrom={computeDateRange(dateRangeType, specificMonth, specificYear).from}
+              dateTo={computeDateRange(dateRangeType, specificMonth, specificYear).to}
+              highlightBrandId={brandId === 'all' ? null : brandId}
+            />
+          </div>
         </TabsContent>
       </Tabs>
 
