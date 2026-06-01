@@ -37,6 +37,7 @@ interface HeatmapData {
   data: Record<string, Record<string, number | null>>
   brands: string[]
   months: string[]
+  noDiscountMask?: Record<string, Record<string, boolean>>
 }
 
 interface RankingData {
@@ -195,10 +196,11 @@ function DiscountHeatmapChart({ data, brands, months }: {
 }
 
 // ── Price heatmap (HTML table) ───────────────────────────────────────────────────
-function PriceHeatmapChart({ data, brands, months }: {
+function PriceHeatmapChart({ data, brands, months, noDiscountMask }: {
   data: Record<string, Record<string, number | null>>
   brands: string[]
   months: string[]
+  noDiscountMask?: Record<string, Record<string, boolean>>
 }) {
   function priceColor(v: number): { bg: string; text: string } {
     if (v <= 60)  return { bg: '#DBEAFE', text: '#1e40af' }
@@ -229,15 +231,18 @@ function PriceHeatmapChart({ data, brands, months }: {
               </td>
               {months.map(m => {
                 const v = data[brand]?.[m]
-                const col = v != null ? priceColor(v) : null
+                const noDiscount = noDiscountMask?.[brand]?.[m] ?? false
+                const col = v != null && !noDiscount ? priceColor(v) : null
                 return (
                   <td key={m} style={{
                     width: 44, height: 24, textAlign: 'center', fontSize: 10, fontWeight: 500,
-                    backgroundColor: col ? col.bg : 'var(--color-background-secondary)',
-                    color: col ? col.text : 'var(--color-text-tertiary)',
+                    backgroundColor: noDiscount ? '#F3F4F6' : col ? col.bg : 'var(--color-background-secondary)',
+                    color: noDiscount ? '#6B7280' : col ? col.text : 'var(--color-text-tertiary)',
                     border: '1px solid white', borderRadius: 2,
+                    fontStyle: noDiscount ? 'italic' : 'normal',
+                    opacity: noDiscount ? 0.75 : 1,
                   }}>
-                    {v != null ? Math.round(v) : ''}
+                    {v != null ? <>{Math.round(v)}{noDiscount ? '*' : ''}</> : ''}
                   </td>
                 )
               })}
@@ -612,13 +617,17 @@ export function RankingReport({
       }).filter(b => b.overallAvg > 0).sort((a, b) => a.overallAvg - b.overallAvg)
 
       const padCells: Record<string, Record<string, number | null>> = {}
+      const noDiscountMask: Record<string, Record<string, boolean>> = {}
       for (const brand of padBrands) {
         padCells[brand.name] = {}
+        noDiscountMask[brand.name] = {}
         for (const month of hist12Months) {
           const p = priceHeatmapCells[brand.name]?.[month]
           if (p == null) { padCells[brand.name][month] = null; continue }
-          const d = discHeatmapCells[brand.name]?.[month] ?? 0
+          const rawDiscount = discHeatmapCells[brand.name]?.[month]
+          const d = rawDiscount ?? 0
           padCells[brand.name][month] = Math.round(p * (1 - d / 100))
+          noDiscountMask[brand.name][month] = rawDiscount == null || rawDiscount === 0
         }
       }
 
@@ -626,6 +635,7 @@ export function RankingReport({
         data: padCells,
         brands: padBrands.map(b => b.name),
         months: hist12Months,
+        noDiscountMask,
       }
 
       setData({ ratings, heatmap, discountHeatmap, priceHeatmap, priceAfterDiscountHeatmap, prices, discounts, pricesAfterDiscount })
@@ -1043,6 +1053,7 @@ export function RankingReport({
                   data={data.priceAfterDiscountHeatmap.data}
                   brands={data.priceAfterDiscountHeatmap.brands}
                   months={data.priceAfterDiscountHeatmap.months}
+                  noDiscountMask={data.priceAfterDiscountHeatmap.noDiscountMask}
                 />
                 <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 11, flexWrap: 'wrap', alignItems: 'center' }}>
                   {([
@@ -1059,6 +1070,7 @@ export function RankingReport({
                   ))}
                   <span style={{ color: 'var(--muted-foreground)', marginLeft: 'auto', fontSize: 11 }}>wartości w zł · marki bez danych cenowych są pominięte</span>
                 </div>
+                <p style={{ marginTop: 6, fontSize: 10, color: '#6B7280', fontStyle: 'italic' }}>* brak danych rabatowych — pokazana cena katalogowa</p>
               </CardContent>
             </Card>
           )}
