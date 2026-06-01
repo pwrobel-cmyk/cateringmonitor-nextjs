@@ -343,10 +343,11 @@ export function RankingReport({
           .gte('review_date', hist12From)
           .lte('review_date', hist12To),
 
-        // F — last 12 months discounts for discount heatmap
+        // F — last 12 months discounts for discount heatmap (incl. open-ended discounts)
         supabase.from('discounts')
-          .select('brand_id, percentage, valid_from, brands(name)')
-          .gte('valid_from', hist12From)
+          .select('brand_id, percentage, valid_from, valid_until, brands(name)')
+          .lte('valid_from', hist12To)
+          .or(`valid_until.gte.${hist12From},valid_until.is.null`)
           .not('percentage', 'is', null),
 
       ])
@@ -527,15 +528,21 @@ export function RankingReport({
       for (const d of discHistRes.data ?? []) {
         const b = (d as any).brands
         const pct = (d as any).percentage
-        const vf = (d as any).valid_from
+        const vf = (d as any).valid_from as string | null
+        const vu = (d as any).valid_until as string | null
         if (!b || pct == null || !vf || EXCLUDED_BRANDS.has(b.name)) continue
-        const month = (vf as string).slice(0, 7)
-        const ex = discHmByBrand.get(d.brand_id)
-        if (ex) {
-          const mx = ex.byMonth.get(month)
-          if (mx) mx.push(pct); else ex.byMonth.set(month, [pct])
-        } else {
-          discHmByBrand.set(d.brand_id, { name: b.name, byMonth: new Map([[month, [pct]]]) })
+        for (const month of hist12Months) {
+          const monthStart = month + '-01'
+          // discount must have started by end of this month and not ended before its start
+          if (vf.slice(0, 7) > month) continue
+          if (vu !== null && vu < monthStart) continue
+          const ex = discHmByBrand.get(d.brand_id)
+          if (ex) {
+            const mx = ex.byMonth.get(month)
+            if (mx) mx.push(pct); else ex.byMonth.set(month, [pct])
+          } else {
+            discHmByBrand.set(d.brand_id, { name: b.name, byMonth: new Map([[month, [pct]]]) })
+          }
         }
       }
 
