@@ -84,12 +84,21 @@ function AdminNav() {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function excelSerialToISO(serial: number): string {
+  const ms = Math.round((serial - 25569) * 86400 * 1000);
+  return new Date(ms).toISOString().split('T')[0];
+}
+
 function parseDate(val: unknown): string | null {
   if (val === null || val === undefined || val === '') return null;
 
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    return val.toISOString().split('T')[0];
+  }
+
   if (typeof val === 'number') {
-    const ms = Math.round((val - 25569) * 86400 * 1000);
-    return new Date(ms).toISOString().split('T')[0];
+    return excelSerialToISO(val);
   }
 
   if (typeof val === 'string') {
@@ -100,6 +109,11 @@ function parseDate(val: unknown): string | null {
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
       const [d, m, y] = trimmed.split('/');
       return `${y}-${m}-${d}`;
+    }
+    // serial number as string, e.g. "45678"
+    if (/^\d{4,6}$/.test(trimmed)) {
+      const serial = Number(trimmed);
+      if (serial > 1 && serial < 2958466) return excelSerialToISO(serial);
     }
   }
 
@@ -325,10 +339,16 @@ export default function AdminPricesPage() {
       if (!data) return;
       const workbook = XLSX.read(data, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as string[][];
+      const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' }) as unknown[][];
       if (rows.length === 0) return;
-      const headers = rows[0].map(String);
-      const body = rows.slice(1, 6).map((r) => r.map(String));
+      const headers = (rows[0] as unknown[]).map(String);
+      const dateColIdx = headers.findIndex((h) => /^data$/i.test(h.trim()) || /^date$/i.test(h.trim()));
+      const body = rows.slice(1, 6).map((r) =>
+        (r as unknown[]).map((cell, ci) => {
+          if (ci === dateColIdx) return parseDate(cell) ?? String(cell ?? '');
+          return String(cell ?? '');
+        })
+      );
       setPreviewHeaders(headers);
       setPreviewRows(body);
     };
