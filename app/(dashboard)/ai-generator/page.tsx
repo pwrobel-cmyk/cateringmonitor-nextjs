@@ -20,6 +20,7 @@ const IMAGE_MODELS = [
   { id: 'fal-ai/flux/dev', name: 'FLUX Dev', desc: 'Lepsza jakość, wolniejszy', badge: 'Jakość' },
   { id: 'fal-ai/stable-diffusion-v3-medium', name: 'SD 3 Medium', desc: 'Stabilny, realistyczny', badge: 'Jakość' },
   { id: 'fal-ai/recraft-v3', name: 'Recraft V3', desc: 'Design i ilustracje', badge: 'Pro' },
+  { id: 'xai/grok-imagine-image/edit', name: 'Grok Image Edit', desc: 'Edytuj zdjęcie na podstawie opisu, max 3 zdjęcia referencyjne' },
 ]
 
 const VIDEO_MODELS = [
@@ -393,7 +394,7 @@ export default function AIGeneratorPage() {
                   >
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="font-medium">{m.name}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${BADGE_COLORS[m.badge]}`}>{m.badge}</span>
+                      {m.badge && <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${BADGE_COLORS[m.badge]}`}>{m.badge}</span>}
                     </div>
                     <div className="text-xs text-muted-foreground">{m.desc}</div>
                   </button>

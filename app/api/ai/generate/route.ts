@@ -22,15 +22,29 @@ export async function POST(request: Request) {
 
     if (type === 'image') {
       const modelId = model || 'fal-ai/flux/schnell'
-      result = await fal.run(modelId, {
-        input: {
-          prompt,
-          image_size: 'landscape_16_9',
-          num_inference_steps: 4,
-          num_images: 1,
-          ...(referenceUrls?.length ? { image_url: referenceUrls[0] } : {}),
-        },
-      })
+
+      if (modelId === 'xai/grok-imagine-image/edit') {
+        result = await fal.run(modelId, {
+          input: {
+            prompt,
+            image_urls: referenceUrls?.length ? referenceUrls.slice(0, 3) : undefined,
+            num_images: 1,
+            aspect_ratio: 'auto',
+            resolution: '1k',
+            output_format: 'jpeg',
+          },
+        })
+      } else {
+        result = await fal.run(modelId, {
+          input: {
+            prompt,
+            image_size: 'landscape_16_9',
+            num_inference_steps: 4,
+            num_images: 1,
+            ...(referenceUrls?.length ? { image_url: referenceUrls[0] } : {}),
+          },
+        })
+      }
     } else if (type === 'video') {
       const modelId = model || 'fal-ai/kling-video/v1.6/standard/text-to-video'
 
