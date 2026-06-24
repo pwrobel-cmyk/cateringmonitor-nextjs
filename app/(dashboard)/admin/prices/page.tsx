@@ -493,18 +493,42 @@ export default function AdminPricesPage() {
           continue;
         }
         const brandPackages = packages.filter((p) => p.brand_id === brand.id);
-        const { pkg, score: pkgScore } = matchPackage(pakietCell, brandPackages);
-        if (!pkg) {
-          errors.push({ row: rowNum, marka: brand.name, pakiet: pakietCell, powod: `nie znaleziono pakietu "${pakietCell}"` });
-          setProgress(i + 1);
-          continue;
-        }
+        const { pkg: matchedPkg } = matchPackage(pakietCell, brandPackages);
 
         // 4. Kcal
         const kcalCell = iKcal >= 0 ? row[iKcal] : null;
-        if (i === 0) {
-        }
         const matchedKcal = matchKcal(kcalCell, kcalRanges);
+
+        // Auto-create package if not found
+        let pkg = matchedPkg;
+        if (!pkg && matchedKcal) {
+          try {
+            const res = await fetch('/api/admin/create-package', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ brandId: brand.id, packageName: pakietCell, kcalRangeId: matchedKcal.id }),
+            });
+            const result = await res.json();
+            if (res.ok && result.packageId && result.packageKcalRangeId) {
+              const newPkg: Package = { id: result.packageId, name: pakietCell, brand_id: brand.id };
+              packages.push(newPkg);
+              localPkr.push({ id: result.packageKcalRangeId, package_id: result.packageId, kcal_range_id: matchedKcal.id });
+              pkg = newPkg;
+            } else {
+              errors.push({ row: rowNum, marka: brand.name, pakiet: pakietCell, powod: `nie udało się utworzyć pakietu "${pakietCell}": ${result.error ?? 'unknown'}` });
+              setProgress(i + 1);
+              continue;
+            }
+          } catch (err) {
+            errors.push({ row: rowNum, marka: brand.name, pakiet: pakietCell, powod: `błąd tworzenia pakietu "${pakietCell}": ${err}` });
+            setProgress(i + 1);
+            continue;
+          }
+        } else if (!pkg) {
+          errors.push({ row: rowNum, marka: brand.name, pakiet: pakietCell, powod: `nie znaleziono pakietu "${pakietCell}" i brak kcal do auto-create` });
+          setProgress(i + 1);
+          continue;
+        }
 
         // 5. Price
         const priceRaw = iCena >= 0 ? row[iCena] : null;
@@ -521,22 +545,22 @@ export default function AdminPricesPage() {
         let pkrId: string | null = null;
         if (matchedKcal) {
           const existing = localPkr.find(
-            (r) => r.package_id === pkg.id && r.kcal_range_id === matchedKcal.id,
+            (r) => r.package_id === pkg!.id && r.kcal_range_id === matchedKcal.id,
           );
           if (existing) {
             pkrId = existing.id;
           } else {
             const { data: newPkr, error: pkrError } = await supabase
               .from('package_kcal_ranges')
-              .insert({ package_id: pkg.id, kcal_range_id: matchedKcal.id })
+              .insert({ package_id: pkg!.id, kcal_range_id: matchedKcal.id })
               .select('id')
               .single();
             if (pkrError || !newPkr) {
-              errors.push({ row: rowNum, marka: brand.name, pakiet: pkg.name, kcal: String(kcalCell ?? '').trim() || '?', powod: `błąd tworzenia package_kcal_range: ${pkrError?.message}` });
+              errors.push({ row: rowNum, marka: brand.name, pakiet: pkg!.name, kcal: String(kcalCell ?? '').trim() || '?', powod: `błąd tworzenia package_kcal_range: ${pkrError?.message}` });
               setProgress(i + 1);
               continue;
             }
-            localPkr.push({ id: newPkr.id, package_id: pkg.id, kcal_range_id: matchedKcal.id });
+            localPkr.push({ id: newPkr.id, package_id: pkg!.id, kcal_range_id: matchedKcal.id });
             pkrId = newPkr.id;
           }
         }
@@ -565,13 +589,13 @@ export default function AdminPricesPage() {
             upsertError = error;
           }
         } else {
-          errors.push({ row: rowNum, marka: brand.name, pakiet: pkg.name, kcal: String(kcalCell ?? '').trim() || '?', powod: 'brak zakresu kcal' });
+          errors.push({ row: rowNum, marka: brand.name, pakiet: pkg!.name, kcal: String(kcalCell ?? '').trim() || '?', powod: 'brak zakresu kcal' });
           setProgress(i + 1);
           continue;
         }
 
         if (upsertError) {
-          errors.push({ row: rowNum, marka: brand.name, pakiet: pkg.name, kcal: String(kcalCell ?? '').trim() || '?', powod: upsertError.message });
+          errors.push({ row: rowNum, marka: brand.name, pakiet: pkg!.name, kcal: String(kcalCell ?? '').trim() || '?', powod: upsertError.message });
         } else {
           successCount++;
         }
