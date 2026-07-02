@@ -299,14 +299,13 @@ export function RankingReport({
       const prevDateFrom = format(prevFrom, 'yyyy-MM-dd')
       const prevDateTo = format(prevTo, 'yyyy-MM-dd')
 
-      // 12-month window for heatmap (always fixed, independent of selected date range)
-      const now = new Date()
+      // 12-month window for heatmap (ending at dateTo, not today)
       const hist12Months: string[] = []
       for (let i = 11; i >= 0; i--) {
-        hist12Months.push(format(new Date(now.getFullYear(), now.getMonth() - i, 1), 'yyyy-MM'))
+        hist12Months.push(format(new Date(toDate.getFullYear(), toDate.getMonth() - i, 1), 'yyyy-MM'))
       }
       const hist12From = hist12Months[0] + '-01'
-      const hist12To = format(now, 'yyyy-MM-dd')
+      const hist12To = dateTo
 
       const [reviewsRes, prevReviewsRes, priceHistRes, discountsRes, histReviewsRes, discHistRes] = await Promise.all([
         // A — current period ratings
@@ -329,11 +328,11 @@ export function RankingReport({
           .gte('date_recorded', dateFrom)
           .lte('date_recorded', dateTo),
 
-        // E — discounts  (column name: percentage, not discount_percentage)
+        // E — discounts active in period (same logic as heatmap: started before end AND not ended before start)
         supabase.from('discounts')
           .select('brand_id, percentage, brands(name, logo_url)')
-          .gte('valid_from', dateFrom)
           .lte('valid_from', dateTo)
+          .or(`valid_until.gte.${dateFrom},valid_until.is.null`)
           .not('percentage', 'is', null),
 
         // C — last 12 months reviews for rating heatmap
