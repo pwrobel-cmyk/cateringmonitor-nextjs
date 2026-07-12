@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Upload, RefreshCw, FileSpreadsheet, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Upload, RefreshCw, FileSpreadsheet, X, ChevronDown, ChevronRight, Download, Loader2 } from 'lucide-react';
 import { Fragment } from 'react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -286,6 +286,48 @@ export default function AdminPricesPage() {
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
+
+  // export
+  const [exporting, setExporting] = useState(false);
+
+  const exportPrices = async () => {
+    setExporting(true);
+    toast.info('Pobieram dane...');
+    try {
+      let all: any[] = [];
+      let page = 0;
+      while (true) {
+        const { data } = await supabase.from('price_history')
+          .select('price, promo_price, discount_percentage, date_recorded, package_kcal_ranges!price_history_package_kcal_range_id_fkey(kcal_ranges(kcal_label), packages(name, brands(name)))')
+          .order('date_recorded', { ascending: false })
+          .range(page * 1000, (page + 1) * 1000 - 1);
+        if (!data || data.length === 0) break;
+        all = [...all, ...data];
+        if (data.length < 1000) break;
+        page++;
+      }
+
+      const rows = all.map((r: any) => ({
+        'Marka': r.package_kcal_ranges?.packages?.brands?.name || '',
+        'Pakiet': r.package_kcal_ranges?.packages?.name || '',
+        'Kalorie': r.package_kcal_ranges?.kcal_ranges?.kcal_label || '',
+        'Cena': r.price,
+        'Cena promocyjna': r.promo_price || '',
+        'Rabat %': r.discount_percentage || '',
+        'Data': r.date_recorded,
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Ceny');
+      XLSX.writeFile(wb, `ceny_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success(`Wyeksportowano ${rows.length} rekordów`);
+    } catch (e: any) {
+      toast.error('Błąd eksportu: ' + (e.message || 'nieznany'));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // ── Auth guard ────────────────────────────────────────────────────────────
 
@@ -638,7 +680,13 @@ export default function AdminPricesPage() {
     <div className="container mx-auto py-6 px-4 max-w-5xl">
       <AdminNav />
 
-      <h1 className="text-2xl font-bold mb-6">Import cen</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Import cen</h1>
+        <Button variant="outline" onClick={exportPrices} disabled={exporting}>
+          {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+          Eksportuj do Excel
+        </Button>
+      </div>
 
       {/* Upload Card */}
       <Card className="mb-6">

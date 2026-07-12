@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Download, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 
 const ADMIN_LINKS = [
@@ -43,6 +44,47 @@ export default function AdminReviewsPage() {
   const [pending, setPending] = useState<ParsedReview[]>([])
   const [importing, setImporting] = useState(false)
   const [stats, setStats] = useState<{ imported: number; duplicates: number; savedResponses: number } | null>(null)
+  const [exporting, setExporting] = useState(false)
+
+  const exportReviews = async () => {
+    setExporting(true)
+    toast.info('Pobieram dane...')
+    try {
+      let all: any[] = []
+      let page = 0
+      while (true) {
+        const { data } = await supabase.from('reviews')
+          .select('author_name, rating, content, review_date, source, is_approved, brands(name)')
+          .order('review_date', { ascending: false })
+          .range(page * 1000, (page + 1) * 1000 - 1)
+        if (!data || data.length === 0) break
+        all = [...all, ...data]
+        if (data.length < 1000) break
+        page++
+      }
+
+      const rows = all.map((r: any) => ({
+        'Marka': r.brands?.name || '',
+        'Autor': r.author_name,
+        'Ocena': r.rating,
+        'Treść': r.content,
+        'Data': r.review_date,
+        'Źródło': r.source,
+        'Zatwierdzona': r.is_approved ? 'Tak' : 'Nie',
+      }))
+
+      const ws = XLSX.utils.json_to_sheet(rows)
+      ws['!cols'] = [{ wch: 20 }, { wch: 20 }, { wch: 6 }, { wch: 80 }, { wch: 12 }, { wch: 12 }, { wch: 12 }]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Opinie')
+      XLSX.writeFile(wb, `opinie_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+      toast.success(`Wyeksportowano ${rows.length} opinii`)
+    } catch (e: any) {
+      toast.error('Błąd eksportu: ' + (e.message || 'nieznany'))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (!user) return null
   if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
@@ -243,14 +285,20 @@ export default function AdminReviewsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2">
-        {ADMIN_LINKS.map((l) => (
-          <Link key={l.href} href={l.href}>
-            <Button variant={l.href === '/admin/reviews' ? 'default' : 'outline'} size="sm">
-              {l.label}
-            </Button>
-          </Link>
-        ))}
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          {ADMIN_LINKS.map((l) => (
+            <Link key={l.href} href={l.href}>
+              <Button variant={l.href === '/admin/reviews' ? 'default' : 'outline'} size="sm">
+                {l.label}
+              </Button>
+            </Link>
+          ))}
+        </div>
+        <Button variant="outline" onClick={exportReviews} disabled={exporting}>
+          {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+          Eksportuj do Excel
+        </Button>
       </div>
 
       {/* Import */}
