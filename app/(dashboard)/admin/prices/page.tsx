@@ -289,18 +289,26 @@ export default function AdminPricesPage() {
 
   // export
   const [exporting, setExporting] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
-  const exportPrices = async () => {
+  const exportPrices = async (rangeKey: string) => {
+    setExportMenuOpen(false);
     setExporting(true);
     toast.info('Pobieram dane...');
     try {
+      const monthsMap: Record<string, number | null> = { '1m': 1, '3m': 3, '6m': 6, '12m': 12, 'all': null };
+      const months = monthsMap[rangeKey];
+      const dateFrom = months ? (() => { const d = new Date(); d.setMonth(d.getMonth() - months); return d.toISOString().slice(0, 10); })() : null;
+
       let all: any[] = [];
       let page = 0;
       while (true) {
-        const { data } = await supabase.from('price_history')
+        let q = supabase.from('price_history')
           .select('price, promo_price, discount_percentage, date_recorded, package_kcal_ranges!price_history_package_kcal_range_id_fkey(kcal_ranges(kcal_label), packages(name, brands(name)))')
           .order('date_recorded', { ascending: false })
           .range(page * 1000, (page + 1) * 1000 - 1);
+        if (dateFrom) q = q.gte('date_recorded', dateFrom);
+        const { data } = await q;
         if (!data || data.length === 0) break;
         all = [...all, ...data];
         if (data.length < 1000) break;
@@ -320,7 +328,7 @@ export default function AdminPricesPage() {
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Ceny');
-      XLSX.writeFile(wb, `ceny_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      XLSX.writeFile(wb, `ceny_export_${rangeKey}_${new Date().toISOString().slice(0, 10)}.xlsx`);
       toast.success(`Wyeksportowano ${rows.length} rekordów`);
     } catch (e: any) {
       toast.error('Błąd eksportu: ' + (e.message || 'nieznany'));
@@ -682,10 +690,23 @@ export default function AdminPricesPage() {
 
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Import cen</h1>
-        <Button variant="outline" onClick={exportPrices} disabled={exporting}>
-          {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-          Eksportuj do Excel
-        </Button>
+        <div className="relative">
+          <Button variant="outline" onClick={() => setExportMenuOpen(!exportMenuOpen)} disabled={exporting}>
+            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Eksportuj do Excel
+            <ChevronDown className="h-4 w-4 ml-1" />
+          </Button>
+          {exportMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
+              <div className="absolute right-0 mt-1 w-48 bg-background border rounded-md shadow-lg z-50 py-1">
+                {([['1m', 'Ostatni miesiąc'], ['3m', 'Ostatnie 3 miesiące'], ['6m', 'Ostatnie 6 miesięcy'], ['12m', 'Ostatnie 12 miesięcy'], ['all', 'Całość']] as [string, string][]).map(([key, label]) => (
+                  <button key={key} onClick={() => exportPrices(key)} className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors">{label}</button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Upload Card */}

@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Download, Loader2 } from 'lucide-react'
+import { Download, Loader2, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 
 const ADMIN_LINKS = [
@@ -45,18 +45,26 @@ export default function AdminReviewsPage() {
   const [importing, setImporting] = useState(false)
   const [stats, setStats] = useState<{ imported: number; duplicates: number; savedResponses: number } | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
-  const exportReviews = async () => {
+  const exportReviews = async (rangeKey: string) => {
+    setExportMenuOpen(false)
     setExporting(true)
     toast.info('Pobieram dane...')
     try {
+      const monthsMap: Record<string, number | null> = { '1m': 1, '3m': 3, '6m': 6, '12m': 12, 'all': null }
+      const months = monthsMap[rangeKey]
+      const dateFrom = months ? (() => { const d = new Date(); d.setMonth(d.getMonth() - months); return d.toISOString().slice(0, 10) })() : null
+
       let all: any[] = []
       let page = 0
       while (true) {
-        const { data } = await supabase.from('reviews')
+        let q = supabase.from('reviews')
           .select('author_name, rating, content, review_date, source, is_approved, brands(name)')
           .order('review_date', { ascending: false })
           .range(page * 1000, (page + 1) * 1000 - 1)
+        if (dateFrom) q = q.gte('review_date', dateFrom)
+        const { data } = await q
         if (!data || data.length === 0) break
         all = [...all, ...data]
         if (data.length < 1000) break
@@ -77,7 +85,7 @@ export default function AdminReviewsPage() {
       ws['!cols'] = [{ wch: 20 }, { wch: 20 }, { wch: 6 }, { wch: 80 }, { wch: 12 }, { wch: 12 }, { wch: 12 }]
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Opinie')
-      XLSX.writeFile(wb, `opinie_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+      XLSX.writeFile(wb, `opinie_export_${rangeKey}_${new Date().toISOString().slice(0, 10)}.xlsx`)
       toast.success(`Wyeksportowano ${rows.length} opinii`)
     } catch (e: any) {
       toast.error('Błąd eksportu: ' + (e.message || 'nieznany'))
@@ -295,10 +303,23 @@ export default function AdminReviewsPage() {
             </Link>
           ))}
         </div>
-        <Button variant="outline" onClick={exportReviews} disabled={exporting}>
-          {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-          Eksportuj do Excel
-        </Button>
+        <div className="relative">
+          <Button variant="outline" onClick={() => setExportMenuOpen(!exportMenuOpen)} disabled={exporting}>
+            {exporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+            Eksportuj do Excel
+            <ChevronDown className="h-4 w-4 ml-1" />
+          </Button>
+          {exportMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setExportMenuOpen(false)} />
+              <div className="absolute right-0 mt-1 w-48 bg-background border rounded-md shadow-lg z-50 py-1">
+                {([['1m', 'Ostatni miesiąc'], ['3m', 'Ostatnie 3 miesiące'], ['6m', 'Ostatnie 6 miesięcy'], ['12m', 'Ostatnie 12 miesięcy'], ['all', 'Całość']] as [string, string][]).map(([key, label]) => (
+                  <button key={key} onClick={() => exportReviews(key)} className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors">{label}</button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Import */}
