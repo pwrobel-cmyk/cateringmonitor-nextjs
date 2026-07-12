@@ -310,11 +310,12 @@ export default function AdminPricesPage() {
       let page = 0;
       while (true) {
         let q = supabase.from('price_history')
-          .select('price, promo_price, discount_percentage, date_recorded, package_kcal_range_id')
+          .select('price, promotional_price, discount_percentage, date_recorded, package_kcal_range_id')
           .order('date_recorded', { ascending: false })
           .range(page * 1000, (page + 1) * 1000 - 1);
         if (dateFrom) q = q.gte('date_recorded', dateFrom);
-        const { data } = await q;
+        const { data, error } = await q;
+        if (error) { toast.error('Błąd zapytania: ' + error.message); break; }
         if (!data || data.length === 0) break;
         all = [...all, ...data];
         if (data.length < 1000) break;
@@ -331,7 +332,7 @@ export default function AdminPricesPage() {
           'Pakiet': pkg?.name || '',
           'Kalorie': kcalLabel,
           'Cena': r.price,
-          'Cena promocyjna': r.promo_price || '',
+          'Cena promocyjna': r.promotional_price || '',
           'Rabat %': r.discount_percentage || '',
           'Data': r.date_recorded,
         };
