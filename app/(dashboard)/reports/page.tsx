@@ -13,12 +13,15 @@ import {
 } from "recharts";
 import {
   FileText, Download, Calendar, TrendingUp, TrendingDown, AlertCircle,
-  ExternalLink, Building2
+  ExternalLink, Building2, Share2
 } from "lucide-react";
 import { useMonthlyTrends } from "@/hooks/supabase/useMonthlyTrends";
 import { useAveragePrice } from "@/hooks/supabase/useAveragePrice";
 import { useReviewsCount } from "@/hooks/supabase/useReviewsCount";
 import { useBrandFinancialData } from "@/hooks/useBrandFinancialData";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase/client";
 
 
 const marketYearlyData = [
@@ -49,10 +52,42 @@ export default function Reports() {
   const [selectedBrandForTrend, setSelectedBrandForTrend] = useState("Dieta od Brokula");
   const [selectedBrandForAnalysis, setSelectedBrandForAnalysis] = useState("Dieta od Brokula");
 
+  const { user } = useAuth();
   const { data: monthlyTrends, isLoading: trendsLoading } = useMonthlyTrends();
   const { data: avgPriceData } = useAveragePrice();
   const { data: reviewsCount } = useReviewsCount();
   const { data: brandFinancialData } = useBrandFinancialData();
+
+  const { data: sharedReports = [] } = useQuery({
+    queryKey: ['shared-reports', user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('custom_reports')
+        .select('*')
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false })
+
+      if (!data || data.length === 0) return []
+
+      const brandIds = [...new Set(data.filter((r: any) => r.brand_id).map((r: any) => r.brand_id))] as string[]
+      let brandsMap: Record<string, string> = {}
+      if (brandIds.length > 0) {
+        const { data: brands } = await (supabase as any)
+          .from('brands')
+          .select('id, logo_url')
+          .in('id', brandIds)
+        if (brands) {
+          brandsMap = Object.fromEntries(brands.map((b: any) => [b.id, b.logo_url]))
+        }
+      }
+
+      return (data as any[]).map(r => ({
+        ...r,
+        logo_url: r.brand_id ? brandsMap[r.brand_id] || null : null,
+      }))
+    },
+  });
 
   const brandPerformanceByYear = brandFinancialData || {};
   const brandPerformance = brandPerformanceByYear[selectedYear] || [];
@@ -165,6 +200,64 @@ export default function Reports() {
 
   return (
     <div className="space-y-6">
+      {sharedReports.length > 0 && (
+        <section className="pb-6 border-b mb-2">
+          <div className="mb-4">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Share2 className="h-5 w-5" />
+              Raporty udostępnione
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Raporty przygotowane dla Ciebie przez zespół CateringMonitor
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sharedReports.map((report: any) => {
+              const isRanking = report.title?.startsWith('[RANKING]')
+              const displayTitle = isRanking ? report.title.replace('[RANKING] ', '').replace('[RANKING]', '') : report.title
+              const href = isRanking ? `/reports/ranking/${report.id}` : `/reports/custom/${report.id}`
+              const dateFrom = (() => { try { return new Date(report.date_from).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.') } catch { return '' } })()
+              const dateTo = (() => { try { return new Date(report.date_to).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.') } catch { return '' } })()
+              const createdAt = (() => { try { return new Date(report.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }) } catch { return '' } })()
+
+              return (
+                <Link
+                  key={report.id}
+                  href={href}
+                  className="group relative block rounded-lg border bg-card overflow-hidden hover:shadow-md hover:-translate-y-[2px] transition-all duration-200"
+                >
+                  <div className={`h-[3px] ${isRanking ? 'bg-teal-500' : 'bg-blue-500'}`} />
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <Badge variant="secondary" className={`text-xs ${isRanking ? 'bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300' : 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'}`}>
+                        {isRanking ? 'Ranking' : 'Analiza opinii'}
+                      </Badge>
+                      <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                    <h3 className="font-semibold text-sm line-clamp-2 mb-3">{displayTitle}</h3>
+                    <div className="space-y-1.5 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5" />
+                        <span>{dateFrom} – {dateTo}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {report.logo_url ? (
+                          <img src={report.logo_url} alt="" className="h-4 w-4 object-contain rounded" />
+                        ) : (
+                          <Building2 className="h-3.5 w-3.5" />
+                        )}
+                        <span>{report.brand_name || 'Wszystkie marki'}</span>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground/70 mt-3">Udostępniono {createdAt}</p>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </section>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Raporty</h1>
