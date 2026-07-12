@@ -27,6 +27,7 @@ import {
 
 const navigation: { name: string; href: string; icon: any; beta?: boolean }[] = [
   { name: "Przegląd", href: "/dashboard", icon: Home },
+  { name: "Ranking", href: "/ranking", icon: Trophy },
   { name: "Porównywarka", href: "/compare", icon: ArrowLeftRight },
   { name: "Pakiety & Diety", href: "/packages", icon: Package },
   { name: "Rabaty", href: "/discounts", icon: Percent },
@@ -78,18 +79,6 @@ export function Navigation() {
             );
           })}
 
-          <Link
-            href="/ranking"
-            className={cn(
-              "flex items-center space-x-2 px-3 py-3 md:py-4 border-b-2 text-xs md:text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0",
-              pathname === "/ranking"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-            )}
-          >
-            <Trophy className="h-4 w-4" />
-            <span>Ranking</span>
-          </Link>
 
         </div>
       </nav>
