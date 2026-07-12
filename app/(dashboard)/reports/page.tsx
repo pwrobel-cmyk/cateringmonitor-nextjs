@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import {
   FileText, Download, Calendar, TrendingUp, TrendingDown, AlertCircle,
-  ExternalLink, Building2, Share2
+  ExternalLink, Building2, FolderOpen, ChevronDown, ChevronUp, ChevronRight, MessageSquare
 } from "lucide-react";
 import { useMonthlyTrends } from "@/hooks/supabase/useMonthlyTrends";
 import { useAveragePrice } from "@/hooks/supabase/useAveragePrice";
@@ -51,6 +51,7 @@ export default function Reports() {
   const [selectedYear, setSelectedYear] = useState("2024");
   const [selectedBrandForTrend, setSelectedBrandForTrend] = useState("Dieta od Brokula");
   const [selectedBrandForAnalysis, setSelectedBrandForAnalysis] = useState("Dieta od Brokula");
+  const [sharedReportsOpen, setSharedReportsOpen] = useState<boolean | null>(null);
 
   const { user } = useAuth();
   const { data: monthlyTrends, isLoading: trendsLoading } = useMonthlyTrends();
@@ -200,63 +201,82 @@ export default function Reports() {
 
   return (
     <div className="space-y-6">
-      {sharedReports.length > 0 && (
-        <section className="pb-6 border-b mb-2">
-          <div className="mb-4">
-            <h2 className="text-xl font-bold flex items-center gap-2">
-              <Share2 className="h-5 w-5" />
-              Raporty udostępnione
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Raporty przygotowane dla Ciebie przez zespół CateringMonitor
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sharedReports.map((report: any) => {
-              const isRanking = report.title?.startsWith('[RANKING]')
-              const displayTitle = isRanking ? report.title.replace('[RANKING] ', '').replace('[RANKING]', '') : report.title
-              const href = isRanking ? `/reports/ranking/${report.id}` : `/reports/custom/${report.id}`
-              const dateFrom = (() => { try { return new Date(report.date_from).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.') } catch { return '' } })()
-              const dateTo = (() => { try { return new Date(report.date_to).toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '.') } catch { return '' } })()
-              const createdAt = (() => { try { return new Date(report.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' }) } catch { return '' } })()
+      {sharedReports.length > 0 && (() => {
+        const isOpen = sharedReportsOpen ?? sharedReports.length <= 3
+        const rankings = sharedReports.filter((r: any) => r.title?.startsWith('[RANKING]'))
+        const analyses = sharedReports.filter((r: any) => !r.title?.startsWith('[RANKING]'))
 
-              return (
-                <Link
-                  key={report.id}
-                  href={href}
-                  className="group relative block rounded-lg border bg-card overflow-hidden hover:shadow-md hover:-translate-y-[2px] transition-all duration-200"
-                >
-                  <div className={`h-[3px] ${isRanking ? 'bg-teal-500' : 'bg-blue-500'}`} />
-                  <div className="p-4">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <Badge variant="secondary" className={`text-xs ${isRanking ? 'bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300' : 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'}`}>
-                        {isRanking ? 'Ranking' : 'Analiza opinii'}
-                      </Badge>
-                      <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        const ReportRow = ({ report }: { report: any }) => {
+          const isRanking = report.title?.startsWith('[RANKING]')
+          const displayTitle = isRanking ? report.title.replace('[RANKING] ', '').replace('[RANKING]', '') : report.title
+          const href = isRanking ? `/reports/ranking/${report.id}` : `/reports/custom/${report.id}`
+          const dateFrom = (() => { try { const d = new Date(report.date_from); return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}` } catch { return '' } })()
+          const dateTo = (() => { try { const d = new Date(report.date_to); return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}` } catch { return '' } })()
+          const createdAt = (() => { try { return new Date(report.created_at).toLocaleDateString('pl-PL', { day: 'numeric', month: 'short', year: 'numeric' }) } catch { return '' } })()
+
+          return (
+            <Link
+              href={href}
+              className="flex items-center gap-3 px-3 h-12 rounded-lg hover:bg-muted/50 transition-colors group"
+            >
+              <div className={`flex items-center justify-center w-8 h-8 rounded-full shrink-0 ${isRanking ? 'bg-teal-100 dark:bg-teal-950' : 'bg-blue-100 dark:bg-blue-950'}`}>
+                {isRanking
+                  ? <TrendingUp className="h-4 w-4 text-teal-600 dark:text-teal-400" />
+                  : <MessageSquare className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                }
+              </div>
+              <div className="flex-1 min-w-0 flex items-center gap-2">
+                <span className="text-sm font-medium truncate">{displayTitle}</span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{dateFrom} – {dateTo}</span>
+              </div>
+              <span className="text-xs text-muted-foreground hidden sm:block whitespace-nowrap">{createdAt}</span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+            </Link>
+          )
+        }
+
+        return (
+          <Card className="bg-muted/30">
+            <div
+              className="flex items-center justify-between px-4 py-3 cursor-pointer select-none"
+              onClick={() => setSharedReportsOpen(!isOpen)}
+            >
+              <div className="flex items-center gap-2">
+                <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Raporty udostępnione</span>
+                <Badge variant="secondary" className="text-xs px-1.5 py-0">{sharedReports.length}</Badge>
+              </div>
+              {isOpen
+                ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              }
+            </div>
+            <div
+              className="overflow-hidden transition-all duration-200"
+              style={{ maxHeight: isOpen ? `${sharedReports.length * 60 + 100}px` : '0px' }}
+            >
+              <div className="px-4 pb-3 space-y-3">
+                {rankings.length > 0 && (
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground font-medium tracking-wide mb-1 px-3">Rankingi</p>
+                    <div className="space-y-0.5">
+                      {rankings.map((r: any) => <ReportRow key={r.id} report={r} />)}
                     </div>
-                    <h3 className="font-semibold text-sm line-clamp-2 mb-3">{displayTitle}</h3>
-                    <div className="space-y-1.5 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5" />
-                        <span>{dateFrom} – {dateTo}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {report.logo_url ? (
-                          <img src={report.logo_url} alt="" className="h-4 w-4 object-contain rounded" />
-                        ) : (
-                          <Building2 className="h-3.5 w-3.5" />
-                        )}
-                        <span>{report.brand_name || 'Wszystkie marki'}</span>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground/70 mt-3">Udostępniono {createdAt}</p>
                   </div>
-                </Link>
-              )
-            })}
-          </div>
-        </section>
-      )}
+                )}
+                {analyses.length > 0 && (
+                  <div>
+                    <p className="text-xs uppercase text-muted-foreground font-medium tracking-wide mb-1 px-3">Analizy opinii</p>
+                    <div className="space-y-0.5">
+                      {analyses.map((r: any) => <ReportRow key={r.id} report={r} />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+        )
+      })()}
 
       <div className="flex items-center justify-between">
         <div>
