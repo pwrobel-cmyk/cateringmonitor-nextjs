@@ -300,11 +300,17 @@ export default function AdminPricesPage() {
       const months = monthsMap[rangeKey];
       const dateFrom = months ? (() => { const d = new Date(); d.setMonth(d.getMonth() - months); return d.toISOString().slice(0, 10); })() : null;
 
+      // Build lookup maps from already-loaded reference data
+      const brandsMap = new Map(brands.map(b => [b.id, b.name]));
+      const packagesMap = new Map(packages.map(p => [p.id, { name: p.name, brandId: p.brand_id }]));
+      const kcalMap = new Map(kcalRanges.map(k => [k.id, k.kcal_label]));
+      const pkrMap = new Map(packageKcalRanges.map(pkr => [pkr.id, { packageId: pkr.package_id, kcalRangeId: pkr.kcal_range_id }]));
+
       let all: any[] = [];
       let page = 0;
       while (true) {
         let q = supabase.from('price_history')
-          .select('price, promo_price, discount_percentage, date_recorded, package_kcal_ranges!price_history_package_kcal_range_id_fkey(kcal_ranges(kcal_label), packages(name, brands(name)))')
+          .select('price, promo_price, discount_percentage, date_recorded, package_kcal_range_id')
           .order('date_recorded', { ascending: false })
           .range(page * 1000, (page + 1) * 1000 - 1);
         if (dateFrom) q = q.gte('date_recorded', dateFrom);
@@ -315,15 +321,21 @@ export default function AdminPricesPage() {
         page++;
       }
 
-      const rows = all.map((r: any) => ({
-        'Marka': r.package_kcal_ranges?.packages?.brands?.name || '',
-        'Pakiet': r.package_kcal_ranges?.packages?.name || '',
-        'Kalorie': r.package_kcal_ranges?.kcal_ranges?.kcal_label || '',
-        'Cena': r.price,
-        'Cena promocyjna': r.promo_price || '',
-        'Rabat %': r.discount_percentage || '',
-        'Data': r.date_recorded,
-      }));
+      const rows = all.map((r: any) => {
+        const pkr = pkrMap.get(r.package_kcal_range_id);
+        const pkg = pkr ? packagesMap.get(pkr.packageId) : null;
+        const brandName = pkg ? brandsMap.get(pkg.brandId) || '' : '';
+        const kcalLabel = pkr ? kcalMap.get(pkr.kcalRangeId) || '' : '';
+        return {
+          'Marka': brandName,
+          'Pakiet': pkg?.name || '',
+          'Kalorie': kcalLabel,
+          'Cena': r.price,
+          'Cena promocyjna': r.promo_price || '',
+          'Rabat %': r.discount_percentage || '',
+          'Data': r.date_recorded,
+        };
+      });
 
       const ws = XLSX.utils.json_to_sheet(rows);
       const wb = XLSX.utils.book_new();
