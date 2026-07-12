@@ -256,13 +256,14 @@ function PriceHeatmapChart({ data, brands, months, noDiscountMask }: {
 
 // ── Main component ───────────────────────────────────────────────────────────────
 export function RankingReport({
-  dateFrom, dateTo, highlightBrandId, autoGenerate, isPublic,
+  dateFrom, dateTo, highlightBrandId, autoGenerate, isPublic, hideEmail,
 }: {
   dateFrom: string
   dateTo: string
   highlightBrandId?: string | null
   autoGenerate?: boolean
   isPublic?: boolean
+  hideEmail?: boolean
 }) {
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RankingData | null>(null)
@@ -730,9 +731,11 @@ export function RankingReport({
               <Button variant="outline" onClick={() => handlePrint()}>
                 <Printer className="h-4 w-4 mr-2" />Pobierz PDF
               </Button>
-              <Button variant="outline" onClick={() => setShowEmailModal(true)}>
-                <Send className="h-4 w-4 mr-2" />Wyślij email
-              </Button>
+              {!hideEmail && (
+                <Button variant="outline" onClick={() => setShowEmailModal(true)}>
+                  <Send className="h-4 w-4 mr-2" />Wyślij email
+                </Button>
+              )}
             </>
           )}
           {dateFrom && dateTo && (
