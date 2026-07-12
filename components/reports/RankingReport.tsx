@@ -3,13 +3,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Loader2, Printer, TrendingUp, ArrowUp, ArrowDown, Send } from 'lucide-react'
+import { Loader2, Printer, TrendingUp, TrendingDown, ArrowUp, ArrowDown, Send, Crown, Trophy, Calendar, Tag, Percent } from 'lucide-react'
+import { BarChart as ReBarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
+import { BarChart3 } from 'lucide-react'
 import { format, subDays, differenceInDays, parseISO } from 'date-fns'
 import { useReactToPrint } from 'react-to-print'
 import { toast } from 'sonner'
@@ -75,6 +77,130 @@ function ChangeIndicator({ change, isNew }: { change: number | null; prevPositio
     <span className="text-red-600 text-sm font-medium flex items-center gap-0.5">
       <ArrowDown className="h-3.5 w-3.5" />{Math.abs(change)}
     </span>
+  )
+}
+
+// ── Section header ──────────────────────────────────────────────────────────────
+function SectionHeader({ icon: Icon, color, title, subtitle }: { icon: any; color: string; title: string; subtitle?: string }) {
+  const colorMap: Record<string, string> = {
+    amber: 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400',
+    blue: 'bg-blue-100 text-blue-600 dark:bg-blue-950 dark:text-blue-400',
+    violet: 'bg-violet-100 text-violet-600 dark:bg-violet-950 dark:text-violet-400',
+    emerald: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400',
+    teal: 'bg-teal-100 text-teal-600 dark:bg-teal-950 dark:text-teal-400',
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${colorMap[color] || ''}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <div>
+        <h3 className="text-lg font-semibold">{title}</h3>
+        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+      </div>
+    </div>
+  )
+}
+
+// ── Podium top 3 ────────────────────────────────────────────────────────────────
+function Podium({ ratings }: { ratings: BrandRank[] }) {
+  if (ratings.length < 3) return null
+  const top3 = ratings.slice(0, 3)
+  // Desktop order: #2, #1, #3
+  const ordered = [top3[1], top3[0], top3[2]]
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {ordered.map((r, idx) => {
+        const pos = idx === 1 ? 1 : idx === 0 ? 2 : 3
+        const isFirst = pos === 1
+        return (
+          <div
+            key={r.brandId}
+            className={`flex flex-col items-center p-5 rounded-xl border transition-all ${
+              isFirst
+                ? 'border-2 border-amber-400 bg-gradient-to-b from-amber-50 to-transparent dark:from-amber-950/20 dark:to-transparent md:order-2 order-first'
+                : pos === 2 ? 'md:order-1 order-2' : 'md:order-3 order-3'
+            } ${isFirst ? 'md:-mt-2' : 'md:mt-4'}`}
+          >
+            {isFirst && <Crown className="h-6 w-6 text-amber-500 mb-2" />}
+            <span className="text-xs font-bold text-muted-foreground mb-2">#{pos}</span>
+            <BrandLogo url={r.brandLogo} name={r.brandName} />
+            <span className="font-bold text-sm mt-2 text-center">{r.brandName}</span>
+            <span className="text-4xl font-bold mt-1" style={{ color: getRatingColor(r.avgRating) }}>
+              {r.avgRating.toFixed(2)}
+            </span>
+            <span className="text-xs text-muted-foreground">{r.count} opinii</span>
+            <div className="mt-1">
+              <ChangeIndicator change={r.change} prevPosition={r.prevPosition} isNew={r.isNew} />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Sentiment stacked bar chart ─────────────────────────────────────────────────
+function SentimentChart({ ratings }: { ratings: BrandRank[] }) {
+  const chartData = ratings.slice(0, 10).map(r => ({
+    name: r.brandName.length > 16 ? r.brandName.slice(0, 15) + '…' : r.brandName,
+    positive: r.positivePercent,
+    neutral: 100 - r.positivePercent - r.negativePercent,
+    negative: r.negativePercent,
+  }))
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload) return null
+    return (
+      <div className="bg-background border rounded-lg shadow-lg p-2 text-xs">
+        <p className="font-semibold mb-1">{label}</p>
+        {payload.map((p: any) => (
+          <p key={p.dataKey} style={{ color: p.fill }}>{p.name}: {p.value}%</p>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ width: '100%', height: chartData.length * 36 + 20 }}>
+      <ResponsiveContainer>
+        <ReBarChart data={chartData} layout="vertical" margin={{ left: 10, right: 10, top: 5, bottom: 5 }}>
+          <XAxis type="number" domain={[0, 100]} hide />
+          <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+          <ReTooltip content={<CustomTooltip />} />
+          <Bar dataKey="positive" stackId="a" fill="#10b981" name="Pozytywne" radius={[4, 0, 0, 4]} />
+          <Bar dataKey="neutral" stackId="a" fill="#fbbf24" name="Neutralne" />
+          <Bar dataKey="negative" stackId="a" fill="#f87171" name="Negatywne" radius={[0, 4, 4, 0]} />
+        </ReBarChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+// ── Sparkline trend ─────────────────────────────────────────────────────────────
+function TrendSparkline({ brandName, heatmapData, months }: {
+  brandName: string
+  heatmapData: Record<string, Record<string, number | null>>
+  months: string[]
+}) {
+  const last6 = months.slice(-6)
+  const points = last6.map(m => ({ m, v: heatmapData[brandName]?.[m] ?? null })).filter(p => p.v !== null) as { m: string; v: number }[]
+  if (points.length < 2) return <span className="text-xs text-muted-foreground">—</span>
+
+  const first = points[0].v
+  const last = points[points.length - 1].v
+  const diff = last - first
+  const color = diff > 0.05 ? '#16a34a' : diff < -0.05 ? '#dc2626' : '#9ca3af'
+
+  return (
+    <div style={{ width: 80, height: 28 }}>
+      <ResponsiveContainer>
+        <LineChart data={points} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -773,10 +899,30 @@ export function RankingReport({
       {data && (
         <div ref={printRef} className="space-y-10">
 
+          {/* PODIUM — Top 3 */}
+          {qualifiedRatings.length >= 3 && <Podium ratings={qualifiedRatings} />}
+
+          {/* SENTIMENT CHART — Market rating distribution */}
+          {qualifiedRatings.length > 0 && (
+            <Card>
+              <CardHeader>
+                <SectionHeader icon={BarChart3} color="blue" title="Rozkład ocen rynku" subtitle="Top 10 marek — % opinii pozytywnych, neutralnych i negatywnych" />
+              </CardHeader>
+              <CardContent>
+                <SentimentChart ratings={qualifiedRatings} />
+                <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-emerald-500" />Pozytywne (4-5)</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-amber-400" />Neutralne (3)</span>
+                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-red-400" />Negatywne (1-2)</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* SECTION 1 — Rating ranking table (only brands with >=10 reviews) */}
           <Card>
             <CardHeader>
-              <CardTitle>Ranking ocen marek</CardTitle>
+              <SectionHeader icon={Trophy} color="amber" title="Ranking ocen marek" />
             </CardHeader>
             <CardContent className="p-0">
               {qualifiedRatings.length === 0 ? (
@@ -794,6 +940,7 @@ export function RankingReport({
                         <th className="text-right px-4 py-3 font-medium text-muted-foreground">Opinii</th>
                         <th className="text-right px-4 py-3 font-medium text-muted-foreground">% poz.</th>
                         <th className="text-right px-4 py-3 font-medium text-muted-foreground">% neg.</th>
+                        <th className="text-center px-2 py-3 font-medium text-muted-foreground w-24">Trend 6M</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -812,6 +959,9 @@ export function RankingReport({
                           <td className="text-right px-4 py-3">{r.count}</td>
                           <td className="text-right px-4 py-3 text-green-600 font-medium">{r.positivePercent}%</td>
                           <td className="text-right px-4 py-3 text-red-600 font-medium">{r.negativePercent}%</td>
+                          <td className="text-center px-2 py-3">
+                            <TrendSparkline brandName={r.brandName} heatmapData={data.heatmap.data} months={data.heatmap.months} />
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -839,8 +989,7 @@ export function RankingReport({
           {data.heatmap.brands.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Historia ocen — ostatnie 12 miesięcy</CardTitle>
-                <p className="text-sm text-muted-foreground">Wszystkie marki z min. 10 opiniami w okresie</p>
+                <SectionHeader icon={Calendar} color="blue" title="Historia ocen — ostatnie 12 miesięcy" subtitle="Wszystkie marki z min. 10 opiniami w okresie" />
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -867,7 +1016,7 @@ export function RankingReport({
           {data.prices.length > 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle>Ranking cen katalogowych</CardTitle>
+                <SectionHeader icon={Tag} color="violet" title="Ranking cen katalogowych" />
               </CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
@@ -902,7 +1051,7 @@ export function RankingReport({
             </Card>
           ) : (
             <Card>
-              <CardHeader><CardTitle>Ranking cen katalogowych</CardTitle></CardHeader>
+              <CardHeader><SectionHeader icon={Tag} color="violet" title="Ranking cen katalogowych" /></CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">Brak danych cenowych dla wybranego okresu.</p>
               </CardContent>
@@ -913,8 +1062,7 @@ export function RankingReport({
           {data.priceHeatmap.brands.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Historia cen katalogowych — ostatnie 12 miesięcy</CardTitle>
-                <p className="text-sm text-muted-foreground">Średnia cena katalogowa per marka per miesiąc (zł/dzień)</p>
+                <SectionHeader icon={Tag} color="violet" title="Historia cen katalogowych — ostatnie 12 miesięcy" subtitle="Średnia cena katalogowa per marka per miesiąc (zł/dzień)" />
               </CardHeader>
               <CardContent>
                 <PriceHeatmapChart
@@ -944,7 +1092,7 @@ export function RankingReport({
           {/* SECTION 4 — Discount ranking */}
           {data.discounts.length > 0 ? (
             <Card>
-              <CardHeader><CardTitle>Ranking rabatów</CardTitle></CardHeader>
+              <CardHeader><SectionHeader icon={Percent} color="emerald" title="Ranking rabatów" /></CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -974,7 +1122,7 @@ export function RankingReport({
             </Card>
           ) : (
             <Card>
-              <CardHeader><CardTitle>Ranking rabatów</CardTitle></CardHeader>
+              <CardHeader><SectionHeader icon={Percent} color="emerald" title="Ranking rabatów" /></CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">Brak danych rabatowych dla wybranego okresu.</p>
               </CardContent>
@@ -985,8 +1133,7 @@ export function RankingReport({
           {data.discountHeatmap.brands.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Historia rabatów — ostatnie 12 miesięcy</CardTitle>
-                <p className="text-sm text-muted-foreground">Średni % rabatu per marka per miesiąc · tylko marki które stosowały promocje</p>
+                <SectionHeader icon={Percent} color="emerald" title="Historia rabatów — ostatnie 12 miesięcy" subtitle="Średni % rabatu per marka per miesiąc · tylko marki które stosowały promocje" />
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -1018,7 +1165,7 @@ export function RankingReport({
           {/* SECTION 5 — Price after discount */}
           {data.pricesAfterDiscount.length > 0 && (
             <Card>
-              <CardHeader><CardTitle>Ranking cen po rabacie</CardTitle></CardHeader>
+              <CardHeader><SectionHeader icon={TrendingDown} color="teal" title="Ranking cen po rabacie" /></CardHeader>
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -1054,8 +1201,7 @@ export function RankingReport({
           {data.priceAfterDiscountHeatmap.brands.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>Historia cen po rabacie — ostatnie 12 miesięcy</CardTitle>
-                <p className="text-sm text-muted-foreground">Średnia cena katalogowa pomniejszona o aktywny rabat per marka per miesiąc (zł/dzień)</p>
+                <SectionHeader icon={TrendingDown} color="teal" title="Historia cen po rabacie — ostatnie 12 miesięcy" subtitle="Średnia cena katalogowa pomniejszona o aktywny rabat per marka per miesiąc (zł/dzień)" />
               </CardHeader>
               <CardContent>
                 <PriceHeatmapChart
