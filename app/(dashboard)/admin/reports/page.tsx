@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
@@ -12,14 +12,16 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye, BookUser, Pencil, Trash2, Plus, X, Save, ChevronDown, TrendingUp } from 'lucide-react'
+import { FileBarChart2, UserPlus, Copy, Check, Mail, ExternalLink, Send, Sparkles, Loader2, Eye, BookUser, Pencil, Trash2, Plus, X, Save, ChevronDown, TrendingUp, Briefcase } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { DynamicReport } from '@/components/reports/DynamicReport'
 import { RankingReport } from '@/components/reports/RankingReport'
+import { ExecutiveReport } from '@/components/reports/ExecutiveReport'
 import { toast } from 'sonner'
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear, startOfWeek, endOfWeek, subWeeks, subMonths, subQuarters, startOfQuarter, endOfQuarter } from 'date-fns'
+import { pl } from 'date-fns/locale'
 
 type DateRangeType = 'last_week' | 'last_month' | 'last_quarter' | 'specific_month' | 'year'
 
@@ -97,6 +99,95 @@ export default function AdminReportsPage() {
   )
   const [specificYear, setSpecificYear] = useState('2025')
   const [reportParams, setReportParams] = useState<ReportParams | null>(null)
+
+  // Executive report state
+  const [execMyBrand, setExecMyBrand] = useState<string>('')
+  const [execCompetitors, setExecCompetitors] = useState<string[]>([])
+  const [execWeekIdx, setExecWeekIdx] = useState<string>('0')
+  const [execReportParams, setExecReportParams] = useState<{
+    myBrandId: string; competitorBrandIds: string[]; weekStart: string; weekEnd: string
+  } | null>(null)
+  const [execConfigLoaded, setExecConfigLoaded] = useState(false)
+  const [savingExecConfig, setSavingExecConfig] = useState(false)
+
+  // Generate last 8 week options
+  const execWeekOptions = useMemo(() => {
+    const options: { value: string; label: string; start: string; end: string }[] = []
+    const now = new Date()
+    for (let i = 0; i < 8; i++) {
+      const ws = startOfWeek(subWeeks(now, i + 1), { weekStartsOn: 1 })
+      const we = endOfWeek(subWeeks(now, i + 1), { weekStartsOn: 1 })
+      options.push({
+        value: String(i),
+        label: `${format(ws, 'd', { locale: pl })}–${format(we, 'd MMM yyyy', { locale: pl })}`,
+        start: format(ws, 'yyyy-MM-dd'),
+        end: format(we, 'yyyy-MM-dd'),
+      })
+    }
+    return options
+  }, [])
+
+  // Load executive config from DB
+  useEffect(() => {
+    if (execConfigLoaded || !user) return
+    ;(async () => {
+      const { data } = await (supabase as any)
+        .from('executive_report_configs')
+        .select('my_brand_id, competitor_brand_ids')
+        .eq('user_id', user.id)
+        .single()
+      if (data) {
+        setExecMyBrand(data.my_brand_id)
+        setExecCompetitors(data.competitor_brand_ids || [])
+      }
+      setExecConfigLoaded(true)
+    })()
+  }, [user, execConfigLoaded])
+
+  // Save executive config
+  const handleSaveExecConfig = async () => {
+    if (!user || !execMyBrand) return
+    setSavingExecConfig(true)
+    try {
+      const { error } = await (supabase as any)
+        .from('executive_report_configs')
+        .upsert({
+          user_id: user.id,
+          my_brand_id: execMyBrand,
+          competitor_brand_ids: execCompetitors,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' })
+      if (error) throw error
+      toast.success('Konfiguracja zapisana')
+    } catch (e: any) {
+      toast.error(e.message || 'Błąd zapisu konfiguracji')
+    } finally {
+      setSavingExecConfig(false)
+    }
+  }
+
+  const handleGenerateExec = () => {
+    if (!execMyBrand || execCompetitors.length === 0) {
+      toast.error('Wybierz markę i co najmniej jednego konkurenta')
+      return
+    }
+    const week = execWeekOptions[parseInt(execWeekIdx)]
+    if (!week) return
+    setExecReportParams({
+      myBrandId: execMyBrand,
+      competitorBrandIds: execCompetitors,
+      weekStart: week.start,
+      weekEnd: week.end,
+    })
+  }
+
+  const toggleExecCompetitor = (id: string) => {
+    setExecCompetitors(prev => {
+      if (prev.includes(id)) return prev.filter(c => c !== id)
+      if (prev.length >= 4) { toast.error('Maksymalnie 4 konkurentów'); return prev }
+      return [...prev, id]
+    })
+  }
 
   // Assign modal state
   const [showAssign, setShowAssign] = useState(false)
@@ -412,6 +503,9 @@ export default function AdminReportsPage() {
           </TabsTrigger>
           <TabsTrigger value="ranking" className="gap-2">
             <TrendingUp className="h-4 w-4" />Ranking marek
+          </TabsTrigger>
+          <TabsTrigger value="executive" className="gap-2">
+            <Briefcase className="h-4 w-4" />Raport zarządczy
           </TabsTrigger>
         </TabsList>
 
@@ -1067,6 +1161,110 @@ export default function AdminReportsPage() {
               dateTo={rankingOverrideDates?.to ?? computeDateRange(dateRangeType, specificMonth, specificYear).to}
               highlightBrandId={brandId === 'all' ? null : brandId}
             />
+          </div>
+        </TabsContent>
+
+        {/* ── Executive report tab ── */}
+        <TabsContent value="executive" className="mt-4">
+          <div className="grid lg:grid-cols-[320px_1fr] gap-6 items-start">
+            {/* Left: config */}
+            <Card className="no-print lg:sticky lg:top-6">
+              <CardHeader>
+                <CardTitle className="text-base">Konfiguracja raportu</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* My brand */}
+                <div className="space-y-2">
+                  <Label>Moja marka</Label>
+                  <Select value={execMyBrand} onValueChange={v => v && setExecMyBrand(v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Wybierz swoją markę" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(brands as any[]).map(b => (
+                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Competitors (multi-select as checkboxes) */}
+                <div className="space-y-2">
+                  <Label>Konkurenci <span className="text-muted-foreground font-normal text-xs">(maks. 4)</span></Label>
+                  <div className="space-y-0.5 max-h-48 overflow-y-auto border rounded-md p-1">
+                    {(brands as any[])
+                      .filter(b => b.id !== execMyBrand)
+                      .map(b => (
+                        <label key={b.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-2 py-1.5 rounded">
+                          <input
+                            type="checkbox"
+                            checked={execCompetitors.includes(b.id)}
+                            onChange={() => toggleExecCompetitor(b.id)}
+                            className="rounded flex-shrink-0"
+                          />
+                          <span className="truncate">{b.name}</span>
+                        </label>
+                      ))
+                    }
+                  </div>
+                  {execCompetitors.length > 0 && (
+                    <p className="text-xs text-muted-foreground">{execCompetitors.length}/4 wybranych</p>
+                  )}
+                </div>
+
+                {/* Week selector */}
+                <div className="space-y-2">
+                  <Label>Tydzień</Label>
+                  <Select value={execWeekIdx} onValueChange={v => v && setExecWeekIdx(v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {execWeekOptions.map(w => (
+                        <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Actions */}
+                <div className="space-y-2">
+                  <Button className="w-full" onClick={handleGenerateExec} disabled={!execMyBrand || execCompetitors.length === 0}>
+                    Generuj raport
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleSaveExecConfig}
+                    disabled={savingExecConfig || !execMyBrand}
+                  >
+                    {savingExecConfig
+                      ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Zapisuję...</>
+                      : <><Save className="h-4 w-4 mr-2" />Zapisz konfigurację</>
+                    }
+                  </Button>
+                </div>
+
+                {execReportParams && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    {(brands as any[]).find(b => b.id === execReportParams.myBrandId)?.name} · {execReportParams.weekStart} – {execReportParams.weekEnd}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Right: report */}
+            <div>
+              {execReportParams ? (
+                <ExecutiveReport {...execReportParams} />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-32 text-center text-muted-foreground border-2 border-dashed rounded-xl">
+                  <Briefcase className="h-16 w-16 mb-4 opacity-20" />
+                  <p className="text-lg font-medium">Wybierz markę, konkurentów i tydzień</p>
+                  <p className="text-sm mt-1 opacity-70">Raport zarządczy zostanie wyświetlony tutaj</p>
+                </div>
+              )}
+            </div>
           </div>
         </TabsContent>
       </Tabs>
