@@ -99,7 +99,7 @@ export default function DiscountStagingPage() {
     const [{ data: stagingData }, { data: brandsData }] = await Promise.all([
       supabase
         .from('discount_staging')
-        .select('*, brands(name, logo_url)')
+        .select('*, brands!left(name, logo_url)')
         .in('status', ['pending', 'rejected'])
         .order('created_at', { ascending: false }),
       supabase
