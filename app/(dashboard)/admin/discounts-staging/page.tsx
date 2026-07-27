@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle, ExternalLink, Coins, DatabaseZap } from 'lucide-react'
+import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle, ExternalLink, Coins, DatabaseZap, RefreshCw, PencilLine } from 'lucide-react'
 
 // ─── Admin Nav ────────────────────────────────────────────────────────────────
 
@@ -80,23 +80,76 @@ interface ExistingDiscount {
   percentage: number | null
   fixed_amount: number | null
   valid_from: string | null
+  valid_until: string | null
 }
+
+type StagingClass =
+  | { kind: 'new' }
+  | { kind: 'duplicate' }
+  | { kind: 'reissued'; prevUntil: string }
+  | { kind: 'changed'; dbPct: number | null; dbAmt: number | null; dbUntil: string | null }
 
 function normCode(c: string | null | undefined): string {
   return (c || '').trim().toUpperCase()
 }
 
-function isAlreadyInDiscounts(s: StagingDiscount, existing: ExistingDiscount[]): boolean {
-  if (!s.brand_id) return false
+function classifyStagingItem(s: StagingDiscount, existing: ExistingDiscount[], today: string): StagingClass {
+  if (!s.brand_id) return { kind: 'new' }
+
   const sc = normCode(s.code)
+  let matches: ExistingDiscount[]
   if (sc) {
-    return existing.some(e => e.brand_id === s.brand_id && normCode(e.code) === sc)
+    matches = existing.filter(e => e.brand_id === s.brand_id && normCode(e.code) === sc)
+  } else {
+    matches = existing.filter(e =>
+      e.brand_id === s.brand_id &&
+      e.percentage === s.percentage &&
+      (e.valid_from ?? null) === (s.valid_from ?? null)
+    )
   }
-  return existing.some(e =>
-    e.brand_id === s.brand_id &&
-    e.percentage === s.percentage &&
-    (e.valid_from ?? null) === (s.valid_from ?? null)
-  )
+
+  if (matches.length === 0) return { kind: 'new' }
+
+  const isActive = (m: ExistingDiscount) => m.valid_until == null || m.valid_until >= today
+  const activeMatches = matches.filter(isActive)
+  const expiredMatches = matches.filter(m => !isActive(m))
+
+  // B) REISSUED: all matches expired, staging is active
+  if (activeMatches.length === 0 && expiredMatches.length > 0) {
+    const stagingActive = s.valid_until == null || s.valid_until >= today
+    if (stagingActive) {
+      const sorted = [...expiredMatches].sort((a, b) => (b.valid_until || '').localeCompare(a.valid_until || ''))
+      return { kind: 'reissued', prevUntil: sorted[0].valid_until! }
+    }
+    return { kind: 'new' }
+  }
+
+  // Has active matches
+  if (activeMatches.length > 0) {
+    const best = activeMatches[0]
+    const samePct = best.percentage === s.percentage
+    const sameAmt = best.fixed_amount === s.fixed_amount
+
+    // staging valid_until is later than db?
+    const stagingLater = (() => {
+      const sv = s.valid_until
+      const dv = best.valid_until
+      if (sv == null && dv != null) return true   // bezterminowy > konkretna data
+      if (sv != null && dv == null) return false
+      if (sv == null && dv == null) return false
+      return sv! > dv!
+    })()
+
+    // A) DUPLICATE: same terms, staging not later
+    if (samePct && sameAmt && !stagingLater) {
+      return { kind: 'duplicate' }
+    }
+
+    // C) CHANGED: different terms or extended
+    return { kind: 'changed', dbPct: best.percentage, dbAmt: best.fixed_amount, dbUntil: best.valid_until }
+  }
+
+  return { kind: 'new' }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -110,7 +163,7 @@ export default function DiscountStagingPage() {
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
   const [brandSelections, setBrandSelections] = useState<Record<string, string>>({})
   const [kpi, setKpi] = useState({ pending: 0, acceptedToday: 0, rejectedToday: 0, alreadyInDb: 0 })
-  const [duplicateIds, setDuplicateIds] = useState<Set<string>>(new Set())
+  const [classMap, setClassMap] = useState<Record<string, StagingClass>>({})
 
   // Auth guard
   useEffect(() => {
@@ -136,7 +189,7 @@ export default function DiscountStagingPage() {
         .order('name'),
       supabase
         .from('discounts')
-        .select('brand_id, code, percentage, fixed_amount, valid_from')
+        .select('brand_id, code, percentage, fixed_amount, valid_from, valid_until')
         .eq('is_active', true),
     ])
 
@@ -151,23 +204,24 @@ export default function DiscountStagingPage() {
       return { ...row, brands: brand ? { name: brand.name, logo_url: brand.logo_url } : null } as StagingDiscount
     })
 
-    // Detect duplicates against final discounts table
-    const dupIds = new Set<string>()
+    // Classify pending items against final discounts table
+    const today = new Date().toISOString().slice(0, 10)
+    const cmap: Record<string, StagingClass> = {}
     for (const item of all) {
-      if (item.status === 'pending' && isAlreadyInDiscounts(item, existingDiscounts)) {
-        dupIds.add(item.id)
+      if (item.status === 'pending') {
+        cmap[item.id] = classifyStagingItem(item, existingDiscounts, today)
       }
     }
-    setDuplicateIds(dupIds)
+    setClassMap(cmap)
 
-    // Sort: pending (not dup) → pending (dup, "already in db") → rejected
-    const pendingNew = all.filter(i => i.status === 'pending' && !dupIds.has(i.id))
-    const pendingDup = all.filter(i => i.status === 'pending' && dupIds.has(i.id))
+    // Sort: changed/reissued (need attention) → new → duplicate (gray) → rejected
+    const changed = all.filter(i => i.status === 'pending' && (cmap[i.id]?.kind === 'changed' || cmap[i.id]?.kind === 'reissued'))
+    const newItems = all.filter(i => i.status === 'pending' && cmap[i.id]?.kind === 'new')
+    const dupes = all.filter(i => i.status === 'pending' && cmap[i.id]?.kind === 'duplicate')
     const rejected = all.filter(i => i.status === 'rejected')
-    setItems([...pendingNew, ...pendingDup, ...rejected])
+    setItems([...changed, ...newItems, ...dupes, ...rejected])
 
     // KPI
-    const today = new Date().toISOString().slice(0, 10)
     const { count: acceptedToday } = await supabase
       .from('discount_staging')
       .select('*', { count: 'exact', head: true })
@@ -181,8 +235,8 @@ export default function DiscountStagingPage() {
       .gte('reviewed_at', today)
 
     setKpi({
-      pending: pendingNew.length,
-      alreadyInDb: dupIds.size,
+      pending: changed.length + newItems.length,
+      alreadyInDb: dupes.length,
       acceptedToday: acceptedToday || 0,
       rejectedToday: rejectedToday || 0,
     })
@@ -340,7 +394,10 @@ export default function DiscountStagingPage() {
         <div className="space-y-3">
           {items.map((item) => {
             const isRejected = item.status === 'rejected'
-            const isDuplicate = duplicateIds.has(item.id)
+            const cls = classMap[item.id] || { kind: 'new' as const }
+            const isDuplicate = cls.kind === 'duplicate'
+            const isReissued = cls.kind === 'reissued'
+            const isChanged = cls.kind === 'changed'
             const isLoading = actionLoading[item.id]
             const hasBrand = !!item.brand_id
             const isGrayed = isRejected || isDuplicate
@@ -371,6 +428,18 @@ export default function DiscountStagingPage() {
                             Już w bazie
                           </Badge>
                         )}
+                        {isReissued && (
+                          <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px] px-1.5">
+                            <RefreshCw className="h-3 w-3 mr-0.5" />
+                            Wznowiony
+                          </Badge>
+                        )}
+                        {isChanged && (
+                          <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px] px-1.5">
+                            <PencilLine className="h-3 w-3 mr-0.5" />
+                            Zmienione warunki
+                          </Badge>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-1.5">
@@ -381,7 +450,7 @@ export default function DiscountStagingPage() {
                             nierozpoznana
                           </Badge>
                         </div>
-                        {!isRejected && !isDuplicate && (
+                        {!isRejected && !isGrayed && (
                           <Select
                             value={brandSelections[item.id] || ''}
                             onValueChange={(v) => v && handleAssignBrand(item.id, v)}
@@ -482,7 +551,7 @@ export default function DiscountStagingPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                  <div className="flex-shrink-0 flex flex-col items-end gap-1.5 max-w-[220px]">
                     {item.status === 'pending' && !isDuplicate && (
                       <div className="flex items-center gap-2">
                         <Button
@@ -506,9 +575,20 @@ export default function DiscountStagingPage() {
                       </div>
                     )}
                     {isDuplicate && (
-                      <div className="text-[10px] text-muted-foreground text-right max-w-[180px]">
+                      <div className="text-[10px] text-muted-foreground text-right">
                         Rabat o tym kodzie istnieje już w{' '}
                         <Link href="/admin/discounts" className="underline hover:text-foreground">Rabatach</Link>
+                      </div>
+                    )}
+                    {isReissued && cls.kind === 'reissued' && (
+                      <div className="text-[10px] text-muted-foreground text-right">
+                        Kod istniał wcześniej, ważny do {cls.prevUntil} — marka wznowiła promocję
+                      </div>
+                    )}
+                    {isChanged && cls.kind === 'changed' && (
+                      <div className="text-[10px] text-muted-foreground text-right">
+                        W bazie: {cls.dbPct != null ? `-${cls.dbPct}%` : cls.dbAmt != null ? `${cls.dbAmt} zł` : 'benefit'} do {cls.dbUntil || 'bezterminowy'}.
+                        {' '}Nowa oferta: {item.percentage != null ? `-${item.percentage}%` : item.fixed_amount != null ? `${item.fixed_amount} zł` : 'benefit'} do {item.valid_until || 'bezterminowy'}
                       </div>
                     )}
                     {item.status === 'rejected' && (
