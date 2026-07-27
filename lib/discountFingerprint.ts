@@ -62,3 +62,28 @@ export function buildDiscountFingerprint(r: FingerprintInput): string {
   const raw = parts.join('|')
   return createHash('md5').update(raw).digest('hex')
 }
+
+interface CoreFingerprintInput {
+  brand_name_raw: string | null
+  code: string | null
+  percentage: number | null
+  fixed_amount: number | null
+}
+
+/**
+ * Core fingerprint for cross-source dedup (WWW ↔ social).
+ * Only computed when code is non-empty. Returns null otherwise.
+ * Formula: md5(brand | code | percentage | fixed_amount)
+ */
+export function buildCoreFingerprint(r: CoreFingerprintInput): string | null {
+  const code = normCode(r.code)
+  if (!code) return null
+  const parts = [
+    normBrand(r.brand_name_raw),
+    code,
+    normNum(r.percentage),
+    normNum(r.fixed_amount),
+  ]
+  const raw = parts.join('|')
+  return createHash('md5').update(raw).digest('hex')
+}

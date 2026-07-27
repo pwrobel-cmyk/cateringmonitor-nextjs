@@ -1820,6 +1820,7 @@ export default function Scrapers() {
         {[
           { href: '/admin/discounts', label: 'Rabaty' },
           { href: '/admin/discounts-staging', label: 'Rabaty techniczne' },
+          { href: '/admin/social-sources', label: 'Źródła social' },
           { href: '/admin/prices', label: 'Ceny' },
           { href: '/admin/reviews', label: 'Opinie' },
           { href: '/admin/scrapers', label: 'Scrapery' },

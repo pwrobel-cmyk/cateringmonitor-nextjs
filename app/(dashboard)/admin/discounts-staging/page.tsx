@@ -13,13 +13,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle, ExternalLink, Coins, DatabaseZap, RefreshCw, PencilLine } from 'lucide-react'
+import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle, ExternalLink, Coins, DatabaseZap, RefreshCw, PencilLine, ChevronDown, ChevronUp, Image } from 'lucide-react'
 
 // ─── Admin Nav ────────────────────────────────────────────────────────────────
 
 const adminLinks = [
   { href: '/admin/discounts', label: 'Rabaty' },
   { href: '/admin/discounts-staging', label: 'Rabaty techniczne' },
+  { href: '/admin/social-sources', label: 'Źródła social' },
   { href: '/admin/prices', label: 'Ceny' },
   { href: '/admin/reviews', label: 'Opinie' },
   { href: '/admin/scrapers', label: 'Scrapery' },
@@ -71,6 +72,20 @@ interface StagingDiscount {
   accepted_discount_id: string | null
   created_at: string
   brands: { name: string; logo_url: string | null } | null
+  // Social fields
+  source_platform: string | null
+  source_type: string | null
+  source_name: string | null
+  source_profile_url: string | null
+  post_url: string | null
+  post_published_at: string | null
+  is_official: boolean | null
+  source_text: string | null
+  ocr_text: string | null
+  screenshot_url: string | null
+  // Grouping
+  core_fingerprint: string | null
+  related_staging_id: string | null
 }
 
 interface Brand {
@@ -222,6 +237,69 @@ function formToOverrides(f: AcceptForm) {
   }
 }
 
+// ─── Grouping helpers ─────────────────────────────────────────────────────────
+
+function richness(s: StagingDiscount): number {
+  let count = 0
+  if (s.code) count++
+  if (s.percentage != null) count++
+  if (s.fixed_amount != null) count++
+  if (s.valid_from) count++
+  if (s.valid_until) count++
+  if (s.min_days != null || s.max_days != null) count++
+  if (s.min_order_value != null) count++
+  if (s.requirements) count++
+  if (s.exclusions_limits) count++
+  return count
+}
+
+interface GroupedItem {
+  primary: StagingDiscount
+  related: StagingDiscount[]
+}
+
+function groupItems(items: StagingDiscount[]): GroupedItem[] {
+  // Build map of related items by core_fingerprint
+  const coreGroups = new Map<string, StagingDiscount[]>()
+  const standalone: StagingDiscount[] = []
+  const linkedIds = new Set<string>()
+
+  // Collect all items that have a related_staging_id or are pointed to
+  for (const item of items) {
+    if (item.related_staging_id) linkedIds.add(item.id)
+  }
+  for (const item of items) {
+    if (linkedIds.has(item.id) || item.related_staging_id) {
+      // Part of a group — use core_fingerprint to group
+      const key = item.core_fingerprint
+      if (key) {
+        const group = coreGroups.get(key) || []
+        group.push(item)
+        coreGroups.set(key, group)
+      } else {
+        standalone.push(item)
+      }
+    } else {
+      standalone.push(item)
+    }
+  }
+
+  const result: GroupedItem[] = []
+
+  // Process groups — pick richest as primary
+  for (const group of coreGroups.values()) {
+    const sorted = [...group].sort((a, b) => richness(b) - richness(a))
+    result.push({ primary: sorted[0], related: sorted.slice(1) })
+  }
+
+  // Add standalone items
+  for (const item of standalone) {
+    result.push({ primary: item, related: [] })
+  }
+
+  return result
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DiscountStagingPage() {
@@ -234,6 +312,10 @@ export default function DiscountStagingPage() {
   const [brandSelections, setBrandSelections] = useState<Record<string, string>>({})
   const [kpi, setKpi] = useState({ pending: 0, acceptedToday: 0, rejectedToday: 0, alreadyInDb: 0 })
   const [classMap, setClassMap] = useState<Record<string, StagingClass>>({})
+
+  // Grouping and social display state
+  const [expandedTexts, setExpandedTexts] = useState<Set<string>>(new Set())
+  const [screenshotModal, setScreenshotModal] = useState<string | null>(null)
 
   // Accept modal state
   const [acceptItem, setAcceptItem] = useState<StagingDiscount | null>(null)
@@ -523,7 +605,7 @@ export default function DiscountStagingPage() {
       {/* Discount list */}
       {!loading && items.length > 0 && (
         <div className="space-y-3">
-          {items.map((item) => {
+          {groupItems(items).map(({ primary: item, related }) => {
             const isRejected = item.status === 'rejected'
             const cls = classMap[item.id] || { kind: 'new' as const }
             const isDuplicate = cls.kind === 'duplicate'
@@ -534,6 +616,7 @@ export default function DiscountStagingPage() {
             const isGrayed = isRejected || isDuplicate
 
             return (
+              <div key={item.id}>
               <Card
                 key={item.id}
                 className={`transition-all duration-300 ${isGrayed ? 'opacity-50 grayscale' : ''}`}
@@ -665,20 +748,75 @@ export default function DiscountStagingPage() {
                         Kanały: {item.communication_channels}
                       </div>
                     )}
-                    {/* Source & import date */}
-                    <div className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
-                      {item.source && <span>Źródło: {item.source}</span>}
-                      {item.source && item.created_at && <span> · </span>}
-                      {item.created_at && <span>Import: {new Date(item.created_at).toLocaleDateString('pl-PL')}</span>}
-                      {item.source_url && (
-                        <>
-                          <span> · </span>
-                          <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 hover:underline">
-                            URL<ExternalLink className="h-2.5 w-2.5" />
-                          </a>
-                        </>
-                      )}
-                    </div>
+                    {/* Source info */}
+                    {item.source_platform ? (
+                      <div className="space-y-0.5">
+                        <div className="text-[10px] text-muted-foreground/60 flex items-center gap-1 flex-wrap">
+                          <span className="capitalize font-medium">{item.source_platform}</span>
+                          {item.source_type && <span>/ {item.source_type}</span>}
+                          {item.source_name && <span>· {item.source_name}</span>}
+                          {item.is_official != null && (
+                            <Badge variant={item.is_official ? 'default' : 'outline'} className="text-[8px] px-1 py-0">
+                              {item.is_official ? 'Oficjalne' : 'Nieoficjalne'}
+                            </Badge>
+                          )}
+                          {item.post_published_at && <span>· {new Date(item.post_published_at).toLocaleDateString('pl-PL')}</span>}
+                          {item.post_url && (
+                            <a href={item.post_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 hover:underline text-primary">
+                              Otwórz post<ExternalLink className="h-2.5 w-2.5" />
+                            </a>
+                          )}
+                        </div>
+                        {(item.source_text || item.ocr_text) && (
+                          <div>
+                            <button
+                              className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                              onClick={() => setExpandedTexts(prev => {
+                                const next = new Set(prev)
+                                next.has(item.id) ? next.delete(item.id) : next.add(item.id)
+                                return next
+                              })}
+                            >
+                              {expandedTexts.has(item.id) ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                              {item.source_text ? 'Tekst posta' : 'OCR'}
+                            </button>
+                            {expandedTexts.has(item.id) && (
+                              <div className="mt-1 space-y-1">
+                                {item.source_text && (
+                                  <div className="text-[10px] text-muted-foreground bg-muted/50 rounded p-2 max-h-24 overflow-y-auto whitespace-pre-wrap">
+                                    {item.source_text}
+                                  </div>
+                                )}
+                                {item.ocr_text && (
+                                  <div className="text-[10px] text-muted-foreground bg-muted/50 rounded p-2 max-h-24 overflow-y-auto whitespace-pre-wrap">
+                                    <span className="font-medium">OCR:</span> {item.ocr_text}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {item.screenshot_url && (
+                          <button onClick={() => setScreenshotModal(item.screenshot_url)} className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline">
+                            <Image className="h-3 w-3" />Screenshot
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
+                        {item.source && <span>Źródło: {item.source}</span>}
+                        {item.source && item.created_at && <span> · </span>}
+                        {item.created_at && <span>Import: {new Date(item.created_at).toLocaleDateString('pl-PL')}</span>}
+                        {item.source_url && (
+                          <>
+                            <span> · </span>
+                            <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 hover:underline">
+                              URL<ExternalLink className="h-2.5 w-2.5" />
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -735,6 +873,50 @@ export default function DiscountStagingPage() {
                   </div>
                 </CardContent>
               </Card>
+              {/* Related items (grouped by core_fingerprint) */}
+              {related.length > 0 && (
+                <div className="ml-6 mt-1 space-y-1">
+                  <div className="text-[10px] text-muted-foreground font-medium">
+                    Wykryto w: {[item, ...related].map(r =>
+                      r.source_platform
+                        ? `${r.source_platform}${r.source_name ? `/${r.source_name}` : ''}`
+                        : (r.source || 'WWW')
+                    ).join(' + ')}
+                  </div>
+                  {related.map(rel => (
+                    <Card key={rel.id} className="opacity-60">
+                      <CardContent className="py-2 px-4 text-xs text-muted-foreground space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[8px] px-1">
+                            {rel.source_platform ? `${rel.source_platform}/${rel.source_type || ''}` : (rel.source || 'WWW')}
+                          </Badge>
+                          {rel.source_name && <span>{rel.source_name}</span>}
+                          {rel.post_url && (
+                            <a href={rel.post_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
+                              Post<ExternalLink className="h-2.5 w-2.5" />
+                            </a>
+                          )}
+                          {rel.source_url && !rel.post_url && (
+                            <a href={rel.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
+                              URL<ExternalLink className="h-2.5 w-2.5" />
+                            </a>
+                          )}
+                          {rel.post_published_at && <span>· {new Date(rel.post_published_at).toLocaleDateString('pl-PL')}</span>}
+                          {rel.screenshot_url && (
+                            <button onClick={() => setScreenshotModal(rel.screenshot_url)} className="inline-flex items-center gap-0.5 text-primary hover:underline">
+                              <Image className="h-2.5 w-2.5" />
+                            </button>
+                          )}
+                        </div>
+                        {rel.source_text && (
+                          <div className="bg-muted/50 rounded p-1.5 max-h-16 overflow-y-auto whitespace-pre-wrap text-[10px]">{rel.source_text}</div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+              </div>
             )
           })}
         </div>
@@ -957,6 +1139,14 @@ export default function DiscountStagingPage() {
               </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Screenshot modal */}
+      {screenshotModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setScreenshotModal(null)}>
+          <div className="absolute inset-0 bg-black/70" />
+          <img src={screenshotModal} alt="Screenshot" className="relative max-w-[90vw] max-h-[90vh] object-contain rounded shadow-xl" />
         </div>
       )}
     </div>

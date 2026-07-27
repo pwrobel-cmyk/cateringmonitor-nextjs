@@ -471,6 +471,11 @@ export default function AdminDiscountsPage() {
             Rabaty techniczne
           </Button>
         </Link>
+        <Link href="/admin/social-sources">
+          <Button variant={pathname === '/admin/social-sources' ? 'default' : 'outline'} size="sm">
+            Źródła social
+          </Button>
+        </Link>
         <Link href="/admin/prices">
           <Button variant={pathname === '/admin/prices' ? 'default' : 'outline'} size="sm">
             Ceny

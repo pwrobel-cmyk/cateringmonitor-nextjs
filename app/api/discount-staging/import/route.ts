@@ -1,5 +1,5 @@
 import { createClient as createServiceClient } from '@supabase/supabase-js'
-import { buildDiscountFingerprint } from '@/lib/discountFingerprint'
+import { buildDiscountFingerprint, buildCoreFingerprint } from '@/lib/discountFingerprint'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -24,6 +24,18 @@ interface ImportRecord {
   source_url?: string | null
   import_batch_id?: string | null
   fingerprint?: string | null
+  // Social source fields (all optional — WWW import works without them)
+  source_platform?: string | null
+  source_type?: string | null
+  source_name?: string | null
+  source_profile_url?: string | null
+  post_url?: string | null
+  post_published_at?: string | null
+  is_official?: boolean | null
+  source_text?: string | null
+  ocr_text?: string | null
+  screenshot_url?: string | null
+  social_source_id?: string | null
 }
 
 interface ImportError {
@@ -122,6 +134,11 @@ export async function POST(request: Request) {
     if (!isDateOrNull(r.valid_from)) reasons.push('valid_from: format YYYY-MM-DD')
     if (!isDateOrNull(r.valid_until)) reasons.push('valid_until: format YYYY-MM-DD')
 
+    // social validation: if source_platform=facebook then post_url required
+    if (r.source_platform === 'facebook' && (!r.post_url || !r.post_url.trim())) {
+      reasons.push('post_url wymagany dla source_platform=facebook')
+    }
+
     if (reasons.length > 0) {
       errors.push({ index: i, reason: reasons.join('; ') })
       continue
@@ -139,6 +156,14 @@ export async function POST(request: Request) {
       max_days: r.max_days != null ? Number(r.max_days) : null,
       min_order_value: r.min_order_value != null ? Number(r.min_order_value) : null,
       requirements: r.requirements ?? null,
+    })
+
+    // Compute core fingerprint (only when code is non-empty)
+    const coreComputed = buildCoreFingerprint({
+      brand_name_raw: r.brand_name_raw,
+      code: r.code ?? null,
+      percentage: r.percentage != null ? Number(r.percentage) : null,
+      fixed_amount: r.fixed_amount != null ? Number(r.fixed_amount) : null,
     })
 
     // Verify provided fingerprint if present
@@ -177,6 +202,19 @@ export async function POST(request: Request) {
       source_url: r.source_url?.trim() || null,
       import_batch_id: r.import_batch_id || null,
       fingerprint: computed,
+      core_fingerprint: coreComputed,
+      // Social source fields
+      source_platform: r.source_platform?.trim() || null,
+      source_type: r.source_type?.trim() || null,
+      source_name: r.source_name?.trim() || null,
+      source_profile_url: r.source_profile_url?.trim() || null,
+      post_url: r.post_url?.trim() || null,
+      post_published_at: r.post_published_at || null,
+      is_official: r.is_official ?? null,
+      source_text: r.source_text?.trim() || null,
+      ocr_text: r.ocr_text?.trim() || null,
+      screenshot_url: r.screenshot_url?.trim() || null,
+      social_source_id: r.social_source_id || null,
     })
   }
 
@@ -188,7 +226,7 @@ export async function POST(request: Request) {
   const { data: upserted, error: upsertErr } = await service
     .from('discount_staging')
     .upsert(validRows, { onConflict: 'fingerprint', ignoreDuplicates: true })
-    .select('id')
+    .select('id, core_fingerprint')
 
   if (upsertErr) {
     return Response.json({ error: upsertErr.message }, { status: 500 })
@@ -196,6 +234,28 @@ export async function POST(request: Request) {
 
   const insertedCount = upserted?.length ?? 0
   const duplicates = validRows.length - insertedCount
+
+  // Link inserted records to existing ones by core_fingerprint
+  if (upserted && upserted.length > 0) {
+    const coreIds = upserted.filter((r: any) => r.core_fingerprint != null)
+    for (const row of coreIds) {
+      const { data: related } = await service
+        .from('discount_staging')
+        .select('id')
+        .eq('core_fingerprint', row.core_fingerprint)
+        .in('status', ['pending', 'accepted'])
+        .neq('id', row.id)
+        .order('created_at', { ascending: true })
+        .limit(1)
+
+      if (related && related.length > 0) {
+        await service
+          .from('discount_staging')
+          .update({ related_staging_id: related[0].id })
+          .eq('id', row.id)
+      }
+    }
+  }
 
   return Response.json({ inserted: insertedCount, duplicates, errors })
 }
