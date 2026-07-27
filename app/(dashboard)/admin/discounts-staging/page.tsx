@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle, ExternalLink, Coins } from 'lucide-react'
+import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle, ExternalLink, Coins, DatabaseZap } from 'lucide-react'
 
 // ─── Admin Nav ────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,31 @@ interface Brand {
   logo_url: string | null
 }
 
+interface ExistingDiscount {
+  brand_id: string | null
+  code: string
+  percentage: number | null
+  fixed_amount: number | null
+  valid_from: string | null
+}
+
+function normCode(c: string | null | undefined): string {
+  return (c || '').trim().toUpperCase()
+}
+
+function isAlreadyInDiscounts(s: StagingDiscount, existing: ExistingDiscount[]): boolean {
+  if (!s.brand_id) return false
+  const sc = normCode(s.code)
+  if (sc) {
+    return existing.some(e => e.brand_id === s.brand_id && normCode(e.code) === sc)
+  }
+  return existing.some(e =>
+    e.brand_id === s.brand_id &&
+    e.percentage === s.percentage &&
+    (e.valid_from ?? null) === (s.valid_from ?? null)
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DiscountStagingPage() {
@@ -84,7 +109,8 @@ export default function DiscountStagingPage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
   const [brandSelections, setBrandSelections] = useState<Record<string, string>>({})
-  const [kpi, setKpi] = useState({ pending: 0, acceptedToday: 0, rejectedToday: 0 })
+  const [kpi, setKpi] = useState({ pending: 0, acceptedToday: 0, rejectedToday: 0, alreadyInDb: 0 })
+  const [duplicateIds, setDuplicateIds] = useState<Set<string>>(new Set())
 
   // Auth guard
   useEffect(() => {
@@ -97,7 +123,7 @@ export default function DiscountStagingPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
 
-    const [{ data: stagingData }, { data: brandsData }] = await Promise.all([
+    const [{ data: stagingData }, { data: brandsData }, { data: discountsData }] = await Promise.all([
       supabase
         .from('discount_staging')
         .select('*')
@@ -108,10 +134,15 @@ export default function DiscountStagingPage() {
         .select('id, name, logo_url')
         .eq('is_active', true)
         .order('name'),
+      supabase
+        .from('discounts')
+        .select('brand_id, code, percentage, fixed_amount, valid_from')
+        .eq('is_active', true),
     ])
 
     const brandsList = (brandsData || []) as Brand[]
     setBrands(brandsList)
+    const existingDiscounts = (discountsData || []) as ExistingDiscount[]
 
     // Join brands in JS (no FK on discount_staging → brands)
     const brandById = new Map(brandsList.map(b => [b.id, b]))
@@ -120,18 +151,23 @@ export default function DiscountStagingPage() {
       return { ...row, brands: brand ? { name: brand.name, logo_url: brand.logo_url } : null } as StagingDiscount
     })
 
-    // Sort: pending first, then rejected at bottom
-    const pending = all.filter(i => i.status === 'pending')
+    // Detect duplicates against final discounts table
+    const dupIds = new Set<string>()
+    for (const item of all) {
+      if (item.status === 'pending' && isAlreadyInDiscounts(item, existingDiscounts)) {
+        dupIds.add(item.id)
+      }
+    }
+    setDuplicateIds(dupIds)
+
+    // Sort: pending (not dup) → pending (dup, "already in db") → rejected
+    const pendingNew = all.filter(i => i.status === 'pending' && !dupIds.has(i.id))
+    const pendingDup = all.filter(i => i.status === 'pending' && dupIds.has(i.id))
     const rejected = all.filter(i => i.status === 'rejected')
-    setItems([...pending, ...rejected])
+    setItems([...pendingNew, ...pendingDup, ...rejected])
 
     // KPI
     const today = new Date().toISOString().slice(0, 10)
-    const { count: pendingCount } = await supabase
-      .from('discount_staging')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending')
-
     const { count: acceptedToday } = await supabase
       .from('discount_staging')
       .select('*', { count: 'exact', head: true })
@@ -145,7 +181,8 @@ export default function DiscountStagingPage() {
       .gte('reviewed_at', today)
 
     setKpi({
-      pending: pendingCount || 0,
+      pending: pendingNew.length,
+      alreadyInDb: dupIds.size,
       acceptedToday: acceptedToday || 0,
       rejectedToday: rejectedToday || 0,
     })
@@ -243,13 +280,22 @@ export default function DiscountStagingPage() {
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-4 gap-4 mb-8">
         <Card>
           <CardContent className="pt-4 pb-4 flex items-center gap-3">
             <Clock className="h-5 w-5 text-amber-500" />
             <div>
               <div className="text-2xl font-bold">{kpi.pending}</div>
               <div className="text-xs text-muted-foreground">Oczekujące</div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-4 flex items-center gap-3">
+            <DatabaseZap className="h-5 w-5 text-blue-500" />
+            <div>
+              <div className="text-2xl font-bold">{kpi.alreadyInDb}</div>
+              <div className="text-xs text-muted-foreground">Już w bazie</div>
             </div>
           </CardContent>
         </Card>
@@ -294,27 +340,37 @@ export default function DiscountStagingPage() {
         <div className="space-y-3">
           {items.map((item) => {
             const isRejected = item.status === 'rejected'
+            const isDuplicate = duplicateIds.has(item.id)
             const isLoading = actionLoading[item.id]
             const hasBrand = !!item.brand_id
+            const isGrayed = isRejected || isDuplicate
 
             return (
               <Card
                 key={item.id}
-                className={`transition-all duration-300 ${isRejected ? 'opacity-50 grayscale' : ''}`}
+                className={`transition-all duration-300 ${isGrayed ? 'opacity-50 grayscale' : ''}`}
               >
                 <CardContent className="py-4 flex items-center gap-4">
                   {/* Brand logo / name */}
                   <div className="flex-shrink-0 w-48">
                     {hasBrand && item.brands ? (
-                      <div className="flex items-center gap-2">
-                        {item.brands.logo_url ? (
-                          <img src={item.brands.logo_url} alt="" className="h-8 w-8 rounded object-contain" />
-                        ) : (
-                          <div className="h-8 w-8 rounded bg-muted flex items-center justify-center text-xs font-bold">
-                            {item.brands.name.charAt(0)}
-                          </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          {item.brands.logo_url ? (
+                            <img src={item.brands.logo_url} alt="" className="h-8 w-8 rounded object-contain" />
+                          ) : (
+                            <div className="h-8 w-8 rounded bg-muted flex items-center justify-center text-xs font-bold">
+                              {item.brands.name.charAt(0)}
+                            </div>
+                          )}
+                          <span className="font-medium text-sm truncate">{item.brands.name}</span>
+                        </div>
+                        {isDuplicate && (
+                          <Badge variant="outline" className="text-blue-600 border-blue-300 text-[10px] px-1.5">
+                            <DatabaseZap className="h-3 w-3 mr-0.5" />
+                            Już w bazie
+                          </Badge>
                         )}
-                        <span className="font-medium text-sm truncate">{item.brands.name}</span>
                       </div>
                     ) : (
                       <div className="space-y-1.5">
@@ -325,7 +381,7 @@ export default function DiscountStagingPage() {
                             nierozpoznana
                           </Badge>
                         </div>
-                        {!isRejected && (
+                        {!isRejected && !isDuplicate && (
                           <Select
                             value={brandSelections[item.id] || ''}
                             onValueChange={(v) => v && handleAssignBrand(item.id, v)}
@@ -426,9 +482,9 @@ export default function DiscountStagingPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex-shrink-0 flex items-center gap-2">
-                    {item.status === 'pending' && (
-                      <>
+                  <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                    {item.status === 'pending' && !isDuplicate && (
+                      <div className="flex items-center gap-2">
                         <Button
                           size="sm"
                           disabled={isLoading}
@@ -447,7 +503,13 @@ export default function DiscountStagingPage() {
                           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4 mr-1" />}
                           Odrzuć
                         </Button>
-                      </>
+                      </div>
+                    )}
+                    {isDuplicate && (
+                      <div className="text-[10px] text-muted-foreground text-right max-w-[180px]">
+                        Rabat o tym kodzie istnieje już w{' '}
+                        <Link href="/admin/discounts" className="underline hover:text-foreground">Rabatach</Link>
+                      </div>
                     )}
                     {item.status === 'rejected' && (
                       <Button
