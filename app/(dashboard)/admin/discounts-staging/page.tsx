@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle } from 'lucide-react'
+import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle, ExternalLink, Coins } from 'lucide-react'
 
 // ─── Admin Nav ────────────────────────────────────────────────────────────────
 
@@ -46,12 +46,19 @@ interface StagingDiscount {
   brand_id: string | null
   code: string | null
   percentage: number | null
+  fixed_amount: number | null
   description: string | null
   valid_from: string | null
   valid_until: string | null
   min_days: number | null
+  max_days: number | null
+  min_order_value: number | null
   requirements: string | null
+  exclusions_limits: string | null
+  communication_channels: string | null
+  is_cashback: boolean
   source: string | null
+  source_url: string | null
   import_batch_id: string | null
   status: 'pending' | 'accepted' | 'rejected'
   reviewed_by: string | null
@@ -338,12 +345,19 @@ export default function DiscountStagingPage() {
                     )}
                   </div>
 
-                  {/* Percentage badge */}
-                  <div className="flex-shrink-0 w-16">
+                  {/* Percentage / amount badge */}
+                  <div className="flex-shrink-0 w-20">
                     {item.percentage != null ? (
                       <Badge className="text-base px-2.5 py-0.5">-{item.percentage}%</Badge>
+                    ) : item.fixed_amount != null ? (
+                      <Badge variant="secondary" className="text-base px-2.5 py-0.5">{item.fixed_amount} zł</Badge>
                     ) : (
                       <span className="text-muted-foreground text-sm">—</span>
+                    )}
+                    {item.is_cashback && (
+                      <Badge variant="outline" className="text-[10px] mt-1 flex items-center gap-0.5 w-fit">
+                        <Coins className="h-3 w-3" />cashback
+                      </Badge>
                     )}
                   </div>
 
@@ -353,13 +367,28 @@ export default function DiscountStagingPage() {
                     <div className="text-xs text-muted-foreground">
                       {item.valid_from || '—'} – {item.valid_until || 'bezterminowy'}
                     </div>
-                    {/* Extra info */}
-                    {item.min_days != null && (
-                      <div className="text-xs text-muted-foreground">min. {item.min_days} dni</div>
+                    {/* Days range */}
+                    {(item.min_days != null || item.max_days != null) && (
+                      <div className="text-xs text-muted-foreground">
+                        {item.min_days != null && item.max_days != null
+                          ? `${item.min_days}–${item.max_days} dni`
+                          : item.min_days != null
+                            ? `min. ${item.min_days} dni`
+                            : `max. ${item.max_days} dni`}
+                      </div>
+                    )}
+                    {/* Min order value */}
+                    {item.min_order_value != null && (
+                      <div className="text-xs text-muted-foreground">min. zamówienie: {item.min_order_value} zł</div>
                     )}
                     {item.requirements && (
                       <div className="text-xs text-muted-foreground truncate" title={item.requirements}>
                         {item.requirements}
+                      </div>
+                    )}
+                    {item.exclusions_limits && (
+                      <div className="text-xs text-muted-foreground truncate" title={item.exclusions_limits}>
+                        Wykluczenia: {item.exclusions_limits}
                       </div>
                     )}
                     {item.description && (
@@ -367,11 +396,24 @@ export default function DiscountStagingPage() {
                         {item.description}
                       </div>
                     )}
+                    {item.communication_channels && (
+                      <div className="text-xs text-muted-foreground truncate">
+                        Kanały: {item.communication_channels}
+                      </div>
+                    )}
                     {/* Source & import date */}
-                    <div className="text-[10px] text-muted-foreground/60">
+                    <div className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
                       {item.source && <span>Źródło: {item.source}</span>}
                       {item.source && item.created_at && <span> · </span>}
                       {item.created_at && <span>Import: {new Date(item.created_at).toLocaleDateString('pl-PL')}</span>}
+                      {item.source_url && (
+                        <>
+                          <span> · </span>
+                          <a href={item.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 hover:underline">
+                            URL<ExternalLink className="h-2.5 w-2.5" />
+                          </a>
+                        </>
+                      )}
                     </div>
                   </div>
 
