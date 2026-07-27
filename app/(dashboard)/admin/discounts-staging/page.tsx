@@ -71,6 +71,7 @@ interface StagingDiscount {
 interface Brand {
   id: string
   name: string
+  logo_url: string | null
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -99,18 +100,25 @@ export default function DiscountStagingPage() {
     const [{ data: stagingData }, { data: brandsData }] = await Promise.all([
       supabase
         .from('discount_staging')
-        .select('*, brands!left(name, logo_url)')
+        .select('*')
         .in('status', ['pending', 'rejected'])
         .order('created_at', { ascending: false }),
       supabase
         .from('brands')
-        .select('id, name')
+        .select('id, name, logo_url')
         .eq('is_active', true)
         .order('name'),
     ])
 
-    const all = (stagingData || []) as StagingDiscount[]
-    setBrands((brandsData || []) as Brand[])
+    const brandsList = (brandsData || []) as Brand[]
+    setBrands(brandsList)
+
+    // Join brands in JS (no FK on discount_staging → brands)
+    const brandById = new Map(brandsList.map(b => [b.id, b]))
+    const all = ((stagingData || []) as Array<Omit<StagingDiscount, 'brands'>>).map(row => {
+      const brand = row.brand_id ? brandById.get(row.brand_id) : null
+      return { ...row, brands: brand ? { name: brand.name, logo_url: brand.logo_url } : null } as StagingDiscount
+    })
 
     // Sort: pending first, then rejected at bottom
     const pending = all.filter(i => i.status === 'pending')
@@ -208,7 +216,7 @@ export default function DiscountStagingPage() {
       const brand = brands.find(b => b.id === brandId)
       setItems(prev => prev.map(i =>
         i.id === stagingId
-          ? { ...i, brand_id: brandId, brands: brand ? { name: brand.name, logo_url: null } : null }
+          ? { ...i, brand_id: brandId, brands: brand ? { name: brand.name, logo_url: brand.logo_url } : null }
           : i
       ))
       toast.success('Marka przypisana')
