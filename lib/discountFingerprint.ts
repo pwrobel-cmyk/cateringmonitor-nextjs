@@ -18,6 +18,8 @@ function normBrand(v: string | null | undefined): string {
   return v
     .trim()
     .toLowerCase()
+    .replace(/ł/g, 'l')
+    .replace(/Ł/g, 'L')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
