@@ -360,7 +360,7 @@ export default function DiscountStagingPage() {
                     ) : item.fixed_amount != null ? (
                       <Badge variant="secondary" className="text-base px-2.5 py-0.5">{item.fixed_amount} zł</Badge>
                     ) : (
-                      <span className="text-muted-foreground text-sm">—</span>
+                      <Badge variant="secondary" className="text-sm px-2.5 py-0.5">benefit</Badge>
                     )}
                     {item.is_cashback && (
                       <Badge variant="outline" className="text-[10px] mt-1 flex items-center gap-0.5 w-fit">

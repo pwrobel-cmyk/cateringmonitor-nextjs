@@ -106,9 +106,9 @@ export async function POST(request: Request) {
       reasons.push('brand_name_raw wymagane (niepusty string)')
     }
 
-    // percentage or fixed_amount required
-    if (r.percentage == null && r.fixed_amount == null) {
-      reasons.push('percentage lub fixed_amount wymagane')
+    // at least one value indicator required: percentage, fixed_amount, or requirements
+    if (r.percentage == null && r.fixed_amount == null && (!r.requirements || !r.requirements.trim())) {
+      reasons.push('percentage, fixed_amount lub requirements wymagane')
     }
 
     // numeric validation
