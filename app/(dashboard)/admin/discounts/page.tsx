@@ -466,6 +466,11 @@ export default function AdminDiscountsPage() {
             Rabaty
           </Button>
         </Link>
+        <Link href="/admin/discounts-staging">
+          <Button variant={pathname === '/admin/discounts-staging' ? 'default' : 'outline'} size="sm">
+            Rabaty techniczne
+          </Button>
+        </Link>
         <Link href="/admin/prices">
           <Button variant={pathname === '/admin/prices' ? 'default' : 'outline'} size="sm">
             Ceny
