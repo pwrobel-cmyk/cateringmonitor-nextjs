@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Check, X, RotateCcw, Loader2, BadgePercent, AlertTriangle, Clock, CheckCircle2, XCircle, ExternalLink, Coins, DatabaseZap, RefreshCw, PencilLine } from 'lucide-react'
 
 // ─── Admin Nav ────────────────────────────────────────────────────────────────
@@ -56,6 +59,8 @@ interface StagingDiscount {
   requirements: string | null
   exclusions_limits: string | null
   communication_channels: string | null
+  additional_notes: string | null
+  code_source: string[] | null
   is_cashback: boolean
   source: string | null
   source_url: string | null
@@ -152,6 +157,71 @@ function classifyStagingItem(s: StagingDiscount, existing: ExistingDiscount[], t
   return { kind: 'new' }
 }
 
+// ─── Accept Form ──────────────────────────────────────────────────────────────
+
+const SOURCE_OPTIONS = ['Total', 'WWW', 'FB Grupa', 'FB Profil', 'Instagram', 'CRM']
+
+type AcceptForm = {
+  code: string
+  brand_id: string
+  percentage: string
+  fixed_amount: string
+  valid_from: string
+  valid_until: string
+  requirements: string
+  min_days: string
+  max_days: string
+  min_order_value: string
+  code_source: string[]
+  exclusions_limits: string
+  description: string
+  communication_channels: string
+  additional_notes: string
+  is_cashback: boolean
+}
+
+function stagingToForm(s: StagingDiscount): AcceptForm {
+  return {
+    code: s.code || '',
+    brand_id: s.brand_id || '',
+    percentage: s.percentage != null ? String(s.percentage) : '',
+    fixed_amount: s.fixed_amount != null ? String(s.fixed_amount) : '',
+    valid_from: s.valid_from || '',
+    valid_until: s.valid_until || '',
+    requirements: s.requirements || '',
+    min_days: s.min_days != null ? String(s.min_days) : '',
+    max_days: s.max_days != null ? String(s.max_days) : '',
+    min_order_value: s.min_order_value != null ? String(s.min_order_value) : '',
+    code_source: s.code_source || [],
+    exclusions_limits: s.exclusions_limits || '',
+    description: s.description || '',
+    communication_channels: s.communication_channels || '',
+    additional_notes: s.additional_notes || '',
+    is_cashback: s.is_cashback || false,
+  }
+}
+
+function formToOverrides(f: AcceptForm) {
+  return {
+    brand_id: f.brand_id || null,
+    code: f.code,
+    percentage: f.percentage ? Number(f.percentage) : null,
+    fixed_amount: f.fixed_amount ? Number(f.fixed_amount) : null,
+    valid_from: f.valid_from || null,
+    valid_until: f.valid_until || null,
+    description: f.description || null,
+    min_days: f.min_days ? Number(f.min_days) : null,
+    max_days: f.max_days ? Number(f.max_days) : null,
+    min_order_value: f.min_order_value ? Number(f.min_order_value) : null,
+    requirements: f.requirements || null,
+    exclusions_limits: f.exclusions_limits || null,
+    communication_channels: f.communication_channels || null,
+    additional_notes: f.additional_notes || null,
+    code_source: f.code_source.length > 0 ? f.code_source : null,
+    is_cashback: f.is_cashback,
+  }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function DiscountStagingPage() {
@@ -164,6 +234,11 @@ export default function DiscountStagingPage() {
   const [brandSelections, setBrandSelections] = useState<Record<string, string>>({})
   const [kpi, setKpi] = useState({ pending: 0, acceptedToday: 0, rejectedToday: 0, alreadyInDb: 0 })
   const [classMap, setClassMap] = useState<Record<string, StagingClass>>({})
+
+  // Accept modal state
+  const [acceptItem, setAcceptItem] = useState<StagingDiscount | null>(null)
+  const [acceptForm, setAcceptForm] = useState<AcceptForm | null>(null)
+  const [acceptSaving, setAcceptSaving] = useState(false)
 
   // Auth guard
   useEffect(() => {
@@ -313,6 +388,62 @@ export default function DiscountStagingPage() {
       toast.success('Marka przypisana')
     } catch {
       toast.error('Błąd sieci')
+    }
+  }
+
+  const openAcceptModal = (item: StagingDiscount) => {
+    setAcceptItem(item)
+    setAcceptForm(stagingToForm(item))
+  }
+
+  const closeAcceptModal = () => {
+    setAcceptItem(null)
+    setAcceptForm(null)
+    setAcceptSaving(false)
+  }
+
+  const toggleSource = (s: string) => {
+    if (!acceptForm) return
+    setAcceptForm(f => f ? {
+      ...f,
+      code_source: f.code_source.includes(s) ? f.code_source.filter(x => x !== s) : [...f.code_source, s],
+    } : f)
+  }
+
+  const handleAcceptSubmit = async () => {
+    if (!acceptItem || !acceptForm) return
+    if (!acceptForm.brand_id) {
+      toast.error('Wybierz markę')
+      return
+    }
+    if (!acceptForm.percentage && !acceptForm.fixed_amount && !acceptForm.requirements.trim()) {
+      toast.error('Podaj procent, kwotę lub warunki')
+      return
+    }
+    setAcceptSaving(true)
+    try {
+      const res = await fetch('/api/admin/discount-staging', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'accept',
+          stagingId: acceptItem.id,
+          overrides: formToOverrides(acceptForm),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Błąd')
+        setAcceptSaving(false)
+        return
+      }
+      setItems(prev => prev.filter(i => i.id !== acceptItem.id))
+      setKpi(prev => ({ ...prev, pending: prev.pending - 1, acceptedToday: prev.acceptedToday + 1 }))
+      toast.success('Rabat dodany')
+      closeAcceptModal()
+    } catch {
+      toast.error('Błąd sieci')
+      setAcceptSaving(false)
     }
   }
 
@@ -556,10 +687,9 @@ export default function DiscountStagingPage() {
                       <div className="flex items-center gap-2">
                         <Button
                           size="sm"
-                          disabled={isLoading}
-                          onClick={() => handleAction('accept', item.id)}
+                          onClick={() => openAcceptModal(item)}
                         >
-                          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4 mr-1" />}
+                          <Check className="h-4 w-4 mr-1" />
                           Zaakceptuj
                         </Button>
                         <Button
@@ -607,6 +737,226 @@ export default function DiscountStagingPage() {
               </Card>
             )
           })}
+        </div>
+      )}
+
+      {/* Accept modal */}
+      {acceptItem && acceptForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={closeAcceptModal} />
+          <div className="relative bg-background rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold">
+                  Zaakceptuj rabat — {acceptItem.brands?.name || acceptItem.brand_name_raw || 'nieznana marka'}
+                </h2>
+                {classMap[acceptItem.id]?.kind === 'reissued' && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Kod istniał wcześniej, ważny do {(classMap[acceptItem.id] as { kind: 'reissued'; prevUntil: string }).prevUntil} — marka wznowiła promocję
+                  </p>
+                )}
+                {classMap[acceptItem.id]?.kind === 'changed' && (() => {
+                  const c = classMap[acceptItem.id] as { kind: 'changed'; dbPct: number | null; dbAmt: number | null; dbUntil: string | null }
+                  return (
+                    <p className="text-xs text-amber-600 mt-1">
+                      W bazie istnieje: {c.dbPct != null ? `-${c.dbPct}%` : c.dbAmt != null ? `${c.dbAmt} zł` : 'benefit'} do {c.dbUntil || 'bezterminowy'}
+                    </p>
+                  )
+                })()}
+              </div>
+              {acceptItem.source_url && (
+                <a href={acceptItem.source_url} target="_blank" rel="noopener noreferrer">
+                  <Button variant="outline" size="sm">
+                    <ExternalLink className="h-4 w-4 mr-1" />Zobacz źródło
+                  </Button>
+                </a>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label>Kod rabatowy</Label>
+                <Input
+                  value={acceptForm.code}
+                  onChange={e => setAcceptForm(f => f ? { ...f, code: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                />
+                {acceptItem.code && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.code}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Marka *</Label>
+                <Select
+                  value={acceptForm.brand_id || '_none'}
+                  onValueChange={v => setAcceptForm(f => f ? { ...f, brand_id: (!v || v === '_none') ? '' : v } : f)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Wybierz markę" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— brak —</SelectItem>
+                    {brands.map(b => (
+                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {acceptItem.brand_name_raw && !acceptItem.brand_id && (
+                  <p className="text-[10px] text-amber-600">Scraper: &quot;{acceptItem.brand_name_raw}&quot; (nierozpoznana)</p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label>Procent zniżki (%)</Label>
+                <Input
+                  type="number"
+                  value={acceptForm.percentage}
+                  onChange={e => setAcceptForm(f => f ? { ...f, percentage: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                />
+                {acceptItem.percentage != null && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.percentage}%</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Kwota zniżki (opcjonalnie)</Label>
+                <Input
+                  type="number"
+                  value={acceptForm.fixed_amount}
+                  onChange={e => setAcceptForm(f => f ? { ...f, fixed_amount: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                />
+                {acceptItem.fixed_amount != null && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.fixed_amount} zł</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Data od</Label>
+                <Input
+                  type="date"
+                  value={acceptForm.valid_from}
+                  onChange={e => setAcceptForm(f => f ? { ...f, valid_from: e.target.value } : f)}
+                />
+                {acceptItem.valid_from && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.valid_from}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Data do (opcjonalnie)</Label>
+                <Input
+                  type="date"
+                  value={acceptForm.valid_until}
+                  onChange={e => setAcceptForm(f => f ? { ...f, valid_until: e.target.value } : f)}
+                />
+                {acceptItem.valid_until && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.valid_until}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Min. dni</Label>
+                <Input
+                  type="number"
+                  value={acceptForm.min_days}
+                  onChange={e => setAcceptForm(f => f ? { ...f, min_days: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                />
+                {acceptItem.min_days != null && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.min_days}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Max. dni (opcjonalnie)</Label>
+                <Input
+                  type="number"
+                  value={acceptForm.max_days}
+                  onChange={e => setAcceptForm(f => f ? { ...f, max_days: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                />
+                {acceptItem.max_days != null && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.max_days}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Min. wartość zamówienia (opcjonalnie)</Label>
+                <Input
+                  type="number"
+                  value={acceptForm.min_order_value}
+                  onChange={e => setAcceptForm(f => f ? { ...f, min_order_value: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                />
+                {acceptItem.min_order_value != null && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.min_order_value} zł</p>}
+              </div>
+              <div className="space-y-1">
+                <Label>Kanały</Label>
+                <Input
+                  value={acceptForm.communication_channels}
+                  onChange={e => setAcceptForm(f => f ? { ...f, communication_channels: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                />
+                {acceptItem.communication_channels && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.communication_channels}</p>}
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label>Źródło</Label>
+                <div className="flex flex-wrap gap-2">
+                  {SOURCE_OPTIONS.map(s => (
+                    <label key={s} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={acceptForm.code_source.includes(s)}
+                        onChange={() => toggleSource(s)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">{s}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label>Warunki</Label>
+                <Textarea
+                  value={acceptForm.requirements}
+                  onChange={e => setAcceptForm(f => f ? { ...f, requirements: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                  rows={2}
+                />
+                {acceptItem.requirements && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.requirements}</p>}
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label>Wykluczenia</Label>
+                <Textarea
+                  value={acceptForm.exclusions_limits}
+                  onChange={e => setAcceptForm(f => f ? { ...f, exclusions_limits: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                  rows={2}
+                />
+                {acceptItem.exclusions_limits && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.exclusions_limits}</p>}
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label>Opis</Label>
+                <Textarea
+                  value={acceptForm.description}
+                  onChange={e => setAcceptForm(f => f ? { ...f, description: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                  rows={2}
+                />
+                {acceptItem.description && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.description}</p>}
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label>Uwagi</Label>
+                <Textarea
+                  value={acceptForm.additional_notes}
+                  onChange={e => setAcceptForm(f => f ? { ...f, additional_notes: e.target.value } : f)}
+                  placeholder="nie wykryto — uzupełnij"
+                  rows={2}
+                />
+                {acceptItem.additional_notes && <p className="text-[10px] text-muted-foreground">Scraper: {acceptItem.additional_notes}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="accept_is_cashback"
+                  type="checkbox"
+                  checked={acceptForm.is_cashback}
+                  onChange={e => setAcceptForm(f => f ? { ...f, is_cashback: e.target.checked } : f)}
+                  className="rounded"
+                />
+                <Label htmlFor="accept_is_cashback">Cashback</Label>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <Button variant="outline" onClick={closeAcceptModal}>
+                Anuluj
+              </Button>
+              <Button onClick={handleAcceptSubmit} disabled={acceptSaving}>
+                {acceptSaving ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Zapisywanie...</> : 'Zapisz i zaakceptuj'}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const { action, stagingId, brandId } = await request.json()
+  const { action, stagingId, brandId, overrides } = await request.json()
 
   if (!stagingId || !['accept', 'reject', 'restore', 'assign-brand'].includes(action)) {
     return Response.json({ error: 'Invalid request' }, { status: 400 })
@@ -61,7 +61,10 @@ export async function POST(request: Request) {
     return Response.json({ error: 'Staging record not found' }, { status: 404 })
   }
 
-  if (!staging.brand_id) {
+  // Use overrides from form if provided, fall back to staging values
+  const o = overrides || {}
+  const brandIdFinal = o.brand_id || staging.brand_id
+  if (!brandIdFinal) {
     return Response.json({ error: 'Przypisz markę przed akceptacją' }, { status: 400 })
   }
 
@@ -69,22 +72,22 @@ export async function POST(request: Request) {
   const { data: inserted, error: insertErr } = await service
     .from('discounts')
     .insert({
-      brand_id: staging.brand_id,
-      code: staging.code || '',
-      percentage: staging.percentage,
-      fixed_amount: staging.fixed_amount,
-      valid_from: staging.valid_from,
-      valid_until: staging.valid_until,
-      description: staging.description,
-      min_days: staging.min_days,
-      max_days: staging.max_days,
-      min_order_value: staging.min_order_value,
-      requirements: staging.requirements,
-      exclusions_limits: staging.exclusions_limits,
-      communication_channels: staging.communication_channels,
-      additional_notes: staging.additional_notes,
-      code_source: staging.code_source,
-      is_cashback: staging.is_cashback || false,
+      brand_id: brandIdFinal,
+      code: o.code ?? staging.code ?? '',
+      percentage: o.percentage !== undefined ? o.percentage : staging.percentage,
+      fixed_amount: o.fixed_amount !== undefined ? o.fixed_amount : staging.fixed_amount,
+      valid_from: o.valid_from !== undefined ? o.valid_from : staging.valid_from,
+      valid_until: o.valid_until !== undefined ? o.valid_until : staging.valid_until,
+      description: o.description !== undefined ? o.description : staging.description,
+      min_days: o.min_days !== undefined ? o.min_days : staging.min_days,
+      max_days: o.max_days !== undefined ? o.max_days : staging.max_days,
+      min_order_value: o.min_order_value !== undefined ? o.min_order_value : staging.min_order_value,
+      requirements: o.requirements !== undefined ? o.requirements : staging.requirements,
+      exclusions_limits: o.exclusions_limits !== undefined ? o.exclusions_limits : staging.exclusions_limits,
+      communication_channels: o.communication_channels !== undefined ? o.communication_channels : staging.communication_channels,
+      additional_notes: o.additional_notes !== undefined ? o.additional_notes : staging.additional_notes,
+      code_source: o.code_source !== undefined ? o.code_source : staging.code_source,
+      is_cashback: o.is_cashback !== undefined ? o.is_cashback : (staging.is_cashback || false),
       is_active: true,
     })
     .select('id')
