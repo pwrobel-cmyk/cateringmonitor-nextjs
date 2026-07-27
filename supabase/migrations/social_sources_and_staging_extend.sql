@@ -22,23 +22,17 @@ CREATE TABLE IF NOT EXISTS social_sources (
 CREATE INDEX IF NOT EXISTS idx_social_sources_active_platform
   ON social_sources (active, platform);
 
--- RLS: admin pages use browser client (anon key) for reads,
--- API routes use service_role for writes.
--- Pattern matches discount_staging: USING(true) allows authenticated reads,
--- anon key in this project carries the authenticated user session.
+-- RLS: no direct browser access needed — admin UI goes through
+-- /api/admin/social-sources (service_role), scraper through /api/social-sources
+-- (service_role). Service role bypasses RLS. No policy needed for anon/authenticated.
 ALTER TABLE social_sources ENABLE ROW LEVEL SECURITY;
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'social_sources' AND policyname = 'Service role full access'
-  ) THEN
-    CREATE POLICY "Service role full access" ON social_sources FOR ALL USING (true);
-  END IF;
-END $$;
 
--- Trigger for updated_at (idempotent: CREATE OR REPLACE for function,
--- DROP IF EXISTS + CREATE for trigger)
+-- Revoke direct table access from anon and authenticated roles
+REVOKE ALL ON social_sources FROM anon, authenticated;
+-- Grant only to service_role (which bypasses RLS anyway, but explicit is better)
+GRANT ALL ON social_sources TO service_role;
+
+-- Trigger for updated_at (idempotent: DROP IF EXISTS + CREATE)
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -67,7 +61,7 @@ ALTER TABLE discount_staging ADD COLUMN IF NOT EXISTS ocr_text TEXT NULL;
 ALTER TABLE discount_staging ADD COLUMN IF NOT EXISTS screenshot_url TEXT NULL;
 ALTER TABLE discount_staging ADD COLUMN IF NOT EXISTS social_source_id UUID NULL;
 
--- FK for social_source_id (idempotent: check if constraint exists)
+-- FK for social_source_id (idempotent)
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -86,7 +80,7 @@ END $$;
 ALTER TABLE discount_staging ADD COLUMN IF NOT EXISTS core_fingerprint TEXT NULL;
 ALTER TABLE discount_staging ADD COLUMN IF NOT EXISTS related_staging_id UUID NULL;
 
--- FK for related_staging_id (self-reference to discount_staging)
+-- FK for related_staging_id (self-reference, idempotent)
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -111,17 +105,20 @@ CREATE INDEX IF NOT EXISTS idx_discount_staging_related_staging_id
 
 -- ─── Step 4: Backfill core_fingerprint for existing records with code ───────
 -- Formula must match lib/discountFingerprint.ts buildCoreFingerprint():
---   normBrand: trim, lowercase, ł→l, NFD strip (translate for PL chars)
+--   normBrand: trim, lowercase, ł→l, NFD strip (translate for PL chars), collapse whitespace
 --   normCode:  trim, uppercase
---   normNum:   cast to text or ''
+--   normNum:   number without trailing zeros → text, or '' for NULL
 --
--- Diacritics mapping (verified char-by-char):
+-- Diacritics mapping (verified char-by-char, tested against TS):
 --   ą→a  ć→c  ę→e  ł→l  ń→n  ó→o  ś→s  ź→z  ż→z
 --   Ą→A  Ć→C  Ę→E  Ł→L  Ń→N  Ó→O  Ś→S  Ź→Z  Ż→Z
+--
+-- trim_scale() strips trailing zeros from NUMERIC: 20.50 → 20.5, 20.00 → 20
+-- This matches JS String(Number(x)) behavior.
 
 UPDATE discount_staging
 SET core_fingerprint = md5(
-  -- normBrand: trim, lowercase, ł→l, strip PL diacritics, collapse whitespace
+  -- normBrand: trim, lowercase, PL diacritics → ASCII, collapse whitespace
   regexp_replace(
     translate(
       lower(trim(COALESCE(brand_name_raw, ''))),
@@ -130,9 +127,15 @@ SET core_fingerprint = md5(
     ),
     '\s+', ' ', 'g'
   )
-  || '|' || COALESCE(upper(trim(code)), '')
-  || '|' || COALESCE(percentage::text, '')
-  || '|' || COALESCE(fixed_amount::text, '')
+  || '|' ||
+  -- normCode: trim, uppercase
+  COALESCE(upper(trim(code)), '')
+  || '|' ||
+  -- normNum(percentage): strip trailing zeros, or ''
+  COALESCE(trim_scale(percentage)::text, '')
+  || '|' ||
+  -- normNum(fixed_amount): strip trailing zeros, or ''
+  COALESCE(trim_scale(fixed_amount)::text, '')
 )
 WHERE code IS NOT NULL
   AND trim(code) != ''

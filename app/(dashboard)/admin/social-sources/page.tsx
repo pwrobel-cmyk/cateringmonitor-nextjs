@@ -123,18 +123,19 @@ export default function SocialSourcesPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const [{ data: srcData }, { data: brandsData }] = await Promise.all([
-      supabase
-        .from('social_sources')
-        .select('*, brands(name, logo_url)')
-        .order('source_name'),
+    // Sources via admin API (service_role), brands via anon (read-only, RLS allows)
+    const [srcRes, { data: brandsData }] = await Promise.all([
+      fetch('/api/admin/social-sources'),
       supabase
         .from('brands')
         .select('id, name, logo_url')
         .eq('is_active', true)
         .order('name'),
     ])
-    setSources((srcData || []) as SocialSource[])
+    if (srcRes.ok) {
+      const { data } = await srcRes.json()
+      setSources((data || []) as SocialSource[])
+    }
     setBrands((brandsData || []) as Brand[])
     setLoading(false)
   }, [])
@@ -185,16 +186,25 @@ export default function SocialSourcesPage() {
       active: form.active,
     }
 
-    let error
+    let res: Response
     if (editingId) {
-      ({ error } = await supabase.from('social_sources').update(payload).eq('id', editingId))
+      res = await fetch('/api/admin/social-sources', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingId, ...payload }),
+      })
     } else {
-      ({ error } = await supabase.from('social_sources').insert(payload))
+      res = await fetch('/api/admin/social-sources', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
     }
 
     setSaving(false)
-    if (error) {
-      toast.error(error.message.includes('duplicate') ? 'Źródło o takim URL już istnieje' : error.message)
+    if (!res.ok) {
+      const data = await res.json()
+      toast.error(data.error || 'Błąd')
       return
     }
     toast.success(editingId ? 'Źródło zaktualizowane' : 'Źródło dodane')
@@ -203,15 +213,26 @@ export default function SocialSourcesPage() {
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('social_sources').delete().eq('id', id)
-    if (error) { toast.error(error.message); return }
+    const res = await fetch(`/api/admin/social-sources?id=${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const data = await res.json()
+      toast.error(data.error || 'Błąd')
+      return
+    }
     toast.success('Źródło usunięte')
     setSources(prev => prev.filter(s => s.id !== id))
   }
 
   const toggleActive = async (id: string, active: boolean) => {
-    const { error } = await supabase.from('social_sources').update({ active }).eq('id', id)
-    if (error) { toast.error(error.message); return }
+    const res = await fetch('/api/admin/social-sources', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, active }),
+    })
+    if (!res.ok) {
+      toast.error('Błąd')
+      return
+    }
     setSources(prev => prev.map(s => s.id === id ? { ...s, active } : s))
   }
 
