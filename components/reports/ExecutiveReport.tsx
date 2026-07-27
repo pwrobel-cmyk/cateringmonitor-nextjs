@@ -26,7 +26,7 @@ import { toast } from 'sonner'
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const MY_BRAND_COLOR = '#185FA5'
-const COMPETITOR_COLOR = '#9ca3af'
+const COMPETITOR_COLOR = '#CBD5E1'
 const KCAL_BUCKETS = [1500, 2000, 2500] as const
 const TOTAL_SLIDES = 8
 const TOPIC_KEYWORDS: Record<string, string[]> = {
@@ -89,6 +89,7 @@ interface BrandKcalPrice {
 interface MatchedPairChange {
   brandId: string
   brandName: string
+  kcal: number
   currentAvg: number
   prevAvg: number
   changePercent: number
@@ -148,7 +149,7 @@ function fmtPct(v: number, withSign = true): string {
 }
 
 function fmtPrice(v: number): string {
-  return v.toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' zl'
+  return v.toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' zł'
 }
 
 function detectTopic(content: string): string | null {
@@ -215,7 +216,7 @@ function BrandLogo({ url, name, size = 'sm' }: { url: string | null; name: strin
   )
 }
 
-// ── Scatter Bubble (custom shape) ───────────────────────────────────────────
+// ── Scatter Bubble (custom shape with name label) ───────────────────────────
 
 function ScatterBubble(props: any) {
   const { cx, cy, payload } = props
@@ -224,9 +225,12 @@ function ScatterBubble(props: any) {
   const r = payload.isMy ? 28 : 22
   return (
     <g>
-      <circle cx={cx} cy={cy} r={r} fill={payload.isMy ? MY_BRAND_COLOR : COMPETITOR_COLOR} opacity={0.9} />
-      <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={payload.isMy ? 12 : 10} fontWeight={700}>
+      <circle cx={cx} cy={cy} r={r} fill={payload.isMy ? MY_BRAND_COLOR : COMPETITOR_COLOR} opacity={0.9} stroke={payload.isMy ? '#0e4a86' : '#94a3b8'} strokeWidth={1.5} />
+      <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="central" fill={payload.isMy ? 'white' : '#334155'} fontSize={payload.isMy ? 12 : 10} fontWeight={700}>
         {abbr}
+      </text>
+      <text x={cx + r + 5} y={cy} textAnchor="start" dominantBaseline="central" fill="#374151" fontSize={11} fontWeight={500}>
+        {payload.brandName}
       </text>
     </g>
   )
@@ -238,9 +242,19 @@ function InsightBox({ children }: { children: React.ReactNode }) {
   return (
     <div className="mt-auto pt-3 flex-shrink-0">
       <div className="rounded-lg px-4 py-2.5 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-        <p style={{ fontSize: 14 }} className="text-gray-700 dark:text-gray-300">{children}</p>
+        <p style={{ fontSize: 13, lineHeight: 1.5 }} className="text-gray-700 dark:text-gray-300">{children}</p>
       </div>
     </div>
+  )
+}
+
+// ── Small sample badge ──────────────────────────────────────────────────────
+
+function SmallSampleBadge() {
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 ml-1.5" style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4 }}>
+      MAŁA PRÓBA
+    </span>
   )
 }
 
@@ -302,7 +316,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
   })
 
   // ══════════════════════════════════════════════════════════════════════════
-  // DATA FETCHING (unchanged)
+  // DATA FETCHING
   // ══════════════════════════════════════════════════════════════════════════
 
   const { data, isLoading, error } = useQuery({
@@ -512,6 +526,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             const prevAvg = matchedPrevSum / matchedCount
             matchedChanges.push({
               brandId, brandName: info.name,
+              kcal,
               currentAvg: curAvg, prevAvg: prevAvg,
               changePercent: pctChange(curAvg, prevAvg),
               matchedCount,
@@ -668,12 +683,12 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
 
       for (const mc of matchedChanges) {
         if (mc.brandId === myBrandId) continue
-        if (Math.abs(mc.changePercent) > 3) {
+        if (Math.abs(mc.changePercent) > 3 && mc.kcal === 2000) {
           events.push({
             date: weekStart,
             brandName: mc.brandName,
             type: 'price_change',
-            description: `Zmiana cen ${mc.changePercent > 0 ? '+' : ''}${mc.changePercent.toFixed(1)}% (matched-pairs)`,
+            description: `Zmiana cen katalogowych ${mc.changePercent > 0 ? '+' : ''}${mc.changePercent.toFixed(1)}% (te same warianty 2000 kcal, WoW)`,
           })
         }
       }
@@ -694,7 +709,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             date: d.valid_until,
             brandName: info.name,
             type: 'promo_end',
-            description: `Zakonczenie promocji -${d.percentage}%`,
+            description: `Zakończenie promocji -${d.percentage}%`,
           })
         }
       }
@@ -710,7 +725,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             date: weekStart,
             brandName: info?.name || 'Unknown',
             type: 'review_spike',
-            description: `Skok opinii: ${weekReviews.length} vs ${prevCount} (poprz. tydzien)`,
+            description: `Wzrost liczby opinii: ${weekReviews.length} w tym tyg. vs ${prevCount} w poprz. (${(currentDaily / avgDaily).toFixed(1)}x)`,
           })
         }
       }
@@ -721,14 +736,14 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
           date: sc.date,
           brandName: sc.brandName,
           type: 'structural',
-          description: `${sc.type === 'new' ? 'Nowy pakiet' : 'Wycofany pakiet'}: ${sc.packageName} (${sc.kcalLabel})`,
+          description: `${sc.type === 'new' ? 'Nowy pakiet w ofercie' : 'Wycofany pakiet z oferty'}: ${sc.packageName} (${sc.kcalLabel})`,
         })
       }
 
       events.sort((a, b) => a.date.localeCompare(b.date))
 
       // ── Recommendations ───────────────────────────────────────────────────
-      const recommendations: { text: string; priority: 'high' | 'medium' | 'low'; title: string }[] = []
+      const recommendations: { text: string; priority: 'high' | 'medium' | 'low'; title: string; owner: string; deadline: string }[] = []
 
       const myPriceTrendValues = priceTrend
         .map(p => p[brandInfo.get(myBrandId)?.name || ''])
@@ -752,30 +767,39 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         }).filter((v): v is number => v !== null)
 
         if (recentGaps.length >= 2 && recentGaps[recentGaps.length - 1] > recentGaps[0] + 2) {
+          const myP = brandKcalPrices.find(p => p.brandId === myBrandId && p.kcal === 2000)
+          const cheapComp = brandKcalPrices
+            .filter(p => p.brandId !== myBrandId && p.kcal === 2000)
+            .sort((a, b) => a.avgPrice - b.avgPrice)[0]
+          const currentGap = myP && cheapComp ? ((myP.avgPrice - cheapComp.avgPrice) / cheapComp.avgPrice * 100) : null
           recommendations.push({
-            title: 'Odpowiedz cenowa',
-            text: 'Roznica do najtanszego konkurenta rosnie od 2+ tygodni. Rozwazyc korekte cennika.',
+            title: 'Decyzja cenowa dot. pakietów 2000+ kcal',
+            text: `Dystans do najtańszego (${cheapComp?.brandName || 'konkurenta'}) wzrósł do ${currentGap != null ? currentGap.toFixed(1) + '%' : 'b.d.'} (${myP ? fmtPrice(myP.avgPrice) : 'b.d.'} vs ${cheapComp ? fmtPrice(cheapComp.avgPrice) : 'b.d.'}). Trend rosnący od 2+ tygodni.`,
             priority: 'high',
+            owner: 'Dział pricing',
+            deadline: 'Do piątku',
           })
         }
       }
 
-      const myReviews = currentWeekReviews.filter(r => r.brand_id === myBrandId && r.rating != null && r.rating <= 2)
-      if (myReviews.length > 0) {
+      const myNegReviews = currentWeekReviews.filter(r => r.brand_id === myBrandId && r.rating != null && r.rating <= 2)
+      if (myNegReviews.length > 0) {
         const topicCountsLocal: Record<string, number> = {}
-        for (const r of myReviews) {
+        for (const r of myNegReviews) {
           if (!r.content) continue
           const topic = detectTopic(r.content)
           if (topic) topicCountsLocal[topic] = (topicCountsLocal[topic] || 0) + 1
         }
-        const totalNeg = myReviews.length
+        const totalNeg = myNegReviews.length
         for (const [topic, count] of Object.entries(topicCountsLocal)) {
           if (count / totalNeg > 0.5) {
-            const topicNames: Record<string, string> = { dostawa: 'dostawy', smak: 'smaku', cena: 'ceny', obsluga: 'obslugi' }
+            const topicNames: Record<string, string> = { dostawa: 'dostawy', smak: 'jakości smaku', cena: 'ceny', obsługa: 'obsługi klienta' }
             recommendations.push({
-              title: `Eskalacja: ${topicNames[topic] || topic}`,
-              text: `${Math.round(count / totalNeg * 100)}% negatywnych opinii dotyczy tego tematu. Wymaga natychmiastowej reakcji.`,
+              title: `Eskalacja: problem ${topicNames[topic] || topic}`,
+              text: `${count} z ${totalNeg} negatywnych opinii (${Math.round(count / totalNeg * 100)}%) dotyczy ${topicNames[topic] || topic}. Wymaga natychmiastowej interwencji operacyjnej.`,
               priority: 'high',
+              owner: 'Dział operacji',
+              deadline: 'Natychmiast',
             })
           }
         }
@@ -787,9 +811,11 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         if (prevNeg > 0 && curNeg > prevNeg * 2) {
           const info = brandInfo.get(cid)
           recommendations.push({
-            title: 'Okazja akwizycyjna',
-            text: `${info?.name || 'Konkurent'} ma skok negatywnych opinii (${curNeg} vs ${prevNeg}). Mozliwosc przejecia klientow.`,
+            title: `Okazja akwizycyjna — ${info?.name || 'konkurent'} traci klientów`,
+            text: `${info?.name || 'Konkurent'} zanotował ${curNeg} negatywnych opinii w tym tygodniu (2x więcej niż poprz. ${prevNeg}). Okno na kampanię retargetingową skierowaną do ich niezadowolonych klientów.`,
             priority: 'medium',
+            owner: 'Dział marketingu',
+            deadline: 'Ten tydzień',
           })
         }
       }
@@ -797,10 +823,14 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       for (const cid of longRunningBrands) {
         if (cid === myBrandId) continue
         const info = brandInfo.get(cid)
+        const disc = brandDiscounts.get(cid)
+        const avgDisc = disc ? (disc.percentages.reduce((a, b) => a + b, 0) / disc.percentages.length).toFixed(1) : '?'
         recommendations.push({
-          title: `Strategia rabatowa ${info?.name || 'konkurenta'}`,
-          text: 'Rabat utrzymywany 4+ tygodni — to zmiana strategii cenowej, nie jednorazowa promocja.',
+          title: `Analiza strategii rabatowej ${info?.name || 'konkurenta'}`,
+          text: `${info?.name || 'Konkurent'} utrzymuje średni rabat ${avgDisc}% od ponad 4 tygodni — to trwała zmiana pozycjonowania cenowego, nie jednorazowa promocja. Przeanalizować wpływ na naszą pozycję efektywną.`,
           priority: 'low',
+          owner: 'Dział strategii',
+          deadline: 'Następny przegląd tygodniowy',
         })
       }
 
@@ -853,7 +883,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     const extraList = emailExtraEmails.split('\n').map(e => e.trim()).filter(Boolean)
     const selectedEmails = emailUsers.filter(u => emailRecipients.has(u.id)).map(u => u.email)
     const recipients = [...new Set([...selectedEmails, ...extraList])]
-    if (!recipients.length) { toast.error('Brak odbiorcow'); return }
+    if (!recipients.length) { toast.error('Brak odbiorców'); return }
     setSending(true)
     try {
       const res = await fetch('/api/admin/send-custom-email', {
@@ -861,16 +891,16 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipients,
-          subject: `Raport zarzadczy ${weekStart} - ${weekEnd}`,
-          paragraphs: [`Raport zarzadczy tygodniowy za okres ${weekStart} - ${weekEnd} zostal wygenerowany. Zaloguj sie do panelu, aby go zobaczyc.`],
+          subject: `Raport zarządczy ${weekStart} \u2013 ${weekEnd}`,
+          paragraphs: [`Raport zarządczy tygodniowy za okres ${weekStart} \u2013 ${weekEnd} został wygenerowany. Zaloguj się do panelu, aby go zobaczyć.`],
         }),
       })
       const result = await res.json()
-      if (result.sent > 0) toast.success(`Wyslano do ${result.sent} odbiorcow`)
-      if (result.errors?.length) toast.error(`Bledy: ${result.errors.join(', ')}`)
+      if (result.sent > 0) toast.success(`Wysłano do ${result.sent} odbiorców`)
+      if (result.errors?.length) toast.error(`Błędy: ${result.errors.join(', ')}`)
       setShowEmailModal(false)
     } catch (e: any) {
-      toast.error(e.message || 'Blad wysylki')
+      toast.error(e.message || 'Błąd wysyłki')
     } finally {
       setSending(false)
     }
@@ -882,66 +912,98 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
   const slide1Data = useMemo(() => {
     if (!data) return null
 
+    // Price position — count ALL analyzed brands, not just those with 2000 kcal
+    const totalBrands = allBrandIds.length
     const prices2000 = data.brandKcalPrices.filter(p => p.kcal === 2000)
-    const sorted = [...prices2000].sort((a, b) => a.avgPrice - b.avgPrice)
-    const myPosition = sorted.findIndex(p => p.brandId === myBrandId) + 1
-    const totalBrands = sorted.length
+    const sorted2000 = [...prices2000].sort((a, b) => a.avgPrice - b.avgPrice)
+    const brandsWithPricing = sorted2000.length
+    const myPrice2000Entry = sorted2000.find(p => p.brandId === myBrandId)
+    const myPosition = myPrice2000Entry ? sorted2000.indexOf(myPrice2000Entry) + 1 : 0
+    const myPriceValue = myPrice2000Entry?.avgPrice ?? null
 
-    const myMatchedChange = data.matchedChanges.find(mc => mc.brandId === myBrandId)
+    // Cheapest competitor (for gap computation)
+    const cheapestCompetitorEntry = sorted2000.find(p => p.brandId !== myBrandId)
+    const cheapestName = cheapestCompetitorEntry?.brandName ?? null
+    const cheapestPrice = cheapestCompetitorEntry?.avgPrice ?? null
 
+    const gapPercent = myPriceValue != null && cheapestPrice != null
+      ? ((myPriceValue - cheapestPrice) / cheapestPrice) * 100
+      : 0
+
+    // Previous week gap (from matchedChanges with kcal=2000)
+    const mc2000 = data.matchedChanges.filter(mc => mc.kcal === 2000)
+    const myMc2000 = mc2000.find(mc => mc.brandId === myBrandId)
+    const competitorMc2000 = mc2000.filter(mc => mc.brandId !== myBrandId)
+    const myPrevPrice = myMc2000?.prevAvg ?? null
+    const cheapestPrevCompetitor = competitorMc2000.length > 0
+      ? competitorMc2000.reduce((min, mc) => mc.prevAvg < min.prevAvg ? mc : min)
+      : null
+    const prevGapPercent = myPrevPrice != null && cheapestPrevCompetitor
+      ? ((myPrevPrice - cheapestPrevCompetitor.prevAvg) / cheapestPrevCompetitor.prevAvg) * 100
+      : null
+
+    // Reviews
     const myReviews = data.currentReviewsByBrand.get(myBrandId)
     const prevMyReviews = data.prevReviewsByBrand.get(myBrandId)
     const avgRating = myReviews?.avgRating ?? 0
-    const prevAvgRating = prevMyReviews?.avgRating ?? 0
-    const ratingDelta = avgRating - prevAvgRating
-
-    const cheapestCompetitor = sorted.find(p => p.brandId !== myBrandId)
-    const myPrice = sorted.find(p => p.brandId === myBrandId)
-    const gapPercent = myPrice && cheapestCompetitor
-      ? ((myPrice.avgPrice - cheapestCompetitor.avgPrice) / cheapestCompetitor.avgPrice) * 100
-      : 0
-
-    const prevGapPercent = gapPercent
-
-    const totalReviews = Array.from(data.currentReviewsByBrand.values()).reduce((s, b) => s + b.count, 0)
     const myReviewCount = myReviews?.count ?? 0
-    const shareOfVoice = totalReviews > 0 ? (myReviewCount / totalReviews) * 100 : 0
+    const prevAvgRating = prevMyReviews?.avgRating ?? 0
+    const prevMyReviewCount = prevMyReviews?.count ?? 0
+    const isSmallSample = myReviewCount < 10
+    // Guard: delta only meaningful if prev had reviews
+    const ratingDelta = prevMyReviewCount > 0 ? avgRating - prevAvgRating : null
 
+    // Share of voice
+    const totalMarketReviews = Array.from(data.currentReviewsByBrand.values()).reduce((s, b) => s + b.count, 0)
+    const shareOfVoice = totalMarketReviews > 0 ? (myReviewCount / totalMarketReviews) * 100 : 0
     const prevTotalReviews = Array.from(data.prevReviewsByBrand.values()).reduce((s, b) => s + b.count, 0)
-    const prevMyCount = prevMyReviews?.count ?? 0
-    const prevShareOfVoice = prevTotalReviews > 0 ? (prevMyCount / prevTotalReviews) * 100 : 0
+    const prevShareOfVoice = prevTotalReviews > 0 ? (prevMyReviewCount / prevTotalReviews) * 100 : 0
+    const shareOfVoiceDelta = prevTotalReviews > 0 ? shareOfVoice - prevShareOfVoice : null
+
+    const myMatchedChange = data.matchedChanges.find(mc => mc.brandId === myBrandId && mc.kcal === 2000)
+    const eventCount = data.events.length
+
+    // ── Build verdict (full sentence with numbers) ────────────────────────
+    const bigCompetitorChange = data.matchedChanges
+      .filter(mc => mc.brandId !== myBrandId && mc.kcal === 2000 && Math.abs(mc.changePercent) > 5)
+      .sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent))[0]
 
     let verdict: string
     let verdictColor: 'green' | 'amber' | 'red' = 'green'
 
-    if (gapPercent > prevGapPercent + 2) {
-      verdict = 'Tracimy przewage cenowa'
+    if (prevGapPercent != null && gapPercent > prevGapPercent + 2 && gapPercent > 15 && cheapestName) {
+      verdict = `Dystans cenowy do ${cheapestName} wzrósł do ${gapPercent.toFixed(1)}% (${myPriceValue != null ? fmtPrice(myPriceValue) : 'b.d.'} vs ${cheapestPrice != null ? fmtPrice(cheapestPrice) : 'b.d.'}). Wymaga decyzji cenowej.`
       verdictColor = 'red'
-    } else if (ratingDelta < -0.1) {
-      verdict = 'Spadek satysfakcji'
+    } else if (ratingDelta != null && ratingDelta < -0.3 && !isSmallSample) {
+      verdict = `Ocena klientów spadła z ${prevAvgRating.toFixed(1)} do ${avgRating.toFixed(1)}\u2605 na bazie ${myReviewCount} opinii. Przeanalizować przyczyny spadku.`
       verdictColor = 'red'
+    } else if (bigCompetitorChange) {
+      const dir = bigCompetitorChange.changePercent > 0 ? 'podniósł' : 'obniżył'
+      verdict = `${bigCompetitorChange.brandName} ${dir} ceny o ${Math.abs(bigCompetitorChange.changePercent).toFixed(1)}%. Monitorować wpływ na naszą pozycję #${myPosition || '?'} z ${totalBrands}.`
+      verdictColor = 'amber'
     } else {
-      const bigCompetitorChange = data.matchedChanges.find(
-        mc => mc.brandId !== myBrandId && Math.abs(mc.changePercent) > 5
-      )
-      if (bigCompetitorChange) {
-        verdict = `${bigCompetitorChange.brandName} zmienia strategie`
-        verdictColor = 'amber'
-      } else {
-        verdict = 'Pozycja stabilna'
-        verdictColor = 'green'
-      }
+      const posNote = myPosition > 0 ? `Pozycja #${myPosition} z ${totalBrands} cenowo` : `Brak danych cenowych 2000 kcal`
+      const ratingNote = myReviewCount > 0
+        ? isSmallSample
+          ? `, ocena ${avgRating.toFixed(1)}\u2605 (${myReviewCount} opinii \u2014 mała próba)`
+          : `, ocena ${avgRating.toFixed(1)}\u2605 (${myReviewCount} opinii)`
+        : ''
+      const evtNote = eventCount > 0 ? `. ${eventCount} ruchów konkurencji.` : '. Brak istotnych ruchów konkurencji.'
+      verdict = `${posNote}${ratingNote}${evtNote}`
+      verdictColor = 'green'
     }
 
     return {
-      myPosition, totalBrands,
-      avgRating, ratingDelta,
-      gapPercent,
-      shareOfVoice, shareOfVoiceDelta: shareOfVoice - prevShareOfVoice,
+      myPosition, totalBrands, brandsWithPricing,
+      myPriceValue, cheapestName, cheapestPrice,
+      gapPercent, prevGapPercent,
+      avgRating, myReviewCount, prevAvgRating, prevMyReviewCount,
+      ratingDelta, isSmallSample,
+      shareOfVoice, shareOfVoiceDelta, totalMarketReviews,
       verdict, verdictColor,
-      myMatchedChange,
+      myMatchedChange, eventCount,
     }
-  }, [data, myBrandId])
+  }, [data, myBrandId, allBrandIds])
 
   // ── Loading / Error ────────────────────────────────────────────────────────
   if (isLoading) {
@@ -961,8 +1023,8 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       <Card className="border-red-200 bg-red-50">
         <CardContent className="pt-6 text-center">
           <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
-          <p className="text-red-700">Blad ladowania danych raportu</p>
-          <p className="text-sm text-red-500 mt-1">{(error as Error)?.message || 'Sprobuj ponownie'}</p>
+          <p className="text-red-700">Błąd ładowania danych raportu</p>
+          <p className="text-sm text-red-500 mt-1">{(error as Error)?.message || 'Spróbuj ponownie'}</p>
         </CardContent>
       </Card>
     )
@@ -992,12 +1054,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     : 0
 
   const myScatter = scatterData.find(d => d.isMy)
-  const myQuadrant = myScatter
-    ? myScatter.x <= medianX && myScatter.y >= medianY ? 'lider (niska cena, wysoka ocena)'
-      : myScatter.x > medianX && myScatter.y >= medianY ? 'premium (wysoka cena, wysoka ocena)'
-      : myScatter.x <= medianX && myScatter.y < medianY ? 'walka cenowa (niska cena, niska ocena)'
-      : 'pod presja (wysoka cena, niska ocena)'
-    : null
+  const cheapestScatter = scatterData.filter(d => !d.isMy).sort((a, b) => a.x - b.x)[0]
 
   // Catalog price table (Slide 3)
   type CatalogRow = { brandId: string; brandName: string; brandLogo: string | null; prices: Record<number, number | null>; changePercent: number | null; matchedCount: number; isMy: boolean }
@@ -1009,7 +1066,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       const p = data.brandKcalPrices.find(bp => bp.brandId === brandId && bp.kcal === kcal)
       prices[kcal] = p?.avgPrice ?? null
     }
-    const matchedChange = data.matchedChanges.find(mc => mc.brandId === brandId)
+    const matchedChange = data.matchedChanges.find(mc => mc.brandId === brandId && mc.kcal === 2000)
     return [{
       brandId,
       brandName: info.name,
@@ -1021,12 +1078,14 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     }]
   })
 
-  // Gap to cheapest (Slide 3)
-  const myPrice2000 = catalogTableData.find(r => r.isMy)?.prices[2000]
-  const cheapestCompetitorPrice = catalogTableData
+  // Gap to cheapest with names and prices (Slide 3)
+  const myCatalogRow = catalogTableData.find(r => r.isMy)
+  const myPrice2000 = myCatalogRow?.prices[2000]
+  const cheapestCatalogRow = catalogTableData
     .filter(r => !r.isMy && r.prices[2000] != null)
-    .sort((a, b) => (a.prices[2000] ?? Infinity) - (b.prices[2000] ?? Infinity))[0]?.prices[2000]
-  const pricGapPct = myPrice2000 && cheapestCompetitorPrice
+    .sort((a, b) => (a.prices[2000] ?? Infinity) - (b.prices[2000] ?? Infinity))[0]
+  const cheapestCompetitorPrice = cheapestCatalogRow?.prices[2000]
+  const pricGapPct = myPrice2000 != null && cheapestCompetitorPrice != null
     ? ((myPrice2000 - cheapestCompetitorPrice) / cheapestCompetitorPrice) * 100
     : null
 
@@ -1089,9 +1148,9 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     if (topic) topicCounts[topic] = (topicCounts[topic] || 0) + 1
   }
   const dominantTopic = Object.entries(topicCounts).sort((a, b) => b[1] - a[1])[0]
-  const topicLabels: Record<string, string> = { dostawa: 'Dostawa', smak: 'Smak', cena: 'Cena', obsluga: 'Obsluga klienta' }
+  const topicLabels: Record<string, string> = { dostawa: 'Dostawa', smak: 'Smak', cena: 'Cena', obsługa: 'Obsługa klienta' }
 
-  // Effective price bar data (Slide 5)
+  // Effective price bar data (Slide 5) — sorted ascending
   const barChartData = data.effectivePrices.map(ep => ({
     name: ep.brandName,
     price: Math.round(ep.effectivePrice),
@@ -1104,6 +1163,8 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
   const effectiveGap = myEffective && cheapestEffective
     ? ((myEffective.effectivePrice - cheapestEffective.effectivePrice) / cheapestEffective.effectivePrice) * 100
     : null
+  const myEffRating = myEffective ? (data.currentReviewsByBrand.get(myEffective.brandId)?.avgRating ?? 0) : 0
+  const cheapEffRating = cheapestEffective ? (data.currentReviewsByBrand.get(cheapestEffective.brandId)?.avgRating ?? 0) : 0
 
   // Events limited to 5 (Slide 7)
   const topEvents = data.events.slice(0, 5)
@@ -1174,7 +1235,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
           <div ref={reportRef} className="mx-auto" style={{ maxWidth: 1100 }}>
 
             {/* ═══════════════════════════════════════════════════════════════
-                SLIDE 1 — Title + Executive Summary
+                SLIDE 1 — Executive Summary
                 ═══════════════════════════════════════════════════════════════ */}
             <div data-slide="1" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 0)}>
               <SlideFrame index={0} brand={myBrandName} weekRange={weekRange}>
@@ -1183,74 +1244,95 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                     Raport konkurencyjny
                   </h1>
                   <p style={{ fontSize: 16 }} className="text-gray-500 dark:text-gray-400 mt-1">
-                    {myBrandName} &middot; tydzien {weekRange}
+                    {myBrandName} &middot; tydzień {weekRange}
                   </p>
                 </div>
 
                 {slide1Data && (
                   <>
-                    {/* Verdict banner */}
-                    <div className={`rounded-xl px-6 py-5 mt-6 flex items-center gap-4 ${verdictBg[slide1Data.verdictColor]}`}>
+                    {/* Verdict banner — full sentence */}
+                    <div className={`rounded-xl px-6 py-4 mt-5 flex items-start gap-4 ${verdictBg[slide1Data.verdictColor]}`}>
                       {(() => {
                         const VIcon = verdictIcon[slide1Data.verdictColor]
-                        return <VIcon className={`h-8 w-8 flex-shrink-0 ${verdictText[slide1Data.verdictColor]}`} />
+                        return <VIcon className={`h-7 w-7 flex-shrink-0 mt-0.5 ${verdictText[slide1Data.verdictColor]}`} />
                       })()}
-                      <div>
-                        <p style={{ fontSize: 24, fontWeight: 700 }} className={verdictText[slide1Data.verdictColor]}>
-                          {slide1Data.verdict}
-                        </p>
-                        <p style={{ fontSize: 13 }} className="text-gray-500 dark:text-gray-400 mt-0.5">
-                          Algorytmiczna ocena pozycji rynkowej
-                        </p>
-                      </div>
+                      <p style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.45 }} className={verdictText[slide1Data.verdictColor]}>
+                        {slide1Data.verdict}
+                      </p>
                     </div>
 
-                    {/* 4 KPIs */}
-                    <div className="grid grid-cols-4 gap-6 mt-8">
-                      {[
-                        {
-                          label: 'Pozycja cenowa',
-                          value: `#${slide1Data.myPosition}/${slide1Data.totalBrands}`,
-                          delta: slide1Data.myMatchedChange ? fmtPct(slide1Data.myMatchedChange.changePercent) : null,
-                          deltaLabel: 'zmiana WoW',
-                        },
-                        {
-                          label: 'Srednia ocena',
-                          value: slide1Data.avgRating.toFixed(2),
-                          delta: `${slide1Data.ratingDelta >= 0 ? '+' : ''}${slide1Data.ratingDelta.toFixed(2)}`,
-                          deltaLabel: 'vs poprz. tydz.',
-                        },
-                        {
-                          label: 'Gap do najtanszego',
-                          value: fmtPct(slide1Data.gapPercent, false),
-                          delta: null,
-                          deltaLabel: '',
-                        },
-                        {
-                          label: 'Share of voice',
-                          value: `${slide1Data.shareOfVoice.toFixed(0)}%`,
-                          delta: `${slide1Data.shareOfVoiceDelta >= 0 ? '+' : ''}${slide1Data.shareOfVoiceDelta.toFixed(1)}pp`,
-                          deltaLabel: 'vs poprz. tydz.',
-                        },
-                      ].map(kpi => {
-                        const isPos = kpi.delta?.startsWith('+')
-                        const isNeg = kpi.delta?.startsWith('-')
-                        return (
-                          <div key={kpi.label}>
-                            <p style={{ fontSize: 40, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
-                              {kpi.value}
-                            </p>
-                            <p style={{ fontSize: 14 }} className="text-gray-500 dark:text-gray-400 mt-2 font-medium">
-                              {kpi.label}
-                            </p>
-                            {kpi.delta && (
-                              <p style={{ fontSize: 14 }} className={`mt-0.5 font-medium ${isPos ? 'text-green-600' : isNeg ? 'text-red-500' : 'text-gray-400'}`}>
-                                {isPos ? '\u2191 ' : isNeg ? '\u2193 ' : ''}{kpi.delta} {kpi.deltaLabel}
-                              </p>
-                            )}
-                          </div>
-                        )
-                      })}
+                    {/* 4 KPIs with full context */}
+                    <div className="grid grid-cols-4 gap-5 mt-6">
+                      {/* KPI 1: Pozycja cenowa */}
+                      <div>
+                        <p style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
+                          {slide1Data.myPosition > 0 ? `#${slide1Data.myPosition}` : 'b.d.'}<span style={{ fontSize: 20, fontWeight: 500 }} className="text-gray-400"> z {slide1Data.totalBrands}</span>
+                        </p>
+                        <p style={{ fontSize: 13 }} className="text-gray-900 dark:text-gray-200 mt-1.5 font-semibold">Pozycja cenowa</p>
+                        <p style={{ fontSize: 11, lineHeight: 1.4 }} className="text-gray-400 mt-0.5">
+                          Ranking ceny 2000 kcal (1&nbsp;=&nbsp;najtańsza){slide1Data.brandsWithPricing < slide1Data.totalBrands ? `. Dane dla ${slide1Data.brandsWithPricing} z ${slide1Data.totalBrands} marek.` : ''}
+                        </p>
+                        {slide1Data.myMatchedChange && (
+                          <p style={{ fontSize: 13 }} className={`mt-1 font-medium ${slide1Data.myMatchedChange.changePercent > 0.5 ? 'text-red-500' : slide1Data.myMatchedChange.changePercent < -0.5 ? 'text-green-600' : 'text-gray-400'}`}>
+                            {fmtPct(slide1Data.myMatchedChange.changePercent)} zmiana ceny WoW
+                          </p>
+                        )}
+                      </div>
+
+                      {/* KPI 2: Cena vs najtańszy */}
+                      <div>
+                        <p style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }} className={slide1Data.gapPercent > 15 ? 'text-red-600' : slide1Data.gapPercent <= 0 ? 'text-green-600' : 'text-gray-900 dark:text-gray-100'}>
+                          {slide1Data.myPriceValue != null ? fmtPct(slide1Data.gapPercent, true) : 'b.d.'}
+                        </p>
+                        <p style={{ fontSize: 13 }} className="text-gray-900 dark:text-gray-200 mt-1.5 font-semibold">Cena vs najtańszy</p>
+                        <p style={{ fontSize: 11, lineHeight: 1.4 }} className="text-gray-400 mt-0.5">
+                          {slide1Data.myPriceValue != null && slide1Data.cheapestName && slide1Data.cheapestPrice != null
+                            ? `${myBrandName} ${fmtPrice(slide1Data.myPriceValue)} vs ${slide1Data.cheapestName} ${fmtPrice(slide1Data.cheapestPrice)} (2000 kcal)`
+                            : 'Brak danych cenowych do porównania'
+                          }
+                        </p>
+                      </div>
+
+                      {/* KPI 3: Ocena tygodnia */}
+                      <div>
+                        <p style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
+                          {slide1Data.myReviewCount > 0 ? `${slide1Data.avgRating.toFixed(2)}\u2605` : 'b.d.'}
+                          {slide1Data.isSmallSample && slide1Data.myReviewCount > 0 && <SmallSampleBadge />}
+                        </p>
+                        <p style={{ fontSize: 13 }} className="text-gray-900 dark:text-gray-200 mt-1.5 font-semibold">
+                          Ocena tygodnia{slide1Data.myReviewCount > 0 ? ` (${slide1Data.myReviewCount} opinii)` : ''}
+                        </p>
+                        <p style={{ fontSize: 11, lineHeight: 1.4 }} className="text-gray-400 mt-0.5">
+                          {slide1Data.prevMyReviewCount > 0
+                            ? `Poprz. tydz.: ${slide1Data.prevAvgRating.toFixed(2)}\u2605 (${slide1Data.prevMyReviewCount} opinii)`
+                            : 'Brak danych z poprz. tygodnia'
+                          }
+                        </p>
+                        {slide1Data.ratingDelta != null && (
+                          <p style={{ fontSize: 13 }} className={`mt-1 font-medium ${slide1Data.ratingDelta > 0.05 ? 'text-green-600' : slide1Data.ratingDelta < -0.05 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {slide1Data.ratingDelta >= 0 ? '+' : ''}{slide1Data.ratingDelta.toFixed(2)} vs poprz. tydz.
+                          </p>
+                        )}
+                      </div>
+
+                      {/* KPI 4: Udział w opiniach rynku */}
+                      <div>
+                        <p style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
+                          {slide1Data.totalMarketReviews > 0 ? `${slide1Data.shareOfVoice.toFixed(0)}%` : 'b.d.'}
+                        </p>
+                        <p style={{ fontSize: 13 }} className="text-gray-900 dark:text-gray-200 mt-1.5 font-semibold">Udział w opiniach rynku</p>
+                        <p style={{ fontSize: 11, lineHeight: 1.4 }} className="text-gray-400 mt-0.5">
+                          {slide1Data.totalMarketReviews > 0
+                            ? `${slide1Data.myReviewCount} z ${slide1Data.totalMarketReviews} nowych opinii na rynku dotyczyło nas`
+                            : 'Brak opinii w tym tygodniu'
+                          }
+                        </p>
+                        {slide1Data.shareOfVoiceDelta != null && (
+                          <p style={{ fontSize: 13 }} className={`mt-1 font-medium ${slide1Data.shareOfVoiceDelta > 1 ? 'text-green-600' : slide1Data.shareOfVoiceDelta < -1 ? 'text-red-500' : 'text-gray-400'}`}>
+                            {slide1Data.shareOfVoiceDelta >= 0 ? '+' : ''}{slide1Data.shareOfVoiceDelta.toFixed(1)}pp vs poprz. tydz.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </>
                 )}
@@ -1265,21 +1347,29 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                 <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
                   Mapa pozycji rynkowej
                 </h2>
-                <p style={{ fontSize: 14 }} className="text-gray-500 mb-3">Cena efektywna 2000 kcal vs. ocena klientow</p>
+                <p style={{ fontSize: 13 }} className="text-gray-500 mb-2">Każda bańka = marka. Oś X: cena po rabatach. Oś Y: ocena klientów. Linie przerywane: mediana rynku.</p>
 
                 {scatterData.length > 0 ? (
                   <>
                     <div className="relative flex-1 min-h-0">
                       {/* Quadrant labels */}
-                      <div className="absolute top-1 left-14 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Lider</div>
-                      <div className="absolute top-1 right-2 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Premium</div>
-                      <div className="absolute bottom-7 left-14 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Walka cenowa</div>
-                      <div className="absolute bottom-7 right-2 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Pod presja</div>
+                      <div className="absolute top-1 left-16 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Niska cena, wysoka ocena</div>
+                      <div className="absolute top-1 right-2 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Wysoka cena, wysoka ocena</div>
+                      <div className="absolute bottom-7 left-16 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Niska cena, niska ocena</div>
+                      <div className="absolute bottom-7 right-2 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Wysoka cena, niska ocena</div>
                       <ResponsiveContainer width="100%" height="100%">
-                        <ScatterChart margin={{ top: 20, right: 20, bottom: 10, left: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis type="number" dataKey="x" name="Cena" unit=" zl" domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
-                          <YAxis type="number" dataKey="y" name="Ocena" domain={[1, 5]} tick={{ fontSize: 12 }} />
+                        <ScatterChart margin={{ top: 20, right: 30, bottom: 25, left: 20 }}>
+                          <CartesianGrid horizontal={true} vertical={false} stroke="#f3f4f6" />
+                          <XAxis
+                            type="number" dataKey="x" domain={['auto', 'auto']}
+                            tick={{ fontSize: 13 }}
+                            label={{ value: 'Cena za 2000 kcal po rabacie, zł/dzień', position: 'insideBottom', offset: -10, style: { fontSize: 12, fill: '#6b7280' } }}
+                          />
+                          <YAxis
+                            type="number" dataKey="y" domain={[1, 5]}
+                            tick={{ fontSize: 13 }}
+                            label={{ value: 'Średnia ocena klientów', angle: -90, position: 'insideLeft', offset: 10, style: { fontSize: 12, fill: '#6b7280' } }}
+                          />
                           <ZAxis type="number" dataKey="z" range={[200, 800]} />
                           <ReTooltip
                             content={({ active, payload }: any) => {
@@ -1288,40 +1378,53 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                               return (
                                 <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-lg p-3 text-sm">
                                   <p className="font-bold">{d.brandName}</p>
-                                  <p>Cena: {d.x} zl</p>
-                                  <p>Ocena: {d.y.toFixed(2)}</p>
-                                  <p>Opinii: {d.z}</p>
+                                  <p>Cena efektywna: {d.x} zł/dzień</p>
+                                  <p>Ocena: {d.y.toFixed(2)}\u2605</p>
+                                  <p>Liczba opinii: {d.z}</p>
                                 </div>
                               )
                             }}
                           />
-                          <ReferenceLine x={medianX} stroke="#d1d5db" strokeDasharray="3 3" />
-                          <ReferenceLine y={medianY} stroke="#d1d5db" strokeDasharray="3 3" />
+                          <ReferenceLine x={medianX} stroke="#d1d5db" strokeDasharray="3 3" label={{ value: 'mediana cen', position: 'top', style: { fontSize: 10, fill: '#9ca3af' } }} />
+                          <ReferenceLine y={medianY} stroke="#d1d5db" strokeDasharray="3 3" label={{ value: 'mediana ocen', position: 'right', style: { fontSize: 10, fill: '#9ca3af' } }} />
                           <Scatter data={scatterData} shape={ScatterBubble} />
                         </ScatterChart>
                       </ResponsiveContainer>
                     </div>
 
                     <InsightBox>
-                      <strong>{myBrandName}</strong> — cwiartka: <strong>{myQuadrant}</strong>
+                      {myScatter && cheapestScatter ? (
+                        myScatter.x > cheapestScatter.x ? (
+                          <>Płacimy premię cenową {myScatter.x - cheapestScatter.x} zł/dzień vs {cheapestScatter.brandName} przy {
+                            myScatter.y > cheapestScatter.y + 0.2 ? 'wyższej ocenie — premia uzasadniona jakością'
+                            : myScatter.y < cheapestScatter.y - 0.1 ? 'niższej ocenie — premia nieuzasadniona, do decyzji: obniżka lub inwestycja w jakość'
+                            : 'porównywalnej ocenie — premia do monitorowania'
+                          } ({myScatter.y.toFixed(1)}\u2605 vs {cheapestScatter.y.toFixed(1)}\u2605).</>
+                        ) : (
+                          <><strong>{myBrandName}</strong> ma najniższą cenę efektywną ({myScatter.x} zł/dzień) przy ocenie {myScatter.y.toFixed(1)}\u2605. Pozycja lidera cenowego.</>
+                        )
+                      ) : (
+                        <>Brak wystarczających danych do analizy pozycji.</>
+                      )}
                     </InsightBox>
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center">
-                    <p style={{ fontSize: 16 }} className="text-gray-400">Brak danych do wyswietlenia mapy pozycji</p>
+                    <p style={{ fontSize: 16 }} className="text-gray-400">Brak danych cenowych i opinii do wyświetlenia mapy pozycji</p>
                   </div>
                 )}
               </SlideFrame>
             </div>
 
             {/* ═══════════════════════════════════════════════════════════════
-                SLIDE 3 — Like-for-like Prices
+                SLIDE 3 — Prices
                 ═══════════════════════════════════════════════════════════════ */}
             <div data-slide="3" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 2)}>
               <SlideFrame index={2} brand={myBrandName} weekRange={weekRange}>
-                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-4">
-                  Ceny katalogowe like-for-like
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
+                  Porównanie cen katalogowych
                 </h2>
+                <p style={{ fontSize: 13 }} className="text-gray-500 mb-3">Identyczne warianty kaloryczne, porównanie tydzień do tygodnia (WoW = zmiana vs poprzedni tydzień)</p>
 
                 <table className="w-full" style={{ fontSize: 15 }}>
                   <thead>
@@ -1330,7 +1433,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                       <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>1500 kcal</th>
                       <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>2000 kcal</th>
                       <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>2500 kcal</th>
-                      <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>WoW</th>
+                      <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>Zmiana tydz.</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1346,16 +1449,16 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                             <span className="text-gray-900 dark:text-gray-100">{row.brandName}</span>
                           </div>
                         </td>
-                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[1500] != null ? fmtPrice(row.prices[1500]) : '\u2014'}</td>
-                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[2000] != null ? fmtPrice(row.prices[2000]) : '\u2014'}</td>
-                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[2500] != null ? fmtPrice(row.prices[2500]) : '\u2014'}</td>
+                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[1500] != null ? fmtPrice(row.prices[1500]) : <span className="text-gray-400">b.d.</span>}</td>
+                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[2000] != null ? fmtPrice(row.prices[2000]) : <span className="text-gray-400">b.d.</span>}</td>
+                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[2500] != null ? fmtPrice(row.prices[2500]) : <span className="text-gray-400">b.d.</span>}</td>
                         <td className="text-right py-3">
                           {row.changePercent != null ? (
                             <span className={row.changePercent > 0.5 ? 'text-red-600' : row.changePercent < -0.5 ? 'text-green-600' : 'text-gray-400'}>
                               {fmtPct(row.changePercent)}
                             </span>
                           ) : (
-                            <span className="text-gray-400">\u2014</span>
+                            <span className="text-gray-400">b.d.</span>
                           )}
                         </td>
                       </tr>
@@ -1364,8 +1467,15 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                 </table>
 
                 <InsightBox>
-                  Nasza cena 2000 kcal vs najtanszy:{' '}
-                  <strong>{pricGapPct != null ? `${pricGapPct >= 0 ? '+' : ''}${pricGapPct.toFixed(1)}%` : 'brak danych'}</strong>
+                  {pricGapPct != null && myPrice2000 != null && cheapestCatalogRow ? (
+                    pricGapPct <= 0 ? (
+                      <><strong>{myBrandName}</strong> ({fmtPrice(myPrice2000)}) jest najtańszy w wariancie 2000 kcal.</>
+                    ) : (
+                      <>Nasza cena 2000 kcal ({fmtPrice(myPrice2000)}) jest o <strong>{pricGapPct.toFixed(1)}%</strong> wyższa niż {cheapestCatalogRow.brandName} ({fmtPrice(cheapestCatalogRow.prices[2000]!)}). {pricGapPct > 15 ? 'Przekroczony próg 15% — rozważyć korektę.' : 'W akceptowalnym przedziale.'}</>
+                    )
+                  ) : (
+                    <>Brak pełnych danych cenowych wariantu 2000 kcal do obliczenia dystansu.</>
+                  )}
                 </InsightBox>
               </SlideFrame>
             </div>
@@ -1375,31 +1485,33 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                 ═══════════════════════════════════════════════════════════════ */}
             <div data-slide="4" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 3)}>
               <SlideFrame index={3} brand={myBrandName} weekRange={weekRange}>
-                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-4">
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
                   Polityka rabatowa
                 </h2>
+                <p style={{ fontSize: 13 }} className="text-gray-500 mb-4">Przegląd aktywnych rabatów i strategii cenowej konkurencji w bieżącym tygodniu</p>
 
                 {/* 3 KPIs */}
-                <div className="grid grid-cols-3 gap-6 mb-5">
+                <div className="grid grid-cols-3 gap-6 mb-4">
                   <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-4">
                     <p style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
                       {(discountTableData.find(d => d.isMy)?.avgDiscount ?? 0).toFixed(1)}%
                     </p>
-                    <p style={{ fontSize: 13 }} className="text-gray-500 mt-1.5 font-medium">Moj sr. rabat</p>
+                    <p style={{ fontSize: 13 }} className="text-gray-900 dark:text-gray-200 mt-1.5 font-semibold">Nasz średni rabat</p>
+                    <p style={{ fontSize: 11 }} className="text-gray-400 mt-0.5">Średnia z aktywnych promocji {myBrandName}</p>
                   </div>
                   <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-4">
                     <p style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
                       {mostAggressiveCompetitor ? `${mostAggressiveCompetitor.avgDiscount.toFixed(1)}%` : '\u2014'}
                     </p>
-                    <p style={{ fontSize: 13 }} className="text-gray-500 mt-1.5 font-medium">
-                      {mostAggressiveCompetitor ? mostAggressiveCompetitor.brandName : 'Brak'} (najagresywniejszy)
-                    </p>
+                    <p style={{ fontSize: 13 }} className="text-gray-900 dark:text-gray-200 mt-1.5 font-semibold">Najagresywniejszy konkurent</p>
+                    <p style={{ fontSize: 11 }} className="text-gray-400 mt-0.5">{mostAggressiveCompetitor ? `${mostAggressiveCompetitor.brandName} — największy średni rabat` : 'Brak aktywnych rabatów konkurencji'}</p>
                   </div>
                   <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-4">
                     <p style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
                       {data.newPromosThisWeek.length}
                     </p>
-                    <p style={{ fontSize: 13 }} className="text-gray-500 mt-1.5 font-medium">Nowe promocje w tygodniu</p>
+                    <p style={{ fontSize: 13 }} className="text-gray-900 dark:text-gray-200 mt-1.5 font-semibold">Nowe promocje w tygodniu</p>
+                    <p style={{ fontSize: 11 }} className="text-gray-400 mt-0.5">Promocje uruchomione w okresie {weekRange}</p>
                   </div>
                 </div>
 
@@ -1408,8 +1520,8 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                   <thead>
                     <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
                       <th className="text-left py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Marka</th>
-                      <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Sr. rabat</th>
-                      <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Promocje</th>
+                      <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Śr. rabat</th>
+                      <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>L. promocji</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1432,14 +1544,16 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                   </tbody>
                 </table>
 
-                {discountTableData.filter(d => d.isLongRunning && !d.isMy).length > 0 ? (
-                  <InsightBox>
-                    {discountTableData.filter(d => d.isLongRunning && !d.isMy).map(d => d.brandName).join(', ')}{' '}
-                    utrzymuje rabat 4+ tygodni — to strategia cenowa, nie jednorazowa promocja.
-                  </InsightBox>
-                ) : (
-                  <InsightBox>Brak dlugotrwalych strategii rabatowych u konkurencji.</InsightBox>
-                )}
+                {(() => {
+                  const longRunners = discountTableData.filter(d => d.isLongRunning && !d.isMy)
+                  return longRunners.length > 0 ? (
+                    <InsightBox>
+                      {longRunners.map(d => d.brandName).join(', ')} utrzymuje rabat ponad 4 tygodnie ({longRunners.map(d => `${d.avgDiscount.toFixed(1)}%`).join(', ')}). To trwała zmiana strategii cenowej, nie jednorazowa promocja — ich cena efektywna jest stale niższa od katalogowej.
+                    </InsightBox>
+                  ) : (
+                    <InsightBox>Brak długotrwałych strategii rabatowych u konkurencji. Obecne promocje mają charakter taktyczny.</InsightBox>
+                  )
+                })()}
               </SlideFrame>
             </div>
 
@@ -1451,7 +1565,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                 <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
                   Cena efektywna
                 </h2>
-                <p style={{ fontSize: 14 }} className="text-gray-500 mb-3">Cena 2000 kcal po uwzglednieniu rabatu</p>
+                <p style={{ fontSize: 13 }} className="text-gray-500 mb-3">Cena 2000 kcal po uwzględnieniu obowiązujących rabatów, zł/dzień. Sortowanie od najtańszego.</p>
 
                 {barChartData.length > 0 ? (
                   <>
@@ -1460,18 +1574,24 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                         <BarChart
                           data={barChartData}
                           layout="vertical"
-                          margin={{ left: 10, right: 60, top: 5, bottom: 5 }}
+                          margin={{ left: 10, right: 70, top: 5, bottom: 20 }}
                         >
-                          <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                          <XAxis type="number" tick={{ fontSize: 13 }} />
+                          <CartesianGrid horizontal={false} vertical={true} stroke="#f3f4f6" />
+                          <XAxis
+                            type="number"
+                            tick={{ fontSize: 13 }}
+                            label={{ value: 'Cena w zł/dzień', position: 'insideBottom', offset: -10, style: { fontSize: 12, fill: '#6b7280' } }}
+                          />
                           <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 14 }} />
                           <ReTooltip
                             content={({ active, payload }: any) => {
                               if (!active || !payload?.length) return null
+                              const ep = data.effectivePrices.find(e => e.brandName === payload[0].payload.name)
                               return (
                                 <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-lg p-3 text-sm">
                                   <p className="font-bold">{payload[0].payload.name}</p>
-                                  <p>Cena efektywna: {payload[0].value} zl</p>
+                                  <p>Cena efektywna: {payload[0].value} zł/dzień</p>
+                                  {ep && ep.discount > 0 && <p>Rabat: {ep.discount.toFixed(1)}% (katalog: {fmtPrice(ep.catalogPrice)})</p>}
                                 </div>
                               )
                             }}
@@ -1480,7 +1600,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                             {barChartData.map((entry, i) => (
                               <Cell key={i} fill={entry.isMy ? MY_BRAND_COLOR : COMPETITOR_COLOR} />
                             ))}
-                            <LabelList dataKey="price" position="right" style={{ fontSize: 16, fontWeight: 600, fill: '#374151' }} formatter={(v: any) => `${v} zl`} />
+                            <LabelList dataKey="price" position="right" style={{ fontSize: 16, fontWeight: 700, fill: '#374151' }} formatter={(v: any) => `${v} zł`} />
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
@@ -1488,17 +1608,23 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
 
                     <InsightBox>
                       {myEffective && cheapestEffective && myEffective.brandId === cheapestEffective.brandId ? (
-                        <><strong>{myBrandName}</strong> jest najtanszy po uwzglednieniu rabatow.</>
-                      ) : effectiveGap != null ? (
-                        <>Roznica do najtanszego ({cheapestEffective?.brandName}): <strong>{effectiveGap.toFixed(1)}%</strong></>
+                        <><strong>{myBrandName}</strong> ({Math.round(myEffective.effectivePrice)} zł/dzień) jest najtańszy po uwzględnieniu rabatów. Przewaga cenowa utrzymana.</>
+                      ) : effectiveGap != null && cheapestEffective ? (
+                        <>Nasz koszt efektywny ({Math.round(myEffective!.effectivePrice)} zł) jest o <strong>{effectiveGap.toFixed(1)}%</strong> wyższy niż {cheapestEffective.brandName} ({Math.round(cheapestEffective.effectivePrice)} zł). {
+                          myEffRating > cheapEffRating + 0.2
+                            ? `Premia częściowo uzasadniona oceną (${myEffRating.toFixed(1)}\u2605 vs ${cheapEffRating.toFixed(1)}\u2605).`
+                            : myEffRating < cheapEffRating - 0.1
+                              ? `Premia nieuzasadniona — nasza ocena niższa (${myEffRating.toFixed(1)}\u2605 vs ${cheapEffRating.toFixed(1)}\u2605).`
+                              : `Oceny porównywalne (${myEffRating.toFixed(1)}\u2605 vs ${cheapEffRating.toFixed(1)}\u2605) — premia do monitorowania.`
+                        }</>
                       ) : (
-                        <>Brak danych do porownania</>
+                        <>Brak danych do porównania cen efektywnych.</>
                       )}
                     </InsightBox>
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center">
-                    <p style={{ fontSize: 16 }} className="text-gray-400">Brak danych cenowych</p>
+                    <p style={{ fontSize: 16 }} className="text-gray-400">Brak danych cenowych 2000 kcal do wykresu</p>
                   </div>
                 )}
               </SlideFrame>
@@ -1509,9 +1635,10 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                 ═══════════════════════════════════════════════════════════════ */}
             <div data-slide="6" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 5)}>
               <SlideFrame index={5} brand={myBrandName} weekRange={weekRange}>
-                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-4">
-                  Glos klienta
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
+                  Głos klienta
                 </h2>
+                <p style={{ fontSize: 13 }} className="text-gray-500 mb-3">Nowe opinie z bieżącego tygodnia. Delta = zmiana średniej oceny vs poprzedni tydzień.</p>
 
                 <div className="flex gap-6 flex-1 min-h-0">
                   {/* Left: rating table */}
@@ -1527,7 +1654,9 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                       </thead>
                       <tbody>
                         {reviewTableData.map(row => {
-                          const delta = row.avgRating - row.prevAvgRating
+                          const hasPrev = row.prevCount > 0
+                          const delta = hasPrev ? row.avgRating - row.prevAvgRating : null
+                          const isSmall = row.count < 10
                           return (
                             <tr
                               key={row.brandId}
@@ -1544,15 +1673,17 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                                 {row.avgRating > 0 ? row.avgRating.toFixed(2) : '\u2014'}
                               </td>
                               <td className="text-right py-2">
-                                {row.prevAvgRating > 0 ? (
+                                {delta != null ? (
                                   <span className={delta > 0.05 ? 'text-green-600' : delta < -0.05 ? 'text-red-500' : 'text-gray-400'}>
                                     {delta >= 0 ? '+' : ''}{delta.toFixed(2)}
                                   </span>
                                 ) : (
-                                  <span className="text-gray-400">\u2014</span>
+                                  <span className="text-gray-400" title="Brak danych z poprzedniego tygodnia">\u2014</span>
                                 )}
                               </td>
-                              <td className="text-right py-2 text-gray-700 dark:text-gray-300">{row.count}</td>
+                              <td className="text-right py-2 text-gray-700 dark:text-gray-300">
+                                {row.count}{isSmall && row.count > 0 && <SmallSampleBadge />}
+                              </td>
                             </tr>
                           )
                         })}
@@ -1565,31 +1696,31 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                     {bestQuote ? (
                       <div className="rounded-lg p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 flex-1">
                         <p style={{ fontSize: 11 }} className="font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide mb-1.5">
-                          Najlepsza opinia
+                          Najlepsza opinia tygodnia
                         </p>
                         <p style={{ fontSize: 14, lineHeight: 1.4 }} className="italic text-gray-700 dark:text-gray-300">
                           &ldquo;{bestQuote.content?.slice(0, 120)}{(bestQuote.content?.length ?? 0) > 120 ? '...' : ''}&rdquo;
                         </p>
-                        <p style={{ fontSize: 11 }} className="text-gray-400 mt-1">{bestQuote.rating}&#9733;</p>
+                        <p style={{ fontSize: 11 }} className="text-gray-400 mt-1">{bestQuote.rating}&#9733; &middot; {bestQuote.review_date}</p>
                       </div>
                     ) : (
                       <div className="rounded-lg p-4 bg-gray-50 dark:bg-gray-900 flex-1 flex items-center justify-center">
-                        <p style={{ fontSize: 13 }} className="text-gray-400">Brak pozytywnych opinii</p>
+                        <p style={{ fontSize: 13 }} className="text-gray-400">Brak pozytywnych opinii (4\u2605+) w tym tygodniu</p>
                       </div>
                     )}
                     {worstQuote ? (
                       <div className="rounded-lg p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 flex-1">
                         <p style={{ fontSize: 11 }} className="font-semibold text-red-700 dark:text-red-400 uppercase tracking-wide mb-1.5">
-                          Najgorsza opinia
+                          Najgorsza opinia tygodnia
                         </p>
                         <p style={{ fontSize: 14, lineHeight: 1.4 }} className="italic text-gray-700 dark:text-gray-300">
                           &ldquo;{worstQuote.content?.slice(0, 120)}{(worstQuote.content?.length ?? 0) > 120 ? '...' : ''}&rdquo;
                         </p>
-                        <p style={{ fontSize: 11 }} className="text-gray-400 mt-1">{worstQuote.rating}&#9733;</p>
+                        <p style={{ fontSize: 11 }} className="text-gray-400 mt-1">{worstQuote.rating}&#9733; &middot; {worstQuote.review_date}</p>
                       </div>
                     ) : (
                       <div className="rounded-lg p-4 bg-gray-50 dark:bg-gray-900 flex-1 flex items-center justify-center">
-                        <p style={{ fontSize: 13 }} className="text-gray-400">Brak negatywnych opinii</p>
+                        <p style={{ fontSize: 13 }} className="text-gray-400">Brak negatywnych opinii (1-2\u2605) w tym tygodniu</p>
                       </div>
                     )}
                   </div>
@@ -1597,10 +1728,16 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
 
                 {dominantTopic ? (
                   <InsightBox>
-                    Dominujacy temat negatywnych opinii: <strong>{topicLabels[dominantTopic[0]] || dominantTopic[0]}</strong> ({dominantTopic[1]} z {myNegativeReviews.length})
+                    {dominantTopic[1]} z {myNegativeReviews.length} negatywnych opinii ({Math.round(dominantTopic[1] / myNegativeReviews.length * 100)}%) dotyczy tematu <strong>{topicLabels[dominantTopic[0]] || dominantTopic[0]}</strong>.{' '}
+                    {dominantTopic[1] / myNegativeReviews.length > 0.5
+                      ? 'Koncentracja powyżej 50% — wymaga eskalacji operacyjnej.'
+                      : 'Warto monitorować trend w kolejnych tygodniach.'
+                    }
                   </InsightBox>
+                ) : myNegativeReviews.length === 0 ? (
+                  <InsightBox>Brak negatywnych opinii (1-2\u2605) w tym tygodniu — pozytywny sygnał jakościowy.</InsightBox>
                 ) : (
-                  <InsightBox>Brak wyraznego dominujacego tematu w negatywnych opiniach.</InsightBox>
+                  <InsightBox>Brak wyraźnego dominującego tematu w negatywnych opiniach — problemy rozproszone.</InsightBox>
                 )}
               </SlideFrame>
             </div>
@@ -1610,9 +1747,10 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                 ═══════════════════════════════════════════════════════════════ */}
             <div data-slide="7" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 6)}>
               <SlideFrame index={6} brand={myBrandName} weekRange={weekRange}>
-                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-6">
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
                   Ruchy konkurencji
                 </h2>
+                <p style={{ fontSize: 13 }} className="text-gray-500 mb-5">Istotne zdarzenia: zmiany cen &gt;3%, nowe/zakończone promocje, skoki opinii, zmiany oferty pakietów</p>
 
                 {topEvents.length > 0 ? (
                   <div className="space-y-3">
@@ -1635,7 +1773,10 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                     <div className="text-center">
                       <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-3" />
                       <p style={{ fontSize: 18, fontWeight: 600 }} className="text-gray-600 dark:text-gray-400">
-                        Spokojny tydzien — brak istotnych ruchow
+                        Spokojny tydzień — brak istotnych ruchów konkurencji
+                      </p>
+                      <p style={{ fontSize: 13 }} className="text-gray-400 mt-1">
+                        Żaden konkurent nie zmienił cen o więcej niż 3% ani nie uruchomił nowych promocji.
                       </p>
                     </div>
                   </div>
@@ -1648,30 +1789,39 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                 ═══════════════════════════════════════════════════════════════ */}
             <div data-slide="8" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 7)}>
               <SlideFrame index={7} brand={myBrandName} weekRange={weekRange}>
-                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-8">
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
                   Rekomendacje
                 </h2>
+                <p style={{ fontSize: 13 }} className="text-gray-500 mb-6">Sugerowane działania wynikające z danych tygodnia. Max 3 najważniejsze.</p>
 
                 {data.recommendations.length > 0 ? (
-                  <div className="space-y-6">
+                  <div className="space-y-5">
                     {data.recommendations.map((rec, i) => {
-                      const priorityColors: Record<string, string> = {
-                        high: 'text-red-600',
-                        medium: 'text-amber-600',
-                        low: 'text-blue-600',
+                      const priorityBorder: Record<string, string> = {
+                        high: 'border-l-red-500',
+                        medium: 'border-l-amber-500',
+                        low: 'border-l-blue-400',
+                      }
+                      const priorityBg: Record<string, string> = {
+                        high: 'bg-red-50 dark:bg-red-950/10',
+                        medium: 'bg-amber-50 dark:bg-amber-950/10',
+                        low: 'bg-blue-50 dark:bg-blue-950/10',
                       }
                       return (
-                        <div key={i} className="flex gap-4">
-                          <span style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }} className={`${priorityColors[rec.priority]} flex-shrink-0`}>
-                            {i + 1}.
-                          </span>
-                          <div>
-                            <p style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.3 }} className="text-gray-900 dark:text-gray-100">
-                              {rec.title}
-                            </p>
-                            <p style={{ fontSize: 14, lineHeight: 1.5 }} className="text-gray-500 dark:text-gray-400 mt-1">
-                              {rec.text}
-                            </p>
+                        <div key={i} className={`border-l-4 rounded-r-lg px-5 py-4 ${priorityBorder[rec.priority]} ${priorityBg[rec.priority]}`}>
+                          <div className="flex items-baseline gap-3">
+                            <span style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }} className="text-gray-300 flex-shrink-0">{i + 1}</span>
+                            <div className="flex-1">
+                              <p style={{ fontSize: 17, fontWeight: 600, lineHeight: 1.3 }} className="text-gray-900 dark:text-gray-100">
+                                {rec.title}
+                              </p>
+                              <p style={{ fontSize: 13, lineHeight: 1.5 }} className="text-gray-600 dark:text-gray-400 mt-1">
+                                {rec.text}
+                              </p>
+                              <p style={{ fontSize: 11 }} className="text-gray-400 mt-2">
+                                Właściciel: {rec.owner} &middot; Termin: {rec.deadline}
+                              </p>
+                            </div>
                           </div>
                         </div>
                       )
@@ -1682,10 +1832,10 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                     <div className="text-center">
                       <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-3" />
                       <p style={{ fontSize: 20, fontWeight: 600 }} className="text-gray-600 dark:text-gray-400">
-                        Utrzymac obecna strategie
+                        Utrzymać obecną strategię
                       </p>
                       <p style={{ fontSize: 14 }} className="text-gray-400 mt-1">
-                        Pozycja rynkowa stabilna — brak pilnych dzialan.
+                        Pozycja rynkowa stabilna, brak alarmujących sygnałów. Kontynuować monitoring.
                       </p>
                     </div>
                   </div>
@@ -1722,12 +1872,12 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       <Dialog open={showEmailModal} onOpenChange={setShowEmailModal}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Wyslij raport zarzadczy emailem</DialogTitle>
+            <DialogTitle>Wyślij raport zarządczy emailem</DialogTitle>
           </DialogHeader>
           <div className="space-y-5 pt-1">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uzytkownicy systemu</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Użytkownicy systemu</Label>
                 <div className="flex gap-1">
                   <button
                     className="text-xs text-primary hover:underline"
@@ -1737,7 +1887,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                   </button>
                   <span className="text-muted-foreground text-xs">&middot;</span>
                   <button className="text-xs text-muted-foreground hover:underline" onClick={() => setEmailRecipients(new Set())}>
-                    Wyczysc
+                    Wyczyść
                   </button>
                 </div>
               </div>
@@ -1764,7 +1914,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dodatkowe emaile (jeden na linie)</Label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dodatkowe emaile (jeden na linię)</Label>
               <Textarea
                 placeholder={"email@example.com\nkolejny@firma.pl"}
                 value={emailExtraEmails}
@@ -1778,8 +1928,8 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
               <Button variant="outline" onClick={() => setShowEmailModal(false)}>Anuluj</Button>
               <Button onClick={handleSendEmail} disabled={sending}>
                 {sending
-                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Wysylam...</>
-                  : <><Send className="h-4 w-4 mr-2" />Wyslij raport</>}
+                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Wysyłam...</>
+                  : <><Send className="h-4 w-4 mr-2" />Wyślij raport</>}
               </Button>
             </div>
           </div>
