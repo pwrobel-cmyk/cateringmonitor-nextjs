@@ -1,26 +1,23 @@
 'use client'
 
-import { useState, useRef, useMemo, useCallback } from 'react'
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
-  AlertTriangle, TrendingUp, TrendingDown, ArrowUp, ArrowDown,
-  Star, MessageSquare, Target, Percent, DollarSign, FileDown,
-  Mail, Loader2, Send, ShieldAlert, CheckCircle, Lightbulb,
-  BarChart3, Users, Megaphone, Calendar, Minus,
+  AlertTriangle, ChevronLeft, ChevronRight, Maximize,
+  FileDown, Mail, Loader2, Send, CheckCircle, ShieldAlert,
 } from 'lucide-react'
 import { useReactToPrint } from 'react-to-print'
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as ReTooltip, ResponsiveContainer, ScatterChart, Scatter,
-  Cell, ReferenceLine, ZAxis, Legend,
+  Cell, ReferenceLine, ZAxis, LabelList,
 } from 'recharts'
 import { format, subWeeks, startOfWeek, endOfWeek, parseISO, differenceInDays } from 'date-fns'
 import { pl } from 'date-fns/locale'
@@ -31,6 +28,7 @@ import { toast } from 'sonner'
 const MY_BRAND_COLOR = '#185FA5'
 const COMPETITOR_COLOR = '#9ca3af'
 const KCAL_BUCKETS = [1500, 2000, 2500] as const
+const TOTAL_SLIDES = 8
 const TOPIC_KEYWORDS: Record<string, string[]> = {
   dostawa: ['dostaw', 'delivery', 'kurier', 'przesyłk', 'transport', 'opóźn', 'spóźn'],
   smak: ['smak', 'smaczn', 'pyszn', 'niesmaczn', 'mdłe', 'nudne'],
@@ -150,7 +148,7 @@ function fmtPct(v: number, withSign = true): string {
 }
 
 function fmtPrice(v: number): string {
-  return v.toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' zł'
+  return v.toLocaleString('pl-PL', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' zl'
 }
 
 function detectTopic(content: string): string | null {
@@ -188,54 +186,23 @@ function get8WeekBounds(weekEnd: string): { start: string; weeks: { start: strin
   return { start: weeks[0].start, weeks }
 }
 
-// ── Slide header ─────────────────────────────────────────────────────────────
+// ── Slide Frame ─────────────────────────────────────────────────────────────
 
-function SlideHeader({ number, title, subtitle, icon: Icon }: {
-  number: number; title: string; subtitle?: string; icon: any
+function SlideFrame({ index, brand, weekRange, children }: {
+  index: number; brand: string; weekRange: string; children: React.ReactNode
 }) {
   return (
-    <div className="flex items-center gap-3 mb-6">
-      <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-        <Icon className="h-5 w-5 text-primary" />
-      </div>
-      <div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-xs font-mono">{number}/8</Badge>
-          <h2 className="text-xl font-bold">{title}</h2>
-        </div>
-        {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
+    <div className="h-full w-full flex flex-col" style={{ padding: 48 }}>
+      <div className="flex-1 min-h-0 flex flex-col">{children}</div>
+      <div className="flex justify-between items-end pt-2 flex-shrink-0">
+        <span style={{ fontSize: 11, color: '#9ca3af' }}>{brand} &middot; {weekRange}</span>
+        <span style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'monospace' }}>{index + 1} / {TOTAL_SLIDES}</span>
       </div>
     </div>
   )
 }
 
-// ── KPI card ─────────────────────────────────────────────────────────────────
-
-function KPICard({ label, value, delta, deltaLabel, icon: Icon, highlight }: {
-  label: string; value: string; delta?: string; deltaLabel?: string
-  icon: any; highlight?: boolean
-}) {
-  const isPositive = delta?.startsWith('+')
-  const isNegative = delta?.startsWith('-')
-  return (
-    <Card className={highlight ? 'border-primary/40 bg-primary/5' : ''}>
-      <CardContent className="pt-5 pb-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
-          <Icon className="h-4 w-4 text-muted-foreground" />
-        </div>
-        <p className="text-2xl font-bold">{value}</p>
-        {delta && (
-          <p className={`text-xs font-medium mt-1 ${isPositive ? 'text-green-600' : isNegative ? 'text-red-500' : 'text-muted-foreground'}`}>
-            {delta} {deltaLabel || 'vs. poprz. tydzień'}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-// ── Brand logo helper ────────────────────────────────────────────────────────
+// ── Brand Logo ──────────────────────────────────────────────────────────────
 
 function BrandLogo({ url, name, size = 'sm' }: { url: string | null; name: string; size?: 'sm' | 'md' }) {
   const s = size === 'md' ? 'w-8 h-8' : 'w-6 h-6'
@@ -248,26 +215,44 @@ function BrandLogo({ url, name, size = 'sm' }: { url: string | null; name: strin
   )
 }
 
-// ── Custom Tooltip ───────────────────────────────────────────────────────────
+// ── Scatter Bubble (custom shape) ───────────────────────────────────────────
 
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload) return null
+function ScatterBubble(props: any) {
+  const { cx, cy, payload } = props
+  if (!cx || !cy) return null
+  const abbr = (payload.brandName || '').slice(0, 3).toUpperCase()
+  const r = payload.isMy ? 28 : 22
   return (
-    <div className="bg-background border rounded-lg shadow-lg p-2 text-xs">
-      <p className="font-semibold mb-1">{label}</p>
-      {payload.map((p: any) => (
-        <p key={p.dataKey} style={{ color: p.color || p.stroke }}>{p.name}: {typeof p.value === 'number' ? p.value.toFixed(1) : p.value}</p>
-      ))}
+    <g>
+      <circle cx={cx} cy={cy} r={r} fill={payload.isMy ? MY_BRAND_COLOR : COMPETITOR_COLOR} opacity={0.9} />
+      <text x={cx} y={cy + 1} textAnchor="middle" dominantBaseline="central" fill="white" fontSize={payload.isMy ? 12 : 10} fontWeight={700}>
+        {abbr}
+      </text>
+    </g>
+  )
+}
+
+// ── Insight box ─────────────────────────────────────────────────────────────
+
+function InsightBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-auto pt-3 flex-shrink-0">
+      <div className="rounded-lg px-4 py-2.5 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+        <p style={{ fontSize: 14 }} className="text-gray-700 dark:text-gray-300">{children}</p>
+      </div>
     </div>
   )
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// ██ MAIN COMPONENT
+// MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, weekEnd }: ExecutiveReportProps) {
   const reportRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [currentSlide, setCurrentSlide] = useState(0)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const [showEmailModal, setShowEmailModal] = useState(false)
   const [emailRecipients, setEmailRecipients] = useState<Set<string>>(new Set())
   const [emailExtraEmails, setEmailExtraEmails] = useState('')
@@ -276,6 +261,34 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
   const allBrandIds = useMemo(() => [myBrandId, ...competitorBrandIds], [myBrandId, competitorBrandIds])
   const { prevStart, prevEnd } = useMemo(() => getWeekBounds(weekStart), [weekStart])
   const { start: trend8Start, weeks: trendWeeks } = useMemo(() => get8WeekBounds(weekEnd), [weekEnd])
+
+  // ── Navigation ──────────────────────────────────────────────────────────────
+  const goPrev = useCallback(() => setCurrentSlide(s => Math.max(0, s - 1)), [])
+  const goNext = useCallback(() => setCurrentSlide(s => Math.min(TOTAL_SLIDES - 1, s + 1)), [])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') goPrev()
+      if (e.key === 'ArrowRight') goNext()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [goPrev, goNext])
+
+  // ── Fullscreen ──────────────────────────────────────────────────────────────
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen()
+    } else {
+      containerRef.current?.requestFullscreen()
+    }
+  }, [])
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handler)
+    return () => document.removeEventListener('fullscreenchange', handler)
+  }, [])
 
   // ── Email users ────────────────────────────────────────────────────────────
   const { data: emailUsers = [] } = useQuery({
@@ -289,15 +302,13 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
   })
 
   // ══════════════════════════════════════════════════════════════════════════
-  // DATA FETCHING
+  // DATA FETCHING (unchanged)
   // ══════════════════════════════════════════════════════════════════════════
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['executive-report', myBrandId, competitorBrandIds, weekStart, weekEnd],
     queryFn: async () => {
-      // Fetch all data in parallel
       const [pricesRes, discountsRes, reviewsRes, trendPricesRes, trendReviewsRes] = await Promise.all([
-        // A) Prices: current + previous week
         (supabase as any)
           .from('price_history')
           .select(`
@@ -318,7 +329,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
           .order('date_recorded', { ascending: false })
           .limit(10000),
 
-        // B) Discounts active in the week
         (supabase as any)
           .from('discounts')
           .select('id, brand_id, percentage, valid_from, valid_until, code, description, brands(name, logo_url)')
@@ -326,7 +336,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
           .or(`valid_until.gte.${weekStart},valid_until.is.null`)
           .not('percentage', 'is', null),
 
-        // C) Reviews: current + previous week
         (supabase as any)
           .from('reviews')
           .select('brand_id, rating, content, review_date')
@@ -335,7 +344,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
           .lte('review_date', weekEnd)
           .limit(5000),
 
-        // D) Trend: 8 weeks prices (2000 kcal)
         (supabase as any)
           .from('price_history')
           .select(`
@@ -351,7 +359,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
           .order('date_recorded', { ascending: false })
           .limit(20000),
 
-        // E) Trend: 8 weeks reviews
         (supabase as any)
           .from('reviews')
           .select('brand_id, rating, review_date, brands(name)')
@@ -370,13 +377,11 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
           brandInfo.set(brand.id, { name: brand.name, logo: brand.logo_url })
         }
       }
-      // Also from discounts
       for (const d of (discountsRes.data || []) as any[]) {
         if (d.brands && !brandInfo.has(d.brand_id)) {
           brandInfo.set(d.brand_id, { name: d.brands.name, logo: d.brands.logo_url })
         }
       }
-      // Also from reviews
       for (const r of (trendReviewsRes.data || []) as any[]) {
         if (r.brands && !brandInfo.has(r.brand_id)) {
           brandInfo.set(r.brand_id, { name: r.brands.name, logo: null })
@@ -384,7 +389,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       }
 
       // ── Process prices by week and kcal bucket ────────────────────────────
-      // Group: brandId → kcalBucket → packageKcalRangeId → prices[]
       type PriceEntry = { price: number; pkrId: string; packageName: string; kcalLabel: string }
       const currentWeekPrices = new Map<string, Map<number, Map<string, PriceEntry[]>>>()
       const prevWeekPrices = new Map<string, Map<number, Map<string, PriceEntry[]>>>()
@@ -417,7 +421,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         })
       }
 
-      // ── Compute average price per brand per kcal bucket ───────────────────
       function avgPriceForBucket(
         weekData: Map<string, Map<number, Map<string, PriceEntry[]>>>,
         brandId: string,
@@ -427,8 +430,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         if (!brandMap) return null
         const kcalMap = brandMap.get(kcalBucket)
         if (!kcalMap || kcalMap.size === 0) return null
-
-        // For each package variant, take the latest (first, since sorted desc) price
         let sum = 0, count = 0
         for (const entries of kcalMap.values()) {
           if (entries.length > 0) {
@@ -439,7 +440,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         return count > 0 ? sum / count : null
       }
 
-      // ── Brand kcal prices (current week) ──────────────────────────────────
       const brandKcalPrices: BrandKcalPrice[] = []
       for (const brandId of allBrandIds) {
         const info = brandInfo.get(brandId)
@@ -487,7 +487,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             const prevEntries = prevKcal?.get(pkrId)
 
             if (curEntries && prevEntries) {
-              // Matched pair
               matchedCurSum += curEntries[0].price
               matchedPrevSum += prevEntries[0].price
               matchedCount++
@@ -538,7 +537,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         entry.codes.push(d)
       }
 
-      // Check long-running discounts (>4 weeks = strategy)
       const allDiscountsForStrategy = ((discountsRes.data || []) as any[])
       const longRunningBrands = new Set<string>()
       for (const d of allDiscountsForStrategy) {
@@ -547,13 +545,11 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
           const days = differenceInDays(parseISO(d.valid_until), parseISO(d.valid_from))
           if (days > 28) longRunningBrands.add(d.brand_id)
         } else if (d.valid_from && !d.valid_until) {
-          // Open-ended discount running since valid_from
           const days = differenceInDays(parseISO(weekEnd), parseISO(d.valid_from))
           if (days > 28) longRunningBrands.add(d.brand_id)
         }
       }
 
-      // New promotions this week
       const newPromosThisWeek = discountRows.filter(
         (d: any) => d.valid_from >= weekStart && d.valid_from <= weekEnd
       )
@@ -599,7 +595,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       const trendPriceRows = (trendPricesRes.data || []) as any[]
       const trendReviewRows = (trendReviewsRes.data || []) as any[]
 
-      // Price trend: avg 2000 kcal price per brand per week
       const priceTrend: WeekTrendPoint[] = trendWeeks.map(w => {
         const point: WeekTrendPoint = { weekLabel: w.label, weekStart: w.start }
         for (const brandId of allBrandIds) {
@@ -614,7 +609,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             return bucket === 2000 && r.date_recorded >= w.start && r.date_recorded <= w.end
           })
           if (weekPrices.length > 0) {
-            // Deduplicate by getting latest per package
             const seen = new Set<string>()
             let sum = 0, count = 0
             for (const p of weekPrices) {
@@ -633,7 +627,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         return point
       })
 
-      // Rating trend: avg rating per brand per week
       const ratingTrend: WeekTrendPoint[] = trendWeeks.map(w => {
         const point: WeekTrendPoint = { weekLabel: w.label, weekStart: w.start }
         for (const brandId of allBrandIds) {
@@ -673,7 +666,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       // ── Competitor events timeline ────────────────────────────────────────
       const events: CompetitorEvent[] = []
 
-      // Price changes >3%
       for (const mc of matchedChanges) {
         if (mc.brandId === myBrandId) continue
         if (Math.abs(mc.changePercent) > 3) {
@@ -686,7 +678,6 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         }
       }
 
-      // New/ended promotions
       for (const d of discountRows) {
         const info = brandInfo.get(d.brand_id)
         if (!info || d.brand_id === myBrandId) continue
@@ -703,12 +694,11 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             date: d.valid_until,
             brandName: info.name,
             type: 'promo_end',
-            description: `Zakończenie promocji -${d.percentage}%`,
+            description: `Zakonczenie promocji -${d.percentage}%`,
           })
         }
       }
 
-      // Review spikes (2x daily average)
       for (const brandId of competitorBrandIds) {
         const weekReviews = currentWeekReviews.filter(r => r.brand_id === brandId)
         const prevCount = prevWeekReviews.filter(r => r.brand_id === brandId).length
@@ -720,12 +710,11 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             date: weekStart,
             brandName: info?.name || 'Unknown',
             type: 'review_spike',
-            description: `Skok opinii: ${weekReviews.length} vs ${prevCount} (poprz. tydzień)`,
+            description: `Skok opinii: ${weekReviews.length} vs ${prevCount} (poprz. tydzien)`,
           })
         }
       }
 
-      // Structural changes from competitors
       for (const sc of structuralChanges) {
         if (sc.brandId === myBrandId) continue
         events.push({
@@ -739,9 +728,8 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       events.sort((a, b) => a.date.localeCompare(b.date))
 
       // ── Recommendations ───────────────────────────────────────────────────
-      const recommendations: { text: string; priority: 'high' | 'medium' | 'low' }[] = []
+      const recommendations: { text: string; priority: 'high' | 'medium' | 'low'; title: string }[] = []
 
-      // Price gap growing 2+ weeks
       const myPriceTrendValues = priceTrend
         .map(p => p[brandInfo.get(myBrandId)?.name || ''])
         .filter((v): v is number => v !== null && typeof v === 'number')
@@ -765,57 +753,57 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
 
         if (recentGaps.length >= 2 && recentGaps[recentGaps.length - 1] > recentGaps[0] + 2) {
           recommendations.push({
-            text: 'Rozważyć odpowiedź cenową — różnica do najtańszego konkurenta rośnie od 2+ tygodni.',
+            title: 'Odpowiedz cenowa',
+            text: 'Roznica do najtanszego konkurenta rosnie od 2+ tygodni. Rozwazyc korekte cennika.',
             priority: 'high',
           })
         }
       }
 
-      // >50% negative reviews about one topic
       const myReviews = currentWeekReviews.filter(r => r.brand_id === myBrandId && r.rating != null && r.rating <= 2)
       if (myReviews.length > 0) {
-        const topicCounts: Record<string, number> = {}
+        const topicCountsLocal: Record<string, number> = {}
         for (const r of myReviews) {
           if (!r.content) continue
           const topic = detectTopic(r.content)
-          if (topic) topicCounts[topic] = (topicCounts[topic] || 0) + 1
+          if (topic) topicCountsLocal[topic] = (topicCountsLocal[topic] || 0) + 1
         }
         const totalNeg = myReviews.length
-        for (const [topic, count] of Object.entries(topicCounts)) {
+        for (const [topic, count] of Object.entries(topicCountsLocal)) {
           if (count / totalNeg > 0.5) {
-            const topicNames: Record<string, string> = { dostawa: 'dostawy', smak: 'smaku', cena: 'ceny', obsługa: 'obsługi' }
+            const topicNames: Record<string, string> = { dostawa: 'dostawy', smak: 'smaku', cena: 'ceny', obsluga: 'obslugi' }
             recommendations.push({
-              text: `Eskalować problem ${topicNames[topic] || topic} — ${Math.round(count / totalNeg * 100)}% negatywnych opinii dotyczy tego tematu.`,
+              title: `Eskalacja: ${topicNames[topic] || topic}`,
+              text: `${Math.round(count / totalNeg * 100)}% negatywnych opinii dotyczy tego tematu. Wymaga natychmiastowej reakcji.`,
               priority: 'high',
             })
           }
         }
       }
 
-      // Competitor negative spike = acquisition opportunity
       for (const cid of competitorBrandIds) {
         const curNeg = currentWeekReviews.filter(r => r.brand_id === cid && r.rating != null && r.rating <= 2).length
         const prevNeg = prevWeekReviews.filter(r => r.brand_id === cid && r.rating != null && r.rating <= 2).length
         if (prevNeg > 0 && curNeg > prevNeg * 2) {
           const info = brandInfo.get(cid)
           recommendations.push({
-            text: `Okazja akwizycyjna — ${info?.name || 'konkurent'} ma skok negatywnych opinii (${curNeg} vs ${prevNeg}).`,
+            title: 'Okazja akwizycyjna',
+            text: `${info?.name || 'Konkurent'} ma skok negatywnych opinii (${curNeg} vs ${prevNeg}). Mozliwosc przejecia klientow.`,
             priority: 'medium',
           })
         }
       }
 
-      // Long-running competitor discount
       for (const cid of longRunningBrands) {
         if (cid === myBrandId) continue
         const info = brandInfo.get(cid)
         recommendations.push({
-          text: `Przeanalizować trwałą strategię rabatową ${info?.name || 'konkurenta'} — rabat utrzymywany 4+ tygodni.`,
+          title: `Strategia rabatowa ${info?.name || 'konkurenta'}`,
+          text: 'Rabat utrzymywany 4+ tygodni — to zmiana strategii cenowej, nie jednorazowa promocja.',
           priority: 'low',
         })
       }
 
-      // ── Build final data ──────────────────────────────────────────────────
       return {
         brandInfo,
         brandKcalPrices,
@@ -841,14 +829,21 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
   // ── Print handler ──────────────────────────────────────────────────────────
   const handlePrint = useReactToPrint({
     contentRef: reportRef,
-    documentTitle: `raport-zarządczy-${weekStart}-${weekEnd}`,
+    documentTitle: `raport-zarzadczy-${weekStart}-${weekEnd}`,
     pageStyle: `
       @page { size: A4 landscape; margin: 10mm; }
       @media print {
         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        button, nav, header, aside, .no-print { display: none !important; }
-        [data-slide] { page-break-before: always; }
-        [data-slide]:first-child { page-break-before: auto; }
+        [data-slide] {
+          display: flex !important;
+          page-break-after: always;
+          aspect-ratio: auto !important;
+          height: 190mm !important;
+          max-width: none !important;
+          box-shadow: none !important;
+          border-radius: 0 !important;
+        }
+        .no-print { display: none !important; }
       }
     `,
   })
@@ -858,7 +853,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     const extraList = emailExtraEmails.split('\n').map(e => e.trim()).filter(Boolean)
     const selectedEmails = emailUsers.filter(u => emailRecipients.has(u.id)).map(u => u.email)
     const recipients = [...new Set([...selectedEmails, ...extraList])]
-    if (!recipients.length) { toast.error('Brak odbiorców'); return }
+    if (!recipients.length) { toast.error('Brak odbiorcow'); return }
     setSending(true)
     try {
       const res = await fetch('/api/admin/send-custom-email', {
@@ -866,16 +861,16 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipients,
-          subject: `Raport zarządczy ${weekStart} – ${weekEnd}`,
-          paragraphs: [`Raport zarządczy tygodniowy za okres ${weekStart} – ${weekEnd} został wygenerowany. Zaloguj się do panelu, aby go zobaczyć.`],
+          subject: `Raport zarzadczy ${weekStart} - ${weekEnd}`,
+          paragraphs: [`Raport zarzadczy tygodniowy za okres ${weekStart} - ${weekEnd} zostal wygenerowany. Zaloguj sie do panelu, aby go zobaczyc.`],
         }),
       })
       const result = await res.json()
-      if (result.sent > 0) toast.success(`Wysłano do ${result.sent} odbiorców`)
-      if (result.errors?.length) toast.error(`Błędy: ${result.errors.join(', ')}`)
+      if (result.sent > 0) toast.success(`Wyslano do ${result.sent} odbiorcow`)
+      if (result.errors?.length) toast.error(`Bledy: ${result.errors.join(', ')}`)
       setShowEmailModal(false)
     } catch (e: any) {
-      toast.error(e.message || 'Błąd wysyłki')
+      toast.error(e.message || 'Blad wysylki')
     } finally {
       setSending(false)
     }
@@ -887,37 +882,27 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
   const slide1Data = useMemo(() => {
     if (!data) return null
 
-    // Price position (ranking by 2000 kcal price, ascending = 1st is cheapest)
     const prices2000 = data.brandKcalPrices.filter(p => p.kcal === 2000)
     const sorted = [...prices2000].sort((a, b) => a.avgPrice - b.avgPrice)
     const myPosition = sorted.findIndex(p => p.brandId === myBrandId) + 1
     const totalBrands = sorted.length
 
-    // Previous week position
-    const myMatchedChange = data.matchedChanges.find(
-      mc => mc.brandId === myBrandId
-    )
+    const myMatchedChange = data.matchedChanges.find(mc => mc.brandId === myBrandId)
 
-    // Average rating
     const myReviews = data.currentReviewsByBrand.get(myBrandId)
     const prevMyReviews = data.prevReviewsByBrand.get(myBrandId)
     const avgRating = myReviews?.avgRating ?? 0
     const prevAvgRating = prevMyReviews?.avgRating ?? 0
     const ratingDelta = avgRating - prevAvgRating
 
-    // Gap to cheapest competitor
     const cheapestCompetitor = sorted.find(p => p.brandId !== myBrandId)
     const myPrice = sorted.find(p => p.brandId === myBrandId)
     const gapPercent = myPrice && cheapestCompetitor
       ? ((myPrice.avgPrice - cheapestCompetitor.avgPrice) / cheapestCompetitor.avgPrice) * 100
       : 0
 
-    // Previous gap
-    const prevPrices2000 = data.brandKcalPrices.filter(p => p.kcal === 2000)
-    // We'll approximate prev gap from matched changes
-    const prevGapPercent = gapPercent // simplified — we'd need prev week prices
+    const prevGapPercent = gapPercent
 
-    // Share of voice
     const totalReviews = Array.from(data.currentReviewsByBrand.values()).reduce((s, b) => s + b.count, 0)
     const myReviewCount = myReviews?.count ?? 0
     const shareOfVoice = totalReviews > 0 ? (myReviewCount / totalReviews) * 100 : 0
@@ -926,27 +911,25 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     const prevMyCount = prevMyReviews?.count ?? 0
     const prevShareOfVoice = prevTotalReviews > 0 ? (prevMyCount / prevTotalReviews) * 100 : 0
 
-    // Verdict
     let verdict: string
-    let isStable = true
+    let verdictColor: 'green' | 'amber' | 'red' = 'green'
 
-    // Check if price gap to cheapest competitor grew >2pp
     if (gapPercent > prevGapPercent + 2) {
-      verdict = 'Tracimy przewagę cenową'
-      isStable = false
+      verdict = 'Tracimy przewage cenowa'
+      verdictColor = 'red'
     } else if (ratingDelta < -0.1) {
       verdict = 'Spadek satysfakcji'
-      isStable = false
+      verdictColor = 'red'
     } else {
-      // Check competitor price changes >5%
       const bigCompetitorChange = data.matchedChanges.find(
         mc => mc.brandId !== myBrandId && Math.abs(mc.changePercent) > 5
       )
       if (bigCompetitorChange) {
-        verdict = `${bigCompetitorChange.brandName} zmienia strategię`
-        isStable = false
+        verdict = `${bigCompetitorChange.brandName} zmienia strategie`
+        verdictColor = 'amber'
       } else {
         verdict = 'Pozycja stabilna'
+        verdictColor = 'green'
       }
     }
 
@@ -955,25 +938,20 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       avgRating, ratingDelta,
       gapPercent,
       shareOfVoice, shareOfVoiceDelta: shareOfVoice - prevShareOfVoice,
-      verdict, isStable,
+      verdict, verdictColor,
       myMatchedChange,
     }
   }, [data, myBrandId])
 
-  // ── Loading / Error states ─────────────────────────────────────────────────
+  // ── Loading / Error ────────────────────────────────────────────────────────
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        {[1, 2, 3, 4].map(i => (
-          <Card key={i}>
-            <CardContent className="pt-6">
-              <Skeleton className="h-8 w-48 mb-4" />
-              <div className="grid grid-cols-4 gap-4">
-                {[1, 2, 3, 4].map(j => <Skeleton key={j} className="h-24" />)}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center space-y-4">
+          <Skeleton className="h-12 w-12 rounded-full mx-auto" />
+          <Skeleton className="h-4 w-48 mx-auto" />
+          <Skeleton className="h-3 w-32 mx-auto" />
+        </div>
       </div>
     )
   }
@@ -983,14 +961,18 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       <Card className="border-red-200 bg-red-50">
         <CardContent className="pt-6 text-center">
           <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
-          <p className="text-red-700">Błąd ładowania danych raportu</p>
-          <p className="text-sm text-red-500 mt-1">{(error as Error)?.message || 'Spróbuj ponownie'}</p>
+          <p className="text-red-700">Blad ladowania danych raportu</p>
+          <p className="text-sm text-red-500 mt-1">{(error as Error)?.message || 'Sprobuj ponownie'}</p>
         </CardContent>
       </Card>
     )
   }
 
-  // ── Scatter chart data (Slide 2) ──────────────────────────────────────────
+  // ── Render data ────────────────────────────────────────────────────────────
+
+  const weekRange = `${weekStart} \u2013 ${weekEnd}`
+
+  // Scatter chart data (Slide 2)
   const scatterData = data.effectivePrices.map(ep => {
     const review = data.currentReviewsByBrand.get(ep.brandId)
     return {
@@ -1014,10 +996,10 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     ? myScatter.x <= medianX && myScatter.y >= medianY ? 'lider (niska cena, wysoka ocena)'
       : myScatter.x > medianX && myScatter.y >= medianY ? 'premium (wysoka cena, wysoka ocena)'
       : myScatter.x <= medianX && myScatter.y < medianY ? 'walka cenowa (niska cena, niska ocena)'
-      : 'pod presją (wysoka cena, niska ocena)'
+      : 'pod presja (wysoka cena, niska ocena)'
     : null
 
-  // ── Catalog price table data (Slide 3) ────────────────────────────────────
+  // Catalog price table (Slide 3)
   type CatalogRow = { brandId: string; brandName: string; brandLogo: string | null; prices: Record<number, number | null>; changePercent: number | null; matchedCount: number; isMy: boolean }
   const catalogTableData: CatalogRow[] = allBrandIds.flatMap(brandId => {
     const info = data.brandInfo.get(brandId)
@@ -1039,7 +1021,16 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     }]
   })
 
-  // ── Discount table data (Slide 4) ─────────────────────────────────────────
+  // Gap to cheapest (Slide 3)
+  const myPrice2000 = catalogTableData.find(r => r.isMy)?.prices[2000]
+  const cheapestCompetitorPrice = catalogTableData
+    .filter(r => !r.isMy && r.prices[2000] != null)
+    .sort((a, b) => (a.prices[2000] ?? Infinity) - (b.prices[2000] ?? Infinity))[0]?.prices[2000]
+  const pricGapPct = myPrice2000 && cheapestCompetitorPrice
+    ? ((myPrice2000 - cheapestCompetitorPrice) / cheapestCompetitorPrice) * 100
+    : null
+
+  // Discount table (Slide 4)
   type DiscountTableRow = { brandId: string; brandName: string; brandLogo: string | null; avgDiscount: number; promoCount: number; deepest: number; isLongRunning: boolean; isMy: boolean }
   const discountTableData: DiscountTableRow[] = allBrandIds.flatMap(brandId => {
     const info = data.brandInfo.get(brandId)
@@ -1061,8 +1052,8 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     .filter(d => !d.isMy && d.avgDiscount > 0)
     .sort((a, b) => b.avgDiscount - a.avgDiscount)[0]
 
-  // ── Voice of customer data (Slide 6) ──────────────────────────────────────
-  type ReviewTableRow = { brandId: string; brandName: string; brandLogo: string | null; avgRating: number; prevAvgRating: number; count: number; prevCount: number; negativePercent: number; prevNegativePercent: number; isMy: boolean }
+  // Review table (Slide 6)
+  type ReviewTableRow = { brandId: string; brandName: string; brandLogo: string | null; avgRating: number; prevAvgRating: number; count: number; prevCount: number; isMy: boolean }
   const reviewTableData: ReviewTableRow[] = allBrandIds.flatMap(brandId => {
     const info = data.brandInfo.get(brandId)
     if (!info) return []
@@ -1076,13 +1067,11 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
       prevAvgRating: prev?.avgRating ?? 0,
       count: cur?.count ?? 0,
       prevCount: prev?.count ?? 0,
-      negativePercent: cur?.negativePercent ?? 0,
-      prevNegativePercent: prev?.negativePercent ?? 0,
       isMy: brandId === myBrandId,
     }]
   })
 
-  // Best/worst quotes for my brand
+  // Quotes (Slide 6)
   const myCurrentReviews = data.currentWeekReviews.filter(r => r.brand_id === myBrandId)
   const bestQuote = myCurrentReviews
     .filter(r => r.rating != null && r.rating >= 4 && r.content && r.content.length > 20)
@@ -1100,7 +1089,49 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
     if (topic) topicCounts[topic] = (topicCounts[topic] || 0) + 1
   }
   const dominantTopic = Object.entries(topicCounts).sort((a, b) => b[1] - a[1])[0]
-  const topicLabels: Record<string, string> = { dostawa: 'Dostawa', smak: 'Smak', cena: 'Cena', obsługa: 'Obsługa klienta' }
+  const topicLabels: Record<string, string> = { dostawa: 'Dostawa', smak: 'Smak', cena: 'Cena', obsluga: 'Obsluga klienta' }
+
+  // Effective price bar data (Slide 5)
+  const barChartData = data.effectivePrices.map(ep => ({
+    name: ep.brandName,
+    price: Math.round(ep.effectivePrice),
+    isMy: ep.brandId === myBrandId,
+  }))
+
+  // Effective price insight (Slide 5)
+  const cheapestEffective = data.effectivePrices[0]
+  const myEffective = data.effectivePrices.find(ep => ep.brandId === myBrandId)
+  const effectiveGap = myEffective && cheapestEffective
+    ? ((myEffective.effectivePrice - cheapestEffective.effectivePrice) / cheapestEffective.effectivePrice) * 100
+    : null
+
+  // Events limited to 5 (Slide 7)
+  const topEvents = data.events.slice(0, 5)
+
+  // Verdict colors
+  const verdictBg: Record<string, string> = {
+    green: 'bg-emerald-100 dark:bg-emerald-950/30',
+    amber: 'bg-amber-100 dark:bg-amber-950/30',
+    red: 'bg-red-100 dark:bg-red-950/30',
+  }
+  const verdictText: Record<string, string> = {
+    green: 'text-emerald-800 dark:text-emerald-300',
+    amber: 'text-amber-800 dark:text-amber-300',
+    red: 'text-red-800 dark:text-red-300',
+  }
+  const verdictIcon: Record<string, typeof CheckCircle> = {
+    green: CheckCircle,
+    amber: ShieldAlert,
+    red: ShieldAlert,
+  }
+
+  // ── Slide wrapper style ────────────────────────────────────────────────────
+  const slideStyle = (active: boolean): React.CSSProperties => ({
+    aspectRatio: '16/9',
+    width: '100%',
+    maxWidth: 1100,
+    display: active ? 'flex' : 'none',
+  })
 
   // ══════════════════════════════════════════════════════════════════════════
   // RENDER
@@ -1108,569 +1139,595 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
 
   return (
     <>
-      {/* Action buttons */}
-      <div className="flex gap-3 mb-6 no-print">
+      {/* ── Action bar ─────────────────────────────────────────────────────── */}
+      <div className="flex gap-3 mb-4 no-print">
         <Button onClick={() => handlePrint()} variant="outline" size="sm">
-          <FileDown className="h-4 w-4 mr-2" />Pobierz PDF
+          <FileDown className="h-4 w-4 mr-2" />PDF
+        </Button>
+        <Button onClick={toggleFullscreen} variant="outline" size="sm">
+          <Maximize className="h-4 w-4 mr-2" />Tryb prezentacji
         </Button>
         <Button variant="outline" size="sm" onClick={() => setShowEmailModal(true)}>
-          <Mail className="h-4 w-4 mr-2" />Wyślij email
+          <Mail className="h-4 w-4 mr-2" />Email
         </Button>
       </div>
 
-      <div ref={reportRef} className="space-y-8">
+      {/* ── Presentation container ─────────────────────────────────────────── */}
+      <div
+        ref={containerRef}
+        className={isFullscreen ? 'flex flex-col items-center justify-center' : ''}
+        style={isFullscreen ? { background: '#0a0a0a', height: '100%', width: '100%' } : undefined}
+      >
+        {/* Slide area with arrows */}
+        <div className="relative w-full" style={{ maxWidth: 1240, margin: '0 auto' }}>
+          {/* Left arrow */}
+          <button
+            onClick={goPrev}
+            disabled={currentSlide === 0}
+            className="no-print absolute top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full shadow-md flex items-center justify-center transition-all disabled:opacity-20 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-700"
+            style={{ left: 0 }}
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            SLIDE 1 — Executive Summary
-            ═══════════════════════════════════════════════════════════════════ */}
-        <Card data-slide="1" className="overflow-hidden">
-          <CardContent className="pt-6">
-            <SlideHeader number={1} title="Executive Summary" subtitle={`${myBrandName} · tydzień ${weekStart} – ${weekEnd}`} icon={Target} />
+          {/* Slides */}
+          <div ref={reportRef} className="mx-auto" style={{ maxWidth: 1100 }}>
 
-            {/* Verdict */}
-            {slide1Data && (
-              <div className={`rounded-lg p-4 mb-6 flex items-center gap-3 ${
-                slide1Data.isStable
-                  ? 'bg-green-50 border border-green-200 dark:bg-green-950/20 dark:border-green-800'
-                  : 'bg-red-50 border border-red-200 dark:bg-red-950/20 dark:border-red-800'
-              }`}>
-                {slide1Data.isStable
-                  ? <CheckCircle className="h-6 w-6 text-green-600 flex-shrink-0" />
-                  : <ShieldAlert className="h-6 w-6 text-red-600 flex-shrink-0" />
-                }
+            {/* ═══════════════════════════════════════════════════════════════
+                SLIDE 1 — Title + Executive Summary
+                ═══════════════════════════════════════════════════════════════ */}
+            <div data-slide="1" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 0)}>
+              <SlideFrame index={0} brand={myBrandName} weekRange={weekRange}>
                 <div>
-                  <p className={`font-bold text-lg ${slide1Data.isStable ? 'text-green-800 dark:text-green-300' : 'text-red-800 dark:text-red-300'}`}>
-                    {slide1Data.verdict}
+                  <h1 style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.2 }} className="text-gray-900 dark:text-gray-100">
+                    Raport konkurencyjny
+                  </h1>
+                  <p style={{ fontSize: 16 }} className="text-gray-500 dark:text-gray-400 mt-1">
+                    {myBrandName} &middot; tydzien {weekRange}
                   </p>
-                  <p className="text-sm text-muted-foreground">Algorytmiczna ocena pozycji rynkowej</p>
                 </div>
-              </div>
-            )}
 
-            {/* 4 KPIs */}
-            {slide1Data && (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <KPICard
-                  label="Pozycja cenowa"
-                  value={`#${slide1Data.myPosition}/${slide1Data.totalBrands}`}
-                  delta={slide1Data.myMatchedChange ? fmtPct(slide1Data.myMatchedChange.changePercent) : '—'}
-                  deltaLabel="zmiana ceny WoW"
-                  icon={DollarSign}
-                  highlight
-                />
-                <KPICard
-                  label="Średnia ocena"
-                  value={slide1Data.avgRating.toFixed(2)}
-                  delta={`${slide1Data.ratingDelta >= 0 ? '+' : ''}${slide1Data.ratingDelta.toFixed(2)}`}
-                  icon={Star}
-                />
-                <KPICard
-                  label="Różnica do najtańszego"
-                  value={fmtPct(slide1Data.gapPercent, false)}
-                  icon={Percent}
-                />
-                <KPICard
-                  label="Share of voice"
-                  value={`${slide1Data.shareOfVoice.toFixed(0)}%`}
-                  delta={`${slide1Data.shareOfVoiceDelta >= 0 ? '+' : ''}${slide1Data.shareOfVoiceDelta.toFixed(1)}pp`}
-                  icon={Users}
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                {slide1Data && (
+                  <>
+                    {/* Verdict banner */}
+                    <div className={`rounded-xl px-6 py-5 mt-6 flex items-center gap-4 ${verdictBg[slide1Data.verdictColor]}`}>
+                      {(() => {
+                        const VIcon = verdictIcon[slide1Data.verdictColor]
+                        return <VIcon className={`h-8 w-8 flex-shrink-0 ${verdictText[slide1Data.verdictColor]}`} />
+                      })()}
+                      <div>
+                        <p style={{ fontSize: 24, fontWeight: 700 }} className={verdictText[slide1Data.verdictColor]}>
+                          {slide1Data.verdict}
+                        </p>
+                        <p style={{ fontSize: 13 }} className="text-gray-500 dark:text-gray-400 mt-0.5">
+                          Algorytmiczna ocena pozycji rynkowej
+                        </p>
+                      </div>
+                    </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            SLIDE 2 — Position Map (ScatterChart)
-            ═══════════════════════════════════════════════════════════════════ */}
-        <Card data-slide="2">
-          <CardContent className="pt-6">
-            <SlideHeader number={2} title="Mapa pozycji" subtitle="Cena efektywna 2000 kcal vs. ocena klientów" icon={Target} />
+                    {/* 4 KPIs */}
+                    <div className="grid grid-cols-4 gap-6 mt-8">
+                      {[
+                        {
+                          label: 'Pozycja cenowa',
+                          value: `#${slide1Data.myPosition}/${slide1Data.totalBrands}`,
+                          delta: slide1Data.myMatchedChange ? fmtPct(slide1Data.myMatchedChange.changePercent) : null,
+                          deltaLabel: 'zmiana WoW',
+                        },
+                        {
+                          label: 'Srednia ocena',
+                          value: slide1Data.avgRating.toFixed(2),
+                          delta: `${slide1Data.ratingDelta >= 0 ? '+' : ''}${slide1Data.ratingDelta.toFixed(2)}`,
+                          deltaLabel: 'vs poprz. tydz.',
+                        },
+                        {
+                          label: 'Gap do najtanszego',
+                          value: fmtPct(slide1Data.gapPercent, false),
+                          delta: null,
+                          deltaLabel: '',
+                        },
+                        {
+                          label: 'Share of voice',
+                          value: `${slide1Data.shareOfVoice.toFixed(0)}%`,
+                          delta: `${slide1Data.shareOfVoiceDelta >= 0 ? '+' : ''}${slide1Data.shareOfVoiceDelta.toFixed(1)}pp`,
+                          deltaLabel: 'vs poprz. tydz.',
+                        },
+                      ].map(kpi => {
+                        const isPos = kpi.delta?.startsWith('+')
+                        const isNeg = kpi.delta?.startsWith('-')
+                        return (
+                          <div key={kpi.label}>
+                            <p style={{ fontSize: 40, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
+                              {kpi.value}
+                            </p>
+                            <p style={{ fontSize: 14 }} className="text-gray-500 dark:text-gray-400 mt-2 font-medium">
+                              {kpi.label}
+                            </p>
+                            {kpi.delta && (
+                              <p style={{ fontSize: 14 }} className={`mt-0.5 font-medium ${isPos ? 'text-green-600' : isNeg ? 'text-red-500' : 'text-gray-400'}`}>
+                                {isPos ? '\u2191 ' : isNeg ? '\u2193 ' : ''}{kpi.delta} {kpi.deltaLabel}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </SlideFrame>
+            </div>
 
-            {scatterData.length > 0 ? (
-              <>
-                <div style={{ width: '100%', height: 400 }}>
-                  <ResponsiveContainer>
-                    <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" dataKey="x" name="Cena 2000 kcal" unit=" zł" domain={['auto', 'auto']} />
-                      <YAxis type="number" dataKey="y" name="Ocena" domain={[1, 5]} />
-                      <ZAxis type="number" dataKey="z" range={[100, 600]} name="Liczba opinii" />
-                      <ReTooltip
-                        content={({ active, payload }: any) => {
-                          if (!active || !payload?.length) return null
-                          const d = payload[0].payload
-                          return (
-                            <div className="bg-background border rounded-lg shadow-lg p-2 text-xs">
-                              <p className="font-semibold">{d.brandName}</p>
-                              <p>Cena: {d.x} zł</p>
-                              <p>Ocena: {d.y.toFixed(2)}</p>
-                              <p>Opinii: {d.z}</p>
-                            </div>
-                          )
-                        }}
-                      />
-                      <ReferenceLine x={medianX} stroke="#ccc" strokeDasharray="3 3" />
-                      <ReferenceLine y={medianY} stroke="#ccc" strokeDasharray="3 3" />
-                      <Scatter data={scatterData} name="Marki">
-                        {scatterData.map((entry, i) => (
-                          <Cell key={i} fill={entry.isMy ? MY_BRAND_COLOR : COMPETITOR_COLOR} />
-                        ))}
-                      </Scatter>
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
-                {myQuadrant && (
-                  <div className="mt-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-                    <p className="text-sm"><strong>{myBrandName}</strong> znajduje się w ćwiartce: <strong>{myQuadrant}</strong></p>
+            {/* ═══════════════════════════════════════════════════════════════
+                SLIDE 2 — Market Position Map
+                ═══════════════════════════════════════════════════════════════ */}
+            <div data-slide="2" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 1)}>
+              <SlideFrame index={1} brand={myBrandName} weekRange={weekRange}>
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
+                  Mapa pozycji rynkowej
+                </h2>
+                <p style={{ fontSize: 14 }} className="text-gray-500 mb-3">Cena efektywna 2000 kcal vs. ocena klientow</p>
+
+                {scatterData.length > 0 ? (
+                  <>
+                    <div className="relative flex-1 min-h-0">
+                      {/* Quadrant labels */}
+                      <div className="absolute top-1 left-14 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Lider</div>
+                      <div className="absolute top-1 right-2 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Premium</div>
+                      <div className="absolute bottom-7 left-14 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Walka cenowa</div>
+                      <div className="absolute bottom-7 right-2 pointer-events-none" style={{ fontSize: 11, color: '#9ca3af' }}>Pod presja</div>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ScatterChart margin={{ top: 20, right: 20, bottom: 10, left: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis type="number" dataKey="x" name="Cena" unit=" zl" domain={['auto', 'auto']} tick={{ fontSize: 12 }} />
+                          <YAxis type="number" dataKey="y" name="Ocena" domain={[1, 5]} tick={{ fontSize: 12 }} />
+                          <ZAxis type="number" dataKey="z" range={[200, 800]} />
+                          <ReTooltip
+                            content={({ active, payload }: any) => {
+                              if (!active || !payload?.length) return null
+                              const d = payload[0].payload
+                              return (
+                                <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-lg p-3 text-sm">
+                                  <p className="font-bold">{d.brandName}</p>
+                                  <p>Cena: {d.x} zl</p>
+                                  <p>Ocena: {d.y.toFixed(2)}</p>
+                                  <p>Opinii: {d.z}</p>
+                                </div>
+                              )
+                            }}
+                          />
+                          <ReferenceLine x={medianX} stroke="#d1d5db" strokeDasharray="3 3" />
+                          <ReferenceLine y={medianY} stroke="#d1d5db" strokeDasharray="3 3" />
+                          <Scatter data={scatterData} shape={ScatterBubble} />
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <InsightBox>
+                      <strong>{myBrandName}</strong> — cwiartka: <strong>{myQuadrant}</strong>
+                    </InsightBox>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center">
+                    <p style={{ fontSize: 16 }} className="text-gray-400">Brak danych do wyswietlenia mapy pozycji</p>
                   </div>
                 )}
-                <div className="flex gap-4 mt-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full" style={{ background: MY_BRAND_COLOR }} /> {myBrandName}
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-full" style={{ background: COMPETITOR_COLOR }} /> Konkurenci
-                  </span>
-                </div>
-              </>
-            ) : (
-              <p className="text-muted-foreground text-sm py-8 text-center">Brak danych do wyświetlenia mapy pozycji</p>
-            )}
-          </CardContent>
-        </Card>
+              </SlideFrame>
+            </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            SLIDE 3 — Catalog Prices Like-for-Like
-            ═══════════════════════════════════════════════════════════════════ */}
-        <Card data-slide="3">
-          <CardContent className="pt-6">
-            <SlideHeader number={3} title="Ceny katalogowe like-for-like" subtitle="Porównanie w ramach wariantów kalorycznych" icon={DollarSign} />
+            {/* ═══════════════════════════════════════════════════════════════
+                SLIDE 3 — Like-for-like Prices
+                ═══════════════════════════════════════════════════════════════ */}
+            <div data-slide="3" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 2)}>
+              <SlideFrame index={2} brand={myBrandName} weekRange={weekRange}>
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-4">
+                  Ceny katalogowe like-for-like
+                </h2>
 
-            {/* Table */}
-            <div className="overflow-x-auto mb-6">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Marka</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">1500 kcal</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">2000 kcal</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">2500 kcal</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Zmiana WoW</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {catalogTableData.map(row => (
-                    <tr key={row.brandId} className={`border-b transition-colors ${row.isMy ? 'bg-primary/5 font-semibold' : 'hover:bg-muted/20'}`}>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <BrandLogo url={row.brandLogo} name={row.brandName} />
-                          <span>{row.brandName}</span>
-                        </div>
-                      </td>
-                      <td className="text-right px-4 py-3">{row.prices[1500] ? fmtPrice(row.prices[1500]) : '—'}</td>
-                      <td className="text-right px-4 py-3">{row.prices[2000] ? fmtPrice(row.prices[2000]) : '—'}</td>
-                      <td className="text-right px-4 py-3">{row.prices[2500] ? fmtPrice(row.prices[2500]) : '—'}</td>
-                      <td className="text-right px-4 py-3">
-                        {row.changePercent !== null ? (
-                          <span className={row.changePercent > 0.5 ? 'text-red-600' : row.changePercent < -0.5 ? 'text-green-600' : 'text-muted-foreground'}>
-                            {fmtPct(row.changePercent)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                        {row.matchedCount > 0 && (
-                          <span className="text-xs text-muted-foreground ml-1">({row.matchedCount} par)</span>
-                        )}
-                      </td>
+                <table className="w-full" style={{ fontSize: 15 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                      <th className="text-left py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12, letterSpacing: 0.5 }}>Marka</th>
+                      <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>1500 kcal</th>
+                      <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>2000 kcal</th>
+                      <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>2500 kcal</th>
+                      <th className="text-right py-2.5 font-semibold text-gray-500 dark:text-gray-400 uppercase" style={{ fontSize: 12 }}>WoW</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* 8-week price trend */}
-            <h3 className="text-sm font-semibold mb-3">Trend cen 2000 kcal — ostatnie 8 tygodni</h3>
-            <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer>
-                <LineChart data={data.priceTrend} margin={{ top: 10, right: 30, bottom: 10, left: 10 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="weekLabel" tick={{ fontSize: 11 }} />
-                  <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11 }} />
-                  <ReTooltip content={<ChartTooltip />} />
-                  <Legend />
-                  {allBrandIds.map((brandId, idx) => {
-                    const info = data.brandInfo.get(brandId)
-                    if (!info) return null
-                    return (
-                      <Line
-                        key={brandId}
-                        type="monotone"
-                        dataKey={info.name}
-                        stroke={brandId === myBrandId ? MY_BRAND_COLOR : `hsl(${idx * 60 + 30}, 40%, 60%)`}
-                        strokeWidth={brandId === myBrandId ? 3 : 1.5}
-                        dot={brandId === myBrandId}
-                        connectNulls
-                      />
-                    )
-                  })}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Structural changes */}
-            {data.structuralChanges.length > 0 && (
-              <div className="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
-                <p className="text-sm font-medium mb-2">Zmiany strukturalne oferty:</p>
-                <ul className="text-sm space-y-1">
-                  {data.structuralChanges.map((sc, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      {sc.type === 'new'
-                        ? <Badge className="bg-green-100 text-green-700 text-xs">NOWY</Badge>
-                        : <Badge className="bg-red-100 text-red-700 text-xs">WYCOFANY</Badge>
-                      }
-                      <span>{sc.brandName}: {sc.packageName} ({sc.kcalLabel})</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            SLIDE 4 — Discount Policy
-            ═══════════════════════════════════════════════════════════════════ */}
-        <Card data-slide="4">
-          <CardContent className="pt-6">
-            <SlideHeader number={4} title="Polityka rabatowa" subtitle="Aktywne promocje i strategia cenowa" icon={Percent} />
-
-            {/* 3 KPIs */}
-            <div className="grid gap-4 md:grid-cols-3 mb-6">
-              <KPICard
-                label="Mój śr. rabat"
-                value={`${(discountTableData.find(d => d.isMy)?.avgDiscount ?? 0).toFixed(1)}%`}
-                icon={Percent}
-                highlight
-              />
-              <KPICard
-                label="Najagresywniejszy konkurent"
-                value={mostAggressiveCompetitor
-                  ? `${mostAggressiveCompetitor.brandName} (${mostAggressiveCompetitor.avgDiscount.toFixed(1)}%)`
-                  : '—'}
-                icon={Target}
-              />
-              <KPICard
-                label="Nowe promocje w tygodniu"
-                value={`${data.newPromosThisWeek.length}`}
-                icon={Megaphone}
-              />
-            </div>
-
-            {/* Table */}
-            <div className="overflow-x-auto mb-4">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Marka</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Śr. rabat</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Liczba promocji</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Najgłębszy</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {discountTableData.map(row => (
-                    <tr key={row.brandId} className={`border-b transition-colors ${row.isMy ? 'bg-primary/5 font-semibold' : 'hover:bg-muted/20'}`}>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <BrandLogo url={row.brandLogo} name={row.brandName} />
-                          <span>{row.brandName}</span>
-                          {row.isLongRunning && (
-                            <Badge variant="outline" className="text-xs">strategia</Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="text-right px-4 py-3">{row.avgDiscount > 0 ? `${row.avgDiscount.toFixed(1)}%` : '—'}</td>
-                      <td className="text-right px-4 py-3">{row.promoCount}</td>
-                      <td className="text-right px-4 py-3">{row.deepest > 0 ? `${row.deepest}%` : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Insight */}
-            {discountTableData.filter(d => d.isLongRunning && !d.isMy).length > 0 && (
-              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-                <p className="text-sm">
-                  <strong>Insight:</strong>{' '}
-                  {discountTableData.filter(d => d.isLongRunning && !d.isMy).map(d => d.brandName).join(', ')}{' '}
-                  utrzymuje rabat ponad 4 tygodnie — to strategia cenowa, nie jednorazowa promocja.
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            SLIDE 5 — Effective Price
-            ═══════════════════════════════════════════════════════════════════ */}
-        <Card data-slide="5">
-          <CardContent className="pt-6">
-            <SlideHeader number={5} title="Cena efektywna" subtitle="Cena 2000 kcal po uwzględnieniu rabatu" icon={DollarSign} />
-
-            {data.effectivePrices.length > 0 ? (
-              <>
-                <div style={{ width: '100%', height: Math.max(200, data.effectivePrices.length * 50 + 40) }}>
-                  <ResponsiveContainer>
-                    <BarChart
-                      data={data.effectivePrices.map(ep => ({
-                        name: ep.brandName,
-                        price: Math.round(ep.effectivePrice),
-                        isMy: ep.brandId === myBrandId,
-                      }))}
-                      layout="vertical"
-                      margin={{ left: 10, right: 30, top: 5, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" tick={{ fontSize: 11 }} />
-                      <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                      <ReTooltip content={<ChartTooltip />} />
-                      <Bar dataKey="price" name="Cena efektywna (zł)" radius={[0, 4, 4, 0]}>
-                        {data.effectivePrices.map((ep, i) => (
-                          <Cell key={i} fill={ep.brandId === myBrandId ? MY_BRAND_COLOR : COMPETITOR_COLOR} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {/* Insight */}
-                {(() => {
-                  const cheapest = data.effectivePrices[0]
-                  const my = data.effectivePrices.find(ep => ep.brandId === myBrandId)
-                  if (!cheapest || !my) return null
-                  const gap = ((my.effectivePrice - cheapest.effectivePrice) / cheapest.effectivePrice) * 100
-                  const myRating = data.currentReviewsByBrand.get(myBrandId)?.avgRating ?? 0
-                  const cheapestRating = data.currentReviewsByBrand.get(cheapest.brandId)?.avgRating ?? 0
-
-                  return (
-                    <div className="mt-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-                      <p className="text-sm">
-                        <strong>Insight:</strong>{' '}
-                        {cheapest.brandId === myBrandId ? (
-                          `${myBrandName} jest najtańszy po uwzględnieniu rabatów.`
-                        ) : (
-                          <>
-                            Różnica do najtańszego ({cheapest.brandName}): <strong>{gap.toFixed(1)}%</strong>.{' '}
-                            {myRating > cheapestRating + 0.2
-                              ? 'Premia cenowa uzasadniona wyższą oceną klientów.'
-                              : myRating < cheapestRating - 0.1
-                                ? 'Premia cenowa nieuzasadniona — ocena niższa od najtańszego.'
-                                : 'Oceny na zbliżonym poziomie — premia cenowa do monitorowania.'}
-                          </>
-                        )}
-                      </p>
-                    </div>
-                  )
-                })()}
-              </>
-            ) : (
-              <p className="text-muted-foreground text-sm py-8 text-center">Brak danych cenowych</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            SLIDE 6 — Voice of Customer
-            ═══════════════════════════════════════════════════════════════════ */}
-        <Card data-slide="6">
-          <CardContent className="pt-6">
-            <SlideHeader number={6} title="Głos klienta" subtitle="Opinie i satysfakcja w bieżącym tygodniu" icon={MessageSquare} />
-
-            {/* Table */}
-            <div className="overflow-x-auto mb-6">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground">Marka</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Ocena tyg.</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Liczba opinii</th>
-                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">% negatywnych</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reviewTableData.map(row => {
-                    const ratingDelta = row.avgRating - row.prevAvgRating
-                    const countDelta = row.count - row.prevCount
-                    return (
-                      <tr key={row.brandId} className={`border-b transition-colors ${row.isMy ? 'bg-primary/5 font-semibold' : 'hover:bg-muted/20'}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <BrandLogo url={row.brandLogo} name={row.brandName} />
-                            <span>{row.brandName}</span>
+                  </thead>
+                  <tbody>
+                    {catalogTableData.map(row => (
+                      <tr
+                        key={row.brandId}
+                        className={row.isMy ? 'bg-blue-50 dark:bg-blue-950/30 font-semibold' : ''}
+                        style={{ borderBottom: '1px solid #f3f4f6' }}
+                      >
+                        <td className="py-3">
+                          <div className="flex items-center gap-2.5">
+                            <BrandLogo url={row.brandLogo} name={row.brandName} size="md" />
+                            <span className="text-gray-900 dark:text-gray-100">{row.brandName}</span>
                           </div>
                         </td>
-                        <td className="text-right px-4 py-3">
-                          <span>{row.avgRating > 0 ? row.avgRating.toFixed(2) : '—'}</span>
-                          {row.prevAvgRating > 0 && (
-                            <span className={`text-xs ml-1 ${ratingDelta > 0.05 ? 'text-green-600' : ratingDelta < -0.05 ? 'text-red-500' : 'text-muted-foreground'}`}>
-                              ({ratingDelta >= 0 ? '+' : ''}{ratingDelta.toFixed(2)})
+                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[1500] != null ? fmtPrice(row.prices[1500]) : '\u2014'}</td>
+                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[2000] != null ? fmtPrice(row.prices[2000]) : '\u2014'}</td>
+                        <td className="text-right py-3 text-gray-700 dark:text-gray-300">{row.prices[2500] != null ? fmtPrice(row.prices[2500]) : '\u2014'}</td>
+                        <td className="text-right py-3">
+                          {row.changePercent != null ? (
+                            <span className={row.changePercent > 0.5 ? 'text-red-600' : row.changePercent < -0.5 ? 'text-green-600' : 'text-gray-400'}>
+                              {fmtPct(row.changePercent)}
                             </span>
-                          )}
-                        </td>
-                        <td className="text-right px-4 py-3">
-                          <span>{row.count}</span>
-                          {row.prevCount > 0 && (
-                            <span className="text-xs ml-1 text-muted-foreground">
-                              ({countDelta >= 0 ? '+' : ''}{countDelta})
-                            </span>
-                          )}
-                        </td>
-                        <td className="text-right px-4 py-3">
-                          <span className={row.negativePercent > 20 ? 'text-red-600' : ''}>{row.negativePercent}%</span>
-                          {row.prevNegativePercent > 0 && (
-                            <span className="text-xs ml-1 text-muted-foreground">
-                              (było {row.prevNegativePercent}%)
-                            </span>
+                          ) : (
+                            <span className="text-gray-400">\u2014</span>
                           )}
                         </td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+
+                <InsightBox>
+                  Nasza cena 2000 kcal vs najtanszy:{' '}
+                  <strong>{pricGapPct != null ? `${pricGapPct >= 0 ? '+' : ''}${pricGapPct.toFixed(1)}%` : 'brak danych'}</strong>
+                </InsightBox>
+              </SlideFrame>
             </div>
 
-            {/* Quotes */}
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
-              {bestQuote && (
-                <div className="p-4 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
-                  <p className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1 uppercase tracking-wide">Najlepsza opinia tygodnia</p>
-                  <p className="text-sm italic">&ldquo;{bestQuote.content?.slice(0, 200)}{(bestQuote.content?.length ?? 0) > 200 ? '...' : ''}&rdquo;</p>
-                  <p className="text-xs text-muted-foreground mt-1">{bestQuote.rating}★ · {bestQuote.review_date}</p>
+            {/* ═══════════════════════════════════════════════════════════════
+                SLIDE 4 — Discounts
+                ═══════════════════════════════════════════════════════════════ */}
+            <div data-slide="4" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 3)}>
+              <SlideFrame index={3} brand={myBrandName} weekRange={weekRange}>
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-4">
+                  Polityka rabatowa
+                </h2>
+
+                {/* 3 KPIs */}
+                <div className="grid grid-cols-3 gap-6 mb-5">
+                  <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-4">
+                    <p style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
+                      {(discountTableData.find(d => d.isMy)?.avgDiscount ?? 0).toFixed(1)}%
+                    </p>
+                    <p style={{ fontSize: 13 }} className="text-gray-500 mt-1.5 font-medium">Moj sr. rabat</p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-4">
+                    <p style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
+                      {mostAggressiveCompetitor ? `${mostAggressiveCompetitor.avgDiscount.toFixed(1)}%` : '\u2014'}
+                    </p>
+                    <p style={{ fontSize: 13 }} className="text-gray-500 mt-1.5 font-medium">
+                      {mostAggressiveCompetitor ? mostAggressiveCompetitor.brandName : 'Brak'} (najagresywniejszy)
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 dark:bg-gray-900 p-4">
+                    <p style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }} className="text-gray-900 dark:text-gray-100">
+                      {data.newPromosThisWeek.length}
+                    </p>
+                    <p style={{ fontSize: 13 }} className="text-gray-500 mt-1.5 font-medium">Nowe promocje w tygodniu</p>
+                  </div>
                 </div>
-              )}
-              {worstQuote && (
-                <div className="p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
-                  <p className="text-xs font-semibold text-red-700 dark:text-red-400 mb-1 uppercase tracking-wide">Najgorsza opinia tygodnia</p>
-                  <p className="text-sm italic">&ldquo;{worstQuote.content?.slice(0, 200)}{(worstQuote.content?.length ?? 0) > 200 ? '...' : ''}&rdquo;</p>
-                  <p className="text-xs text-muted-foreground mt-1">{worstQuote.rating}★ · {worstQuote.review_date}</p>
-                </div>
-              )}
+
+                {/* Compact table */}
+                <table className="w-full" style={{ fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                      <th className="text-left py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Marka</th>
+                      <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Sr. rabat</th>
+                      <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Promocje</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {discountTableData.map(row => (
+                      <tr
+                        key={row.brandId}
+                        className={row.isMy ? 'bg-blue-50 dark:bg-blue-950/30 font-semibold' : ''}
+                        style={{ borderBottom: '1px solid #f3f4f6' }}
+                      >
+                        <td className="py-2">
+                          <div className="flex items-center gap-2">
+                            <BrandLogo url={row.brandLogo} name={row.brandName} />
+                            <span className="text-gray-900 dark:text-gray-100">{row.brandName}</span>
+                          </div>
+                        </td>
+                        <td className="text-right py-2 text-gray-700 dark:text-gray-300">{row.avgDiscount > 0 ? `${row.avgDiscount.toFixed(1)}%` : '\u2014'}</td>
+                        <td className="text-right py-2 text-gray-700 dark:text-gray-300">{row.promoCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {discountTableData.filter(d => d.isLongRunning && !d.isMy).length > 0 ? (
+                  <InsightBox>
+                    {discountTableData.filter(d => d.isLongRunning && !d.isMy).map(d => d.brandName).join(', ')}{' '}
+                    utrzymuje rabat 4+ tygodni — to strategia cenowa, nie jednorazowa promocja.
+                  </InsightBox>
+                ) : (
+                  <InsightBox>Brak dlugotrwalych strategii rabatowych u konkurencji.</InsightBox>
+                )}
+              </SlideFrame>
             </div>
 
-            {/* Dominant topic insight */}
-            {dominantTopic && (
-              <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
-                <p className="text-sm">
-                  <strong>Insight:</strong> Dominujący temat negatywnych opinii: <strong>{topicLabels[dominantTopic[0]] || dominantTopic[0]}</strong> ({dominantTopic[1]} z {myNegativeReviews.length} negatywnych opinii).
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            {/* ═══════════════════════════════════════════════════════════════
+                SLIDE 5 — Effective Price
+                ═══════════════════════════════════════════════════════════════ */}
+            <div data-slide="5" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 4)}>
+              <SlideFrame index={4} brand={myBrandName} weekRange={weekRange}>
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-1">
+                  Cena efektywna
+                </h2>
+                <p style={{ fontSize: 14 }} className="text-gray-500 mb-3">Cena 2000 kcal po uwzglednieniu rabatu</p>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            SLIDE 7 — Competitor Moves
-            ═══════════════════════════════════════════════════════════════════ */}
-        <Card data-slide="7">
-          <CardContent className="pt-6">
-            <SlideHeader number={7} title="Ruchy konkurencji" subtitle="Chronologiczny przegląd istotnych zmian" icon={BarChart3} />
+                {barChartData.length > 0 ? (
+                  <>
+                    <div className="flex-1 min-h-0" style={{ minHeight: 200 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={barChartData}
+                          layout="vertical"
+                          margin={{ left: 10, right: 60, top: 5, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                          <XAxis type="number" tick={{ fontSize: 13 }} />
+                          <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 14 }} />
+                          <ReTooltip
+                            content={({ active, payload }: any) => {
+                              if (!active || !payload?.length) return null
+                              return (
+                                <div className="bg-white dark:bg-gray-900 border rounded-lg shadow-lg p-3 text-sm">
+                                  <p className="font-bold">{payload[0].payload.name}</p>
+                                  <p>Cena efektywna: {payload[0].value} zl</p>
+                                </div>
+                              )
+                            }}
+                          />
+                          <Bar dataKey="price" name="Cena efektywna" radius={[0, 6, 6, 0]}>
+                            {barChartData.map((entry, i) => (
+                              <Cell key={i} fill={entry.isMy ? MY_BRAND_COLOR : COMPETITOR_COLOR} />
+                            ))}
+                            <LabelList dataKey="price" position="right" style={{ fontSize: 16, fontWeight: 600, fill: '#374151' }} formatter={(v: any) => `${v} zl`} />
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
 
-            {data.events.length > 0 ? (
-              <div className="space-y-3">
-                {data.events.map((event, i) => {
-                  const iconMap: Record<string, any> = {
-                    price_change: DollarSign,
-                    promo_start: Megaphone,
-                    promo_end: Minus,
-                    review_spike: MessageSquare,
-                    structural: BarChart3,
-                  }
-                  const colorMap: Record<string, string> = {
-                    price_change: 'bg-amber-100 text-amber-700',
-                    promo_start: 'bg-green-100 text-green-700',
-                    promo_end: 'bg-red-100 text-red-700',
-                    review_spike: 'bg-blue-100 text-blue-700',
-                    structural: 'bg-violet-100 text-violet-700',
-                  }
-                  const EventIcon = iconMap[event.type] || Calendar
-                  return (
-                    <div key={i} className="flex items-start gap-3 p-3 rounded-lg border bg-muted/10 hover:bg-muted/20 transition-colors">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 ${colorMap[event.type] || 'bg-muted'}`}>
-                        <EventIcon className="h-4 w-4" />
+                    <InsightBox>
+                      {myEffective && cheapestEffective && myEffective.brandId === cheapestEffective.brandId ? (
+                        <><strong>{myBrandName}</strong> jest najtanszy po uwzglednieniu rabatow.</>
+                      ) : effectiveGap != null ? (
+                        <>Roznica do najtanszego ({cheapestEffective?.brandName}): <strong>{effectiveGap.toFixed(1)}%</strong></>
+                      ) : (
+                        <>Brak danych do porownania</>
+                      )}
+                    </InsightBox>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center">
+                    <p style={{ fontSize: 16 }} className="text-gray-400">Brak danych cenowych</p>
+                  </div>
+                )}
+              </SlideFrame>
+            </div>
+
+            {/* ═══════════════════════════════════════════════════════════════
+                SLIDE 6 — Voice of Customer
+                ═══════════════════════════════════════════════════════════════ */}
+            <div data-slide="6" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 5)}>
+              <SlideFrame index={5} brand={myBrandName} weekRange={weekRange}>
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-4">
+                  Glos klienta
+                </h2>
+
+                <div className="flex gap-6 flex-1 min-h-0">
+                  {/* Left: rating table */}
+                  <div className="flex-1">
+                    <table className="w-full" style={{ fontSize: 14 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid #e5e7eb' }}>
+                          <th className="text-left py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Marka</th>
+                          <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Ocena</th>
+                          <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Delta</th>
+                          <th className="text-right py-2 font-semibold text-gray-500 uppercase" style={{ fontSize: 11 }}>Opinii</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reviewTableData.map(row => {
+                          const delta = row.avgRating - row.prevAvgRating
+                          return (
+                            <tr
+                              key={row.brandId}
+                              className={row.isMy ? 'bg-blue-50 dark:bg-blue-950/30 font-semibold' : ''}
+                              style={{ borderBottom: '1px solid #f3f4f6' }}
+                            >
+                              <td className="py-2">
+                                <div className="flex items-center gap-2">
+                                  <BrandLogo url={row.brandLogo} name={row.brandName} />
+                                  <span className="text-gray-900 dark:text-gray-100">{row.brandName}</span>
+                                </div>
+                              </td>
+                              <td className="text-right py-2 text-gray-700 dark:text-gray-300">
+                                {row.avgRating > 0 ? row.avgRating.toFixed(2) : '\u2014'}
+                              </td>
+                              <td className="text-right py-2">
+                                {row.prevAvgRating > 0 ? (
+                                  <span className={delta > 0.05 ? 'text-green-600' : delta < -0.05 ? 'text-red-500' : 'text-gray-400'}>
+                                    {delta >= 0 ? '+' : ''}{delta.toFixed(2)}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">\u2014</span>
+                                )}
+                              </td>
+                              <td className="text-right py-2 text-gray-700 dark:text-gray-300">{row.count}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Right: quotes */}
+                  <div className="flex-1 flex flex-col gap-3">
+                    {bestQuote ? (
+                      <div className="rounded-lg p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 flex-1">
+                        <p style={{ fontSize: 11 }} className="font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide mb-1.5">
+                          Najlepsza opinia
+                        </p>
+                        <p style={{ fontSize: 14, lineHeight: 1.4 }} className="italic text-gray-700 dark:text-gray-300">
+                          &ldquo;{bestQuote.content?.slice(0, 120)}{(bestQuote.content?.length ?? 0) > 120 ? '...' : ''}&rdquo;
+                        </p>
+                        <p style={{ fontSize: 11 }} className="text-gray-400 mt-1">{bestQuote.rating}&#9733;</p>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-sm">{event.brandName}</span>
-                          <span className="text-xs text-muted-foreground">{event.date}</span>
+                    ) : (
+                      <div className="rounded-lg p-4 bg-gray-50 dark:bg-gray-900 flex-1 flex items-center justify-center">
+                        <p style={{ fontSize: 13 }} className="text-gray-400">Brak pozytywnych opinii</p>
+                      </div>
+                    )}
+                    {worstQuote ? (
+                      <div className="rounded-lg p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 flex-1">
+                        <p style={{ fontSize: 11 }} className="font-semibold text-red-700 dark:text-red-400 uppercase tracking-wide mb-1.5">
+                          Najgorsza opinia
+                        </p>
+                        <p style={{ fontSize: 14, lineHeight: 1.4 }} className="italic text-gray-700 dark:text-gray-300">
+                          &ldquo;{worstQuote.content?.slice(0, 120)}{(worstQuote.content?.length ?? 0) > 120 ? '...' : ''}&rdquo;
+                        </p>
+                        <p style={{ fontSize: 11 }} className="text-gray-400 mt-1">{worstQuote.rating}&#9733;</p>
+                      </div>
+                    ) : (
+                      <div className="rounded-lg p-4 bg-gray-50 dark:bg-gray-900 flex-1 flex items-center justify-center">
+                        <p style={{ fontSize: 13 }} className="text-gray-400">Brak negatywnych opinii</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {dominantTopic ? (
+                  <InsightBox>
+                    Dominujacy temat negatywnych opinii: <strong>{topicLabels[dominantTopic[0]] || dominantTopic[0]}</strong> ({dominantTopic[1]} z {myNegativeReviews.length})
+                  </InsightBox>
+                ) : (
+                  <InsightBox>Brak wyraznego dominujacego tematu w negatywnych opiniach.</InsightBox>
+                )}
+              </SlideFrame>
+            </div>
+
+            {/* ═══════════════════════════════════════════════════════════════
+                SLIDE 7 — Competitor Moves
+                ═══════════════════════════════════════════════════════════════ */}
+            <div data-slide="7" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 6)}>
+              <SlideFrame index={6} brand={myBrandName} weekRange={weekRange}>
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-6">
+                  Ruchy konkurencji
+                </h2>
+
+                {topEvents.length > 0 ? (
+                  <div className="space-y-3">
+                    {topEvents.map((event, i) => (
+                      <div key={i} className="flex items-baseline gap-4" style={{ fontSize: 15 }}>
+                        <span className="font-mono text-gray-400 flex-shrink-0" style={{ fontSize: 13, minWidth: 80 }}>
+                          {event.date.slice(5)}
+                        </span>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100 flex-shrink-0" style={{ minWidth: 120 }}>
+                          {event.brandName}
+                        </span>
+                        <span className="text-gray-600 dark:text-gray-400">
+                          {event.description}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                      <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-3" />
+                      <p style={{ fontSize: 18, fontWeight: 600 }} className="text-gray-600 dark:text-gray-400">
+                        Spokojny tydzien — brak istotnych ruchow
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </SlideFrame>
+            </div>
+
+            {/* ═══════════════════════════════════════════════════════════════
+                SLIDE 8 — Recommendations
+                ═══════════════════════════════════════════════════════════════ */}
+            <div data-slide="8" className="bg-white dark:bg-gray-950 rounded-2xl shadow-xl border overflow-hidden" style={slideStyle(currentSlide === 7)}>
+              <SlideFrame index={7} brand={myBrandName} weekRange={weekRange}>
+                <h2 style={{ fontSize: 28, fontWeight: 700 }} className="text-gray-900 dark:text-gray-100 mb-8">
+                  Rekomendacje
+                </h2>
+
+                {data.recommendations.length > 0 ? (
+                  <div className="space-y-6">
+                    {data.recommendations.map((rec, i) => {
+                      const priorityColors: Record<string, string> = {
+                        high: 'text-red-600',
+                        medium: 'text-amber-600',
+                        low: 'text-blue-600',
+                      }
+                      return (
+                        <div key={i} className="flex gap-4">
+                          <span style={{ fontSize: 36, fontWeight: 700, lineHeight: 1 }} className={`${priorityColors[rec.priority]} flex-shrink-0`}>
+                            {i + 1}.
+                          </span>
+                          <div>
+                            <p style={{ fontSize: 18, fontWeight: 600, lineHeight: 1.3 }} className="text-gray-900 dark:text-gray-100">
+                              {rec.title}
+                            </p>
+                            <p style={{ fontSize: 14, lineHeight: 1.5 }} className="text-gray-500 dark:text-gray-400 mt-1">
+                              {rec.text}
+                            </p>
+                          </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">{event.description}</p>
-                      </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                      <CheckCircle className="h-12 w-12 text-emerald-400 mx-auto mb-3" />
+                      <p style={{ fontSize: 20, fontWeight: 600 }} className="text-gray-600 dark:text-gray-400">
+                        Utrzymac obecna strategie
+                      </p>
+                      <p style={{ fontSize: 14 }} className="text-gray-400 mt-1">
+                        Pozycja rynkowa stabilna — brak pilnych dzialan.
+                      </p>
                     </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm py-8 text-center">Brak istotnych zdarzeń konkurencji w tym tygodniu</p>
-            )}
-          </CardContent>
-        </Card>
+                  </div>
+                )}
+              </SlideFrame>
+            </div>
 
-        {/* ═══════════════════════════════════════════════════════════════════
-            SLIDE 8 — Recommendations
-            ═══════════════════════════════════════════════════════════════════ */}
-        <Card data-slide="8">
-          <CardContent className="pt-6">
-            <SlideHeader number={8} title="Rekomendacje" subtitle="Algorytmicznie generowane sugestie działań" icon={Lightbulb} />
+          </div>
 
-            {data.recommendations.length > 0 ? (
-              <div className="space-y-4">
-                {data.recommendations.map((rec, i) => {
-                  const priorityColors: Record<string, string> = {
-                    high: 'border-l-red-500 bg-red-50 dark:bg-red-950/20',
-                    medium: 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/20',
-                    low: 'border-l-blue-500 bg-blue-50 dark:bg-blue-950/20',
-                  }
-                  const priorityLabels: Record<string, string> = {
-                    high: 'Wysoki priorytet',
-                    medium: 'Średni priorytet',
-                    low: 'Niski priorytet',
-                  }
-                  return (
-                    <div key={i} className={`p-4 rounded-lg border-l-4 ${priorityColors[rec.priority]}`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant="outline" className="text-xs">{priorityLabels[rec.priority]}</Badge>
-                      </div>
-                      <p className="text-sm font-medium">{rec.text}</p>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <CheckCircle className="h-10 w-10 text-green-500 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">Brak pilnych rekomendacji — pozycja rynkowa stabilna.</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          {/* Right arrow */}
+          <button
+            onClick={goNext}
+            disabled={currentSlide === TOTAL_SLIDES - 1}
+            className="no-print absolute top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full shadow-md flex items-center justify-center transition-all disabled:opacity-20 bg-white/80 dark:bg-gray-800/80 hover:bg-white dark:hover:bg-gray-700"
+            style={{ right: 0 }}
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
 
+        {/* Dot navigation */}
+        <div className="no-print flex justify-center gap-2.5 mt-5">
+          {Array.from({ length: TOTAL_SLIDES }).map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentSlide(i)}
+              className={`rounded-full transition-all ${i === currentSlide ? 'w-3 h-3 bg-primary scale-110' : 'w-2.5 h-2.5 bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'}`}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          Email Modal
-          ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── Email Modal ────────────────────────────────────────────────────── */}
       <Dialog open={showEmailModal} onOpenChange={setShowEmailModal}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Wyślij raport zarządczy emailem</DialogTitle>
+            <DialogTitle>Wyslij raport zarzadczy emailem</DialogTitle>
           </DialogHeader>
           <div className="space-y-5 pt-1">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Użytkownicy systemu</Label>
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uzytkownicy systemu</Label>
                 <div className="flex gap-1">
                   <button
                     className="text-xs text-primary hover:underline"
@@ -1678,9 +1735,9 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
                   >
                     Zaznacz aktywnych
                   </button>
-                  <span className="text-muted-foreground text-xs">·</span>
+                  <span className="text-muted-foreground text-xs">&middot;</span>
                   <button className="text-xs text-muted-foreground hover:underline" onClick={() => setEmailRecipients(new Set())}>
-                    Wyczyść
+                    Wyczysc
                   </button>
                 </div>
               </div>
@@ -1707,7 +1764,7 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dodatkowe emaile (jeden na linię)</Label>
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dodatkowe emaile (jeden na linie)</Label>
               <Textarea
                 placeholder={"email@example.com\nkolejny@firma.pl"}
                 value={emailExtraEmails}
@@ -1721,8 +1778,8 @@ export function ExecutiveReport({ myBrandId, competitorBrandIds, weekStart, week
               <Button variant="outline" onClick={() => setShowEmailModal(false)}>Anuluj</Button>
               <Button onClick={handleSendEmail} disabled={sending}>
                 {sending
-                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Wysyłam...</>
-                  : <><Send className="h-4 w-4 mr-2" />Wyślij raport</>}
+                  ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Wysylam...</>
+                  : <><Send className="h-4 w-4 mr-2" />Wyslij raport</>}
               </Button>
             </div>
           </div>
