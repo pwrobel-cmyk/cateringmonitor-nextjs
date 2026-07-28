@@ -113,6 +113,12 @@ function normCode(c: string | null | undefined): string {
   return (c || '').trim().toUpperCase()
 }
 
+/** Normalize date to YYYY-MM-DD, handling TIMESTAMPTZ ("2026-07-27T21:59:00+00:00") and DATE ("2026-07-27"). */
+function toDateOnly(v: string | null | undefined): string | null {
+  if (!v) return null
+  return v.slice(0, 10)  // "2026-07-27T21:59:00+00:00" → "2026-07-27"
+}
+
 function classifyStagingItem(s: StagingDiscount, existing: ExistingDiscount[], today: string): StagingClass {
   if (!s.brand_id) return { kind: 'new' }
 
@@ -124,25 +130,30 @@ function classifyStagingItem(s: StagingDiscount, existing: ExistingDiscount[], t
     matches = existing.filter(e =>
       e.brand_id === s.brand_id &&
       e.percentage === s.percentage &&
-      (e.valid_from ?? null) === (s.valid_from ?? null)
+      toDateOnly(e.valid_from) === toDateOnly(s.valid_from)
     )
   }
 
   if (matches.length === 0) return { kind: 'new' }
 
-  const isActive = (m: ExistingDiscount) => m.valid_until == null || m.valid_until >= today
+  const isActive = (m: ExistingDiscount) => {
+    const d = toDateOnly(m.valid_until)
+    return d == null || d >= today
+  }
+
+  const sUntil = toDateOnly(s.valid_until)
 
   // 1. DUPLICATE — identical terms exist in DB (active or expired)
   const identicalMatch = matches.find(m =>
     m.percentage === s.percentage &&
     m.fixed_amount === s.fixed_amount &&
-    (m.valid_until ?? null) === (s.valid_until ?? null)
+    toDateOnly(m.valid_until) === sUntil
   )
   if (identicalMatch) {
     return {
       kind: 'duplicate',
       expired: !isActive(identicalMatch),
-      dbUntil: identicalMatch.valid_until,
+      dbUntil: toDateOnly(identicalMatch.valid_until),
     }
   }
 
@@ -152,19 +163,18 @@ function classifyStagingItem(s: StagingDiscount, existing: ExistingDiscount[], t
   // 2. REISSUED — all matches expired, staging has later valid_until
   if (activeMatches.length === 0 && expiredMatches.length > 0) {
     const latestExpired = [...expiredMatches].sort((a, b) =>
-      (b.valid_until || '').localeCompare(a.valid_until || '')
+      (toDateOnly(b.valid_until) || '').localeCompare(toDateOnly(a.valid_until) || '')
     )[0]
 
+    const latestDate = toDateOnly(latestExpired.valid_until)
     const stagingLater = (() => {
-      const sv = s.valid_until
-      const dv = latestExpired.valid_until
-      if (sv == null) return true  // bezterminowy > any date
-      if (dv == null) return false
-      return sv > dv
+      if (sUntil == null) return true
+      if (latestDate == null) return false
+      return sUntil > latestDate
     })()
 
     if (stagingLater) {
-      return { kind: 'reissued', prevUntil: latestExpired.valid_until! }
+      return { kind: 'reissued', prevUntil: latestDate! }
     }
   }
 
@@ -175,7 +185,7 @@ function classifyStagingItem(s: StagingDiscount, existing: ExistingDiscount[], t
       kind: 'changed',
       dbPct: bestMatch.percentage,
       dbAmt: bestMatch.fixed_amount,
-      dbUntil: bestMatch.valid_until,
+      dbUntil: toDateOnly(bestMatch.valid_until),
     }
   }
 
@@ -269,44 +279,32 @@ interface GroupedItem {
 }
 
 function groupItems(items: StagingDiscount[]): GroupedItem[] {
-  // Build map of related items by core_fingerprint
-  const coreGroups = new Map<string, StagingDiscount[]>()
-  const standalone: StagingDiscount[] = []
-  const linkedIds = new Set<string>()
+  const result: GroupedItem[] = []
+  const grouped = new Set<string>()
 
-  // Collect all items that have a related_staging_id or are pointed to
+  // Pass 1: group by core_fingerprint (cross-source dedup)
+  const coreGroups = new Map<string, StagingDiscount[]>()
   for (const item of items) {
-    if (item.related_staging_id) linkedIds.add(item.id)
+    if (item.core_fingerprint) {
+      const group = coreGroups.get(item.core_fingerprint) || []
+      group.push(item)
+      coreGroups.set(item.core_fingerprint, group)
+    }
   }
-  for (const item of items) {
-    if (linkedIds.has(item.id) || item.related_staging_id) {
-      // Part of a group — use core_fingerprint to group
-      const key = item.core_fingerprint
-      if (key) {
-        const group = coreGroups.get(key) || []
-        group.push(item)
-        coreGroups.set(key, group)
-      } else {
-        standalone.push(item)
-      }
-    } else {
-      standalone.push(item)
+  for (const group of coreGroups.values()) {
+    if (group.length > 1) {
+      const sorted = [...group].sort((a, b) => richness(b) - richness(a))
+      result.push({ primary: sorted[0], related: sorted.slice(1) })
+      for (const item of group) grouped.add(item.id)
     }
   }
 
-  const result: GroupedItem[] = []
-
-  // Process groups — pick richest as primary
-  for (const group of coreGroups.values()) {
-    const sorted = [...group].sort((a, b) => richness(b) - richness(a))
-    result.push({ primary: sorted[0], related: sorted.slice(1) })
-  }
-
-  // Group remaining standalone items by brand_id + code (same code variants)
+  // Pass 2: group remaining by brand_id + code (same code variants)
+  const remaining = items.filter(i => !grouped.has(i.id))
   const codeGroups = new Map<string, StagingDiscount[]>()
   const ungrouped: StagingDiscount[] = []
 
-  for (const item of standalone) {
+  for (const item of remaining) {
     const code = normCode(item.code)
     if (code && item.brand_id) {
       const key = `${item.brand_id}:${code}`
@@ -924,15 +922,18 @@ export default function DiscountStagingPage() {
 
                 return (
                   <div className="ml-6 mt-1 space-y-1">
-                    {isCrossSource && (
-                      <div className="text-[10px] text-muted-foreground font-medium">
-                        Wykryto w: {[item, ...related].map(r =>
-                          r.source_platform
-                            ? `${r.source_platform}${r.source_name ? `/${r.source_name}` : ''}`
-                            : (r.source || 'WWW')
-                        ).join(' + ')}
-                      </div>
-                    )}
+                    {isCrossSource && (() => {
+                      const labels = [...new Set([item, ...related].map(r =>
+                        r.source_platform
+                          ? `${r.source_platform}${r.source_name ? ' · ' + r.source_name : ''}`
+                          : 'WWW'
+                      ))]
+                      return labels.length > 1 ? (
+                        <div className="text-[10px] text-muted-foreground font-medium">
+                          Wykryto w: {labels.join(' + ')}
+                        </div>
+                      ) : null
+                    })()}
                     {isCodeVariant && (
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="text-[10px]">
