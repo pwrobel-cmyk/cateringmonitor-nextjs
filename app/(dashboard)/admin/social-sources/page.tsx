@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Plus, Pencil, Trash2, Loader2, ExternalLink, Radio } from 'lucide-react'
+import { Plus, Pencil, Trash2, Loader2, ExternalLink, Radio, Play, CheckCircle2, XCircle, Clock } from 'lucide-react'
 
 // ─── Admin Nav ────────────────────────────────────────────────────────────────
 
@@ -114,6 +114,10 @@ export default function SocialSourcesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<FormData>(emptyForm)
+
+  // Run state per source
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
+  const [runResults, setRunResults] = useState<Record<string, any>>({})
 
   useEffect(() => {
     if (user && user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
@@ -236,6 +240,56 @@ export default function SocialSourcesPage() {
     setSources(prev => prev.map(s => s.id === id ? { ...s, active } : s))
   }
 
+  const handleRun = async (sourceId: string, send: boolean = false) => {
+    setRunningIds(prev => new Set(prev).add(sourceId))
+    setRunResults(prev => ({ ...prev, [sourceId]: { status: 'starting' } }))
+
+    try {
+      const res = await fetch('/api/admin/social-sources/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceId, send }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setRunResults(prev => ({ ...prev, [sourceId]: { status: 'error', error: data.error } }))
+        toast.error(data.error || 'Błąd uruchomienia')
+        setRunningIds(prev => { const n = new Set(prev); n.delete(sourceId); return n })
+        return
+      }
+
+      const executionName = data.executionName
+      setRunResults(prev => ({ ...prev, [sourceId]: { status: 'running', executionName } }))
+      toast.success(`Uruchomiono: ${executionName}`)
+
+      // Poll for completion
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 5000))
+        const statusRes = await fetch(`/api/admin/social-sources/run?execution=${executionName}`)
+        if (!statusRes.ok) continue
+        const statusData = await statusRes.json()
+
+        if (statusData.status === 'success' || statusData.status === 'failed') {
+          setRunResults(prev => ({ ...prev, [sourceId]: { ...statusData, executionName } }))
+          setRunningIds(prev => { const n = new Set(prev); n.delete(sourceId); return n })
+          toast[statusData.status === 'success' ? 'success' : 'error'](
+            statusData.status === 'success' ? 'Zakończono pomyślnie' : 'Zakończono z błędem'
+          )
+          return
+        }
+      }
+
+      // Timeout after 5 min polling
+      setRunResults(prev => ({ ...prev, [sourceId]: { status: 'timeout', executionName } }))
+      setRunningIds(prev => { const n = new Set(prev); n.delete(sourceId); return n })
+      toast.info('Timeout pollingu — sprawdź Cloud Run')
+    } catch (err: any) {
+      setRunResults(prev => ({ ...prev, [sourceId]: { status: 'error', error: err.message } }))
+      setRunningIds(prev => { const n = new Set(prev); n.delete(sourceId); return n })
+      toast.error('Błąd sieci')
+    }
+  }
+
   if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) return null
 
   return (
@@ -298,8 +352,12 @@ export default function SocialSourcesPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(s => (
-                <tr key={s.id} className="border-b hover:bg-muted/20 transition">
+              {filtered.map(s => {
+                const rr = runResults[s.id]
+                const isRunning = runningIds.has(s.id)
+                const rrStatus = rr?.status || ''
+                return (<React.Fragment key={s.id}>
+                <tr className="border-b hover:bg-muted/20 transition">
                   <td className="py-3">
                     <div className="flex items-center gap-2">
                       {s.brands?.logo_url ? (
@@ -337,12 +395,57 @@ export default function SocialSourcesPage() {
                   </td>
                   <td className="py-3">
                     <div className="flex gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={runningIds.has(s.id)}
+                        onClick={() => handleRun(s.id, false)}
+                        className="text-xs"
+                      >
+                        {runningIds.has(s.id) ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                        Sprawdź
+                      </Button>
                       <Button variant="ghost" size="icon-sm" onClick={() => openEdit(s)}><Pencil className="h-3.5 w-3.5" /></Button>
                       <Button variant="ghost" size="icon-sm" className="text-destructive" onClick={() => handleDelete(s.id)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                {/* Run result row */}
+                {rr && (
+                  <tr className="border-b bg-muted/30">
+                    <td colSpan={8} className="py-2 px-4">
+                      <div className="text-xs space-y-1">
+                        <div className="flex items-center gap-2">
+                          {(rrStatus === 'running' || rrStatus === 'starting') && (
+                            <><Loader2 className="h-3 w-3 animate-spin" /><span>Uruchamianie...</span></>
+                          )}
+                          {rrStatus === 'success' && (
+                            <><CheckCircle2 className="h-3 w-3 text-green-500" /><span>Zakończono</span></>
+                          )}
+                          {(rrStatus === 'failed' || rrStatus === 'error') && (
+                            <><XCircle className="h-3 w-3 text-red-500" /><span>Błąd: {rr.error || rr.message}</span></>
+                          )}
+                          {rrStatus === 'timeout' && (
+                            <><Clock className="h-3 w-3 text-amber-500" /><span>Timeout — sprawdź Cloud Run</span></>
+                          )}
+                          {rr.executionName && (
+                            <span className="text-muted-foreground font-mono">{rr.executionName}</span>
+                          )}
+                        </div>
+                        {rr.result && (
+                          <div className="grid grid-cols-4 gap-2 mt-1 text-[10px]">
+                            <div>Posty: <strong>{rr.result.recent_posts ?? '—'}</strong></div>
+                            <div>Kandydaci: <strong>{rr.result.promotion_candidates ?? '—'}</strong></div>
+                            <div>Strict: <strong>{rr.result.strict_promotions ?? '—'}</strong></div>
+                            <div>Staging: <strong>{rr.result.staging_inserted ?? 0}</strong> wst / <strong>{rr.result.staging_duplicates ?? 0}</strong> dup</div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>)
+              })}
             </tbody>
           </table>
         </div>
