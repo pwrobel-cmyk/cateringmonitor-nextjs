@@ -403,14 +403,22 @@ export default function DiscountStagingPage() {
     }
     setClassMap(cmap)
 
-    // Sort: changed/reissued (need attention) → new → duplicate (gray) → rejected
-    const changed = all.filter(i => i.status === 'pending' && (cmap[i.id]?.kind === 'changed' || cmap[i.id]?.kind === 'reissued'))
-    const newItems = all.filter(i => i.status === 'pending' && cmap[i.id]?.kind === 'new')
-    const dupes = all.filter(i => i.status === 'pending' && cmap[i.id]?.kind === 'duplicate')
-    const rejected = all.filter(i => i.status === 'rejected')
-    setItems([...changed, ...newItems, ...dupes, ...rejected])
+    setItems(all)
 
-    // KPI
+    // KPI — count from grouped primaries to match what renders
+    const grouped = groupItems(all)
+    let pendingCount = 0
+    let dupeCount = 0
+    for (const { primary } of grouped) {
+      if (primary.status !== 'pending') continue
+      const cls = cmap[primary.id]
+      if (!cls || cls.kind === 'new' || cls.kind === 'changed' || cls.kind === 'reissued') {
+        pendingCount++
+      } else if (cls.kind === 'duplicate') {
+        dupeCount++
+      }
+    }
+
     const { count: acceptedToday } = await supabase
       .from('discount_staging')
       .select('*', { count: 'exact', head: true })
@@ -424,8 +432,8 @@ export default function DiscountStagingPage() {
       .gte('reviewed_at', today)
 
     setKpi({
-      pending: changed.length + newItems.length,
-      alreadyInDb: dupes.length,
+      pending: pendingCount,
+      alreadyInDb: dupeCount,
       acceptedToday: acceptedToday || 0,
       rejectedToday: rejectedToday || 0,
     })
@@ -956,10 +964,7 @@ export default function DiscountStagingPage() {
                   normCode(r.code) === normCode(item.code) && r.brand_id === item.brand_id
                 )
 
-                // Don't render related section if items can't be meaningfully presented
-                if (!isCrossSource && !isCodeVariant) return null
-
-                // Cross-source: show "Wykryto w" only when labels differ
+                // Cross-source labels
                 const crossLabels = isCrossSource
                   ? [...new Set([item, ...related].map(r =>
                       r.source_platform
@@ -967,6 +972,12 @@ export default function DiscountStagingPage() {
                         : 'WWW'
                     ))]
                   : []
+
+                // Don't render related section if:
+                // - neither cross-source nor code variant
+                // - cross-source but all from same source (no new information)
+                if (!isCrossSource && !isCodeVariant) return null
+                if (isCrossSource && crossLabels.length <= 1) return null
 
                 return (
                   <div className="ml-6 mt-1 space-y-1">
