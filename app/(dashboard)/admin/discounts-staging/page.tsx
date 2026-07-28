@@ -105,7 +105,7 @@ interface ExistingDiscount {
 
 type StagingClass =
   | { kind: 'new' }
-  | { kind: 'duplicate' }
+  | { kind: 'duplicate'; expired: boolean; dbUntil: string | null }
   | { kind: 'reissued'; prevUntil: string }
   | { kind: 'changed'; dbPct: number | null; dbAmt: number | null; dbUntil: string | null }
 
@@ -131,42 +131,52 @@ function classifyStagingItem(s: StagingDiscount, existing: ExistingDiscount[], t
   if (matches.length === 0) return { kind: 'new' }
 
   const isActive = (m: ExistingDiscount) => m.valid_until == null || m.valid_until >= today
+
+  // 1. DUPLICATE — identical terms exist in DB (active or expired)
+  const identicalMatch = matches.find(m =>
+    m.percentage === s.percentage &&
+    m.fixed_amount === s.fixed_amount &&
+    (m.valid_until ?? null) === (s.valid_until ?? null)
+  )
+  if (identicalMatch) {
+    return {
+      kind: 'duplicate',
+      expired: !isActive(identicalMatch),
+      dbUntil: identicalMatch.valid_until,
+    }
+  }
+
   const activeMatches = matches.filter(isActive)
   const expiredMatches = matches.filter(m => !isActive(m))
 
-  // B) REISSUED: all matches expired, staging is active
+  // 2. REISSUED — all matches expired, staging has later valid_until
   if (activeMatches.length === 0 && expiredMatches.length > 0) {
-    const stagingActive = s.valid_until == null || s.valid_until >= today
-    if (stagingActive) {
-      const sorted = [...expiredMatches].sort((a, b) => (b.valid_until || '').localeCompare(a.valid_until || ''))
-      return { kind: 'reissued', prevUntil: sorted[0].valid_until! }
-    }
-    return { kind: 'new' }
-  }
+    const latestExpired = [...expiredMatches].sort((a, b) =>
+      (b.valid_until || '').localeCompare(a.valid_until || '')
+    )[0]
 
-  // Has active matches
-  if (activeMatches.length > 0) {
-    const best = activeMatches[0]
-    const samePct = best.percentage === s.percentage
-    const sameAmt = best.fixed_amount === s.fixed_amount
-
-    // staging valid_until is later than db?
     const stagingLater = (() => {
       const sv = s.valid_until
-      const dv = best.valid_until
-      if (sv == null && dv != null) return true   // bezterminowy > konkretna data
-      if (sv != null && dv == null) return false
-      if (sv == null && dv == null) return false
-      return sv! > dv!
+      const dv = latestExpired.valid_until
+      if (sv == null) return true  // bezterminowy > any date
+      if (dv == null) return false
+      return sv > dv
     })()
 
-    // A) DUPLICATE: same terms, staging not later
-    if (samePct && sameAmt && !stagingLater) {
-      return { kind: 'duplicate' }
+    if (stagingLater) {
+      return { kind: 'reissued', prevUntil: latestExpired.valid_until! }
     }
+  }
 
-    // C) CHANGED: different terms or extended
-    return { kind: 'changed', dbPct: best.percentage, dbAmt: best.fixed_amount, dbUntil: best.valid_until }
+  // 3. CHANGED — match exists but terms differ
+  const bestMatch = activeMatches[0] || expiredMatches[0]
+  if (bestMatch) {
+    return {
+      kind: 'changed',
+      dbPct: bestMatch.percentage,
+      dbAmt: bestMatch.fixed_amount,
+      dbUntil: bestMatch.valid_until,
+    }
   }
 
   return { kind: 'new' }
@@ -292,8 +302,32 @@ function groupItems(items: StagingDiscount[]): GroupedItem[] {
     result.push({ primary: sorted[0], related: sorted.slice(1) })
   }
 
-  // Add standalone items
+  // Group remaining standalone items by brand_id + code (same code variants)
+  const codeGroups = new Map<string, StagingDiscount[]>()
+  const ungrouped: StagingDiscount[] = []
+
   for (const item of standalone) {
+    const code = normCode(item.code)
+    if (code && item.brand_id) {
+      const key = `${item.brand_id}:${code}`
+      const group = codeGroups.get(key) || []
+      group.push(item)
+      codeGroups.set(key, group)
+    } else {
+      ungrouped.push(item)
+    }
+  }
+
+  for (const group of codeGroups.values()) {
+    if (group.length === 1) {
+      result.push({ primary: group[0], related: [] })
+    } else {
+      const sorted = [...group].sort((a, b) => richness(b) - richness(a))
+      result.push({ primary: sorted[0], related: sorted.slice(1) })
+    }
+  }
+
+  for (const item of ungrouped) {
     result.push({ primary: item, related: [] })
   }
 
@@ -637,10 +671,15 @@ export default function DiscountStagingPage() {
                           <span className="font-medium text-sm truncate">{item.brands.name}</span>
                         </div>
                         {isDuplicate && (
-                          <Badge variant="outline" className="text-blue-600 border-blue-300 text-[10px] px-1.5">
-                            <DatabaseZap className="h-3 w-3 mr-0.5" />
-                            Już w bazie
-                          </Badge>
+                          <div className="space-y-0.5">
+                            <Badge variant="outline" className="text-blue-600 border-blue-300 text-[10px] px-1.5">
+                              <DatabaseZap className="h-3 w-3 mr-0.5" />
+                              Już w bazie
+                            </Badge>
+                            {cls.kind === 'duplicate' && cls.expired && (
+                              <div className="text-[9px] text-muted-foreground">wygasł {cls.dbUntil || '—'}</div>
+                            )}
+                          </div>
                         )}
                         {isReissued && (
                           <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px] px-1.5">
@@ -844,8 +883,10 @@ export default function DiscountStagingPage() {
                     )}
                     {isDuplicate && (
                       <div className="text-[10px] text-muted-foreground text-right">
-                        Rabat o tym kodzie istnieje już w{' '}
-                        <Link href="/admin/discounts" className="underline hover:text-foreground">Rabatach</Link>
+                        {cls.kind === 'duplicate' && cls.expired
+                          ? <>Identyczny wygasły rabat w{' '}<Link href="/admin/discounts" className="underline hover:text-foreground">Rabatach</Link> (do {cls.dbUntil})</>
+                          : <>Rabat o tym kodzie istnieje już w{' '}<Link href="/admin/discounts" className="underline hover:text-foreground">Rabatach</Link></>
+                        }
                       </div>
                     )}
                     {isReissued && cls.kind === 'reissued' && (
@@ -873,49 +914,72 @@ export default function DiscountStagingPage() {
                   </div>
                 </CardContent>
               </Card>
-              {/* Related items (grouped by core_fingerprint) */}
-              {related.length > 0 && (
-                <div className="ml-6 mt-1 space-y-1">
-                  <div className="text-[10px] text-muted-foreground font-medium">
-                    Wykryto w: {[item, ...related].map(r =>
-                      r.source_platform
-                        ? `${r.source_platform}${r.source_name ? `/${r.source_name}` : ''}`
-                        : (r.source || 'WWW')
-                    ).join(' + ')}
+              {/* Related items */}
+              {related.length > 0 && (() => {
+                // Determine if this is a cross-source group or same-code variant group
+                const isCrossSource = related.some(r => r.core_fingerprint && r.core_fingerprint === item.core_fingerprint)
+                const isCodeVariant = !isCrossSource && related.some(r =>
+                  normCode(r.code) === normCode(item.code) && r.brand_id === item.brand_id
+                )
+
+                return (
+                  <div className="ml-6 mt-1 space-y-1">
+                    {isCrossSource && (
+                      <div className="text-[10px] text-muted-foreground font-medium">
+                        Wykryto w: {[item, ...related].map(r =>
+                          r.source_platform
+                            ? `${r.source_platform}${r.source_name ? `/${r.source_name}` : ''}`
+                            : (r.source || 'WWW')
+                        ).join(' + ')}
+                      </div>
+                    )}
+                    {isCodeVariant && (
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-[10px]">
+                          {related.length + 1} wariantów kodu {normCode(item.code)}
+                        </Badge>
+                      </div>
+                    )}
+                    {related.map(rel => (
+                      <Card key={rel.id} className={isCrossSource ? 'opacity-60' : ''}>
+                        <CardContent className="py-2 px-4 text-xs text-muted-foreground">
+                          {isCrossSource && (
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[8px] px-1">
+                                {rel.source_platform ? `${rel.source_platform}/${rel.source_type || ''}` : (rel.source || 'WWW')}
+                              </Badge>
+                              {rel.source_name && <span>{rel.source_name}</span>}
+                              {rel.post_url && (
+                                <a href={rel.post_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
+                                  Post<ExternalLink className="h-2.5 w-2.5" />
+                                </a>
+                              )}
+                            </div>
+                          )}
+                          {isCodeVariant && (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  {rel.percentage != null && <Badge className="text-xs">-{rel.percentage}%</Badge>}
+                                  {rel.fixed_amount != null && <Badge variant="secondary" className="text-xs">{rel.fixed_amount} zł</Badge>}
+                                  <span>{rel.valid_from || '—'} – {rel.valid_until || 'bezterminowy'}</span>
+                                </div>
+                                {rel.min_days != null && <div className="text-[10px]">min. {rel.min_days} dni</div>}
+                                {rel.requirements && <div className="text-[10px] truncate max-w-md" title={rel.requirements}>{rel.requirements}</div>}
+                              </div>
+                              {rel.status === 'pending' && !isDuplicate && (
+                                <Button size="sm" variant="outline" onClick={() => openAcceptModal(rel)} className="text-xs flex-shrink-0">
+                                  <Check className="h-3 w-3 mr-1" />Zaakceptuj
+                                </Button>
+                              )}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                  {related.map(rel => (
-                    <Card key={rel.id} className="opacity-60">
-                      <CardContent className="py-2 px-4 text-xs text-muted-foreground space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[8px] px-1">
-                            {rel.source_platform ? `${rel.source_platform}/${rel.source_type || ''}` : (rel.source || 'WWW')}
-                          </Badge>
-                          {rel.source_name && <span>{rel.source_name}</span>}
-                          {rel.post_url && (
-                            <a href={rel.post_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
-                              Post<ExternalLink className="h-2.5 w-2.5" />
-                            </a>
-                          )}
-                          {rel.source_url && !rel.post_url && (
-                            <a href={rel.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-primary hover:underline">
-                              URL<ExternalLink className="h-2.5 w-2.5" />
-                            </a>
-                          )}
-                          {rel.post_published_at && <span>· {new Date(rel.post_published_at).toLocaleDateString('pl-PL')}</span>}
-                          {rel.screenshot_url && (
-                            <button onClick={() => setScreenshotModal(rel.screenshot_url)} className="inline-flex items-center gap-0.5 text-primary hover:underline">
-                              <Image className="h-2.5 w-2.5" />
-                            </button>
-                          )}
-                        </div>
-                        {rel.source_text && (
-                          <div className="bg-muted/50 rounded p-1.5 max-h-16 overflow-y-auto whitespace-pre-wrap text-[10px]">{rel.source_text}</div>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+                )
+              })()}
               </div>
             )
           })}
