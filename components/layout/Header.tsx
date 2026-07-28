@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { useBrandsWithLimit } from "@/hooks/supabase/useBrandsWithLimit";
 import { supabase } from "@/lib/supabase/client";
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useUserRole } from '@/hooks/useUserRole';
+import { isAdmin } from '@/lib/isAdmin';
 import { useState, useEffect, useRef } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -18,6 +20,8 @@ export function Header() {
   const { selectedCountry, setSelectedCountry } = useCountry();
   const { data: brands = [] } = useBrandsWithLimit();
   const { data: profile } = useUserProfile();
+  const { data: userRole } = useUserRole();
+  const isAdminUser = isAdmin(user?.email, userRole);
   const [isOpen, setIsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [urgentCount, setUrgentCount] = useState(0);
@@ -141,7 +145,7 @@ export function Header() {
                   <button onClick={() => { router.push('/moje-raporty'); setMenuOpen(false); }} className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-gray-50">
                     <FileBarChart2 className="h-4 w-4" /> Moje raporty
                   </button>
-                  {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
+                  {isAdminUser && (
                     <>
                       <div className="border-t border-gray-100 my-1" />
                       <div className="px-3 py-1 flex items-center gap-2 text-xs font-medium text-gray-400">
@@ -249,7 +253,7 @@ export function Header() {
                     <FileBarChart2 className="h-4 w-4 mr-2" />
                     Moje raporty
                   </Button>
-                  {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
+                  {isAdminUser && (
                     <Button
                       variant="outline"
                       className="w-full justify-start"

@@ -5,6 +5,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { useUserRole } from '@/hooks/useUserRole';
+import { isAdmin } from '@/lib/isAdmin';
 import { redirect, usePathname } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -436,7 +438,8 @@ const FITAPETIT_DIET_OPTIONS = [
 export default function Scrapers() {
   const { user } = useAuth();
   const pathname = usePathname();
-  
+  const { data: userRole, isLoading: roleLoading } = useUserRole();
+
   // Syty Król state
   const [isRunningSK, setIsRunningSK] = useState(false);
   const [isDebuggingSK, setIsDebuggingSK] = useState(false);
@@ -554,7 +557,7 @@ export default function Scrapers() {
   const queryClient = useQueryClient();
 
   // Tylko dla admina
-  if (!user || user?.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+  if (!user || roleLoading || !isAdmin(user.email, userRole)) {
     return null;
   }
 

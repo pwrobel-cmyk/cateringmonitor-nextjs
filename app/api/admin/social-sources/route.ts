@@ -1,22 +1,7 @@
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
-
-async function getAdminUser(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) return null
-  return user
-}
-
-function getService() {
-  return createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
+import { getAdminUser, getService } from '@/lib/adminAuth'
 
 export async function GET(request: Request) {
-  const user = await getAdminUser(request)
+  const user = await getAdminUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 403 })
 
   const service = getService()
@@ -30,7 +15,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const user = await getAdminUser(request)
+  const user = await getAdminUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await request.json()
@@ -63,7 +48,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const user = await getAdminUser(request)
+  const user = await getAdminUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await request.json()
@@ -88,7 +73,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const user = await getAdminUser(request)
+  const user = await getAdminUser()
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)

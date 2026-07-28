@@ -1,18 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { getAdminUser, getService } from '@/lib/adminAuth'
 
 export async function GET(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAdminUser()
+  if (!user) { return Response.json({ error: 'Unauthorized' }, { status: 403 }) }
 
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    return Response.json({ error: 'Unauthorized' }, { status: 403 })
-  }
-
-  const service = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const service = getService()
 
   const { searchParams } = new URL(request.url)
   const userId = searchParams.get('userId')

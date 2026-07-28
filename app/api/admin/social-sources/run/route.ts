@@ -1,13 +1,5 @@
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { getAdminUser, getService } from '@/lib/adminAuth'
 import { executeCloudRunJob, getExecutionStatus } from '@/lib/gcpAuth'
-
-async function getAdminUser() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) return null
-  return user
-}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -23,10 +15,7 @@ export async function POST(request: Request) {
   }
 
   // Verify source exists
-  const service = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const service = getService()
   const { data: source, error: srcErr } = await service
     .from('social_sources')
     .select('id, brand_id, source_name')

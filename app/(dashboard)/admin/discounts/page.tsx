@@ -5,6 +5,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUserRole } from '@/hooks/useUserRole';
+import { isAdmin } from '@/lib/isAdmin';
 import { supabase } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -127,6 +129,7 @@ export default function AdminDiscountsPage() {
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const { data: userRole, isLoading: roleLoading } = useUserRole();
 
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -154,16 +157,16 @@ export default function AdminDiscountsPage() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+    if (!roleLoading && !isAdmin(user.email, userRole)) {
       router.replace('/dashboard');
     }
-  }, [user, router]);
+  }, [user, router, roleLoading, userRole]);
 
   useEffect(() => {
-    if (user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+    if (user && !roleLoading && isAdmin(user.email, userRole)) {
       fetchData();
     }
-  }, [user]);
+  }, [user, roleLoading, userRole]);
 
   async function fetchData() {
     setLoading(true);
@@ -453,7 +456,7 @@ export default function AdminDiscountsPage() {
 
   const paginationPages = parsePaginationPages(currentPage, totalPages);
 
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+  if (!user || roleLoading || !isAdmin(user.email, userRole)) {
     return null;
   }
 

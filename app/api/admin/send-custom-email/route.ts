@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { getAdminUser } from '@/lib/adminAuth'
 import { Resend } from 'resend'
 
 function buildCustomEmailHtml(subject: string, paragraphs: string[]): string {
@@ -78,12 +78,8 @@ function buildCustomEmailHtml(subject: string, paragraphs: string[]): string {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    return Response.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const user = await getAdminUser()
+  if (!user) { return Response.json({ error: 'Unauthorized' }, { status: 403 }) }
 
   const { recipients, subject, paragraphs } = await request.json() as {
     recipients: string[]

@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useUserRole } from '@/hooks/useUserRole'
+import { isAdmin } from '@/lib/isAdmin'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
@@ -100,6 +102,7 @@ const TYPE_OPTIONS = [
 export default function SocialSourcesPage() {
   const { user } = useAuth()
   const router = useRouter()
+  const { data: userRole, isLoading: roleLoading } = useUserRole()
   const [sources, setSources] = useState<SocialSource[]>([])
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
@@ -120,10 +123,10 @@ export default function SocialSourcesPage() {
   const [runResults, setRunResults] = useState<Record<string, any>>({})
 
   useEffect(() => {
-    if (user && user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+    if (user && !roleLoading && !isAdmin(user.email, userRole)) {
       router.replace('/dashboard')
     }
-  }, [user, router])
+  }, [user, router, roleLoading, userRole])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -290,7 +293,7 @@ export default function SocialSourcesPage() {
     }
   }
 
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) return null
+  if (!user || roleLoading || !isAdmin(user.email, userRole)) return null
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">

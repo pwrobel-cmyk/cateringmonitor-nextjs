@@ -1,18 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
-import { createClient as createServiceClient } from '@supabase/supabase-js'
+import { getAdminUser, getService } from '@/lib/adminAuth'
 
 export async function GET() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const user = await getAdminUser()
+  if (!user) { return Response.json({ error: 'Unauthorized' }, { status: 403 }) }
 
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    return Response.json({ error: 'Unauthorized' }, { status: 403 })
-  }
-
-  const service = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const service = getService()
 
   // Auth users list
   const { data: { users: authUsers } } = await service.auth.admin.listUsers({ perPage: 1000 })
@@ -66,19 +58,12 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    return Response.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const user = await getAdminUser()
+  if (!user) { return Response.json({ error: 'Unauthorized' }, { status: 403 }) }
 
   const { userId, full_name, status, trial_ends_at } = await request.json()
 
-  const service = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  const service = getService()
 
   await service.from('profiles').update({ full_name, status, trial_ends_at }).eq('user_id', userId)
 

@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useUserRole } from '@/hooks/useUserRole'
+import { isAdmin } from '@/lib/isAdmin'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import * as XLSX from 'xlsx'
@@ -41,6 +43,7 @@ function cleanResponse(raw: string): string {
 export default function AdminReviewsPage() {
   const { user } = useAuth()
   const router = useRouter()
+  const { data: userRole, isLoading: roleLoading } = useUserRole()
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ParsedReview[]>([])
   const [pending, setPending] = useState<ParsedReview[]>([])
@@ -96,8 +99,8 @@ export default function AdminReviewsPage() {
     }
   }
 
-  if (!user) return null
-  if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+  if (!user || roleLoading) return null
+  if (!isAdmin(user.email, userRole)) {
     router.push('/dashboard')
     return null
   }

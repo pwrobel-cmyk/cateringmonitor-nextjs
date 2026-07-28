@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useUserRole } from '@/hooks/useUserRole'
+import { isAdmin } from '@/lib/isAdmin'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
@@ -337,6 +339,7 @@ function groupItems(items: StagingDiscount[]): GroupedItem[] {
 export default function DiscountStagingPage() {
   const { user } = useAuth()
   const router = useRouter()
+  const { data: userRole, isLoading: roleLoading } = useUserRole()
   const [items, setItems] = useState<StagingDiscount[]>([])
   const [brands, setBrands] = useState<Brand[]>([])
   const [loading, setLoading] = useState(true)
@@ -356,10 +359,10 @@ export default function DiscountStagingPage() {
 
   // Auth guard
   useEffect(() => {
-    if (user && user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+    if (user && !roleLoading && !isAdmin(user.email, userRole)) {
       router.replace('/dashboard')
     }
-  }, [user, router])
+  }, [user, router, roleLoading, userRole])
 
   // Fetch data
   const fetchData = useCallback(async () => {
@@ -569,7 +572,7 @@ export default function DiscountStagingPage() {
     }
   }
 
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+  if (!user || roleLoading || !isAdmin(user.email, userRole)) {
     return null
   }
 

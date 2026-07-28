@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { getAdminUser, getService } from '@/lib/adminAuth'
 import { Resend } from 'resend'
 
 interface Recipient {
@@ -189,12 +189,8 @@ function buildEmailHtml(summary: ReportSummary, reportLink?: string): string {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user || user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    return Response.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const user = await getAdminUser()
+  if (!user) { return Response.json({ error: 'Unauthorized' }, { status: 403 }) }
 
   const { recipients, reportSummary, subject } = await request.json() as {
     recipients: Recipient[]
@@ -206,6 +202,7 @@ export async function POST(request: Request) {
     return Response.json({ error: 'No recipients provided' }, { status: 400 })
   }
 
+  const service = getService()
   const resend = new Resend(process.env.RESEND_API_KEY)
   const errors: string[] = []
   let sent = 0
@@ -216,7 +213,7 @@ export async function POST(request: Request) {
 
       if (recipient.userId) {
         // Create custom_reports record only for known system users
-        const { data: reportRecord, error: insertError } = await (supabase as any)
+        const { data: reportRecord, error: insertError } = await (service as any)
           .from('custom_reports')
           .insert({
             user_id: recipient.userId,

@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useUserRole } from '@/hooks/useUserRole'
+import { isAdmin } from '@/lib/isAdmin'
 import { useRouter } from 'next/navigation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Card, CardContent } from '@/components/ui/card'
@@ -13,8 +15,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Shield, Users, BarChart3, Pencil, RefreshCw, X } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '@/lib/supabase/client'
-
-const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
 
 type User = {
   id: string; email: string; created_at: string; last_sign_in_at: string | null
@@ -40,6 +40,7 @@ type UserDetail = {
 export default function AdminUsersPage() {
   const { user } = useAuth()
   const router = useRouter()
+  const { data: userRole, isLoading: roleLoading } = useUserRole()
 
   // Users tab
   const [users, setUsers] = useState<User[]>([])
@@ -60,8 +61,8 @@ export default function AdminUsersPage() {
   const [detailLoading, setDetailLoading] = useState(false)
 
   useEffect(() => {
-    if (user && user.email !== adminEmail) router.replace('/dashboard')
-  }, [user, router])
+    if (user && !roleLoading && !isAdmin(user.email, userRole)) router.replace('/dashboard')
+  }, [user, router, roleLoading, userRole])
 
   useEffect(() => {
     fetch('/api/admin/users').then(r => r.json()).then(d => {
@@ -137,7 +138,7 @@ export default function AdminUsersPage() {
   const fmtDate = (s: string | null) => s ? new Date(s).toLocaleDateString('pl-PL') : '—'
   const fmtDateTime = (s: string | null) => s ? new Date(s).toLocaleString('pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
-  if (!user || user.email !== adminEmail) return null
+  if (!user || roleLoading || !isAdmin(user.email, userRole)) return null
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 py-2">
