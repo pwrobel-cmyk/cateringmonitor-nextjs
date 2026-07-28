@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
@@ -635,9 +635,39 @@ export default function DiscountStagingPage() {
       )}
 
       {/* Discount list */}
-      {!loading && items.length > 0 && (
+      {!loading && items.length > 0 && (() => {
+        // Compute priority for sorting: 0=changed, 1=reissued, 2=new, 3=duplicate, 4=rejected
+        function classPriority(item: StagingDiscount): number {
+          if (item.status === 'rejected') return 4
+          const cls = classMap[item.id]
+          if (!cls) return 2
+          if (cls.kind === 'changed') return 0
+          if (cls.kind === 'reissued') return 1
+          if (cls.kind === 'new') return 2
+          if (cls.kind === 'duplicate') return 3
+          return 2
+        }
+
+        const grouped = groupItems(items)
+        const sorted = [...grouped].sort((a, b) => {
+          const pa = classPriority(a.primary)
+          const pb = classPriority(b.primary)
+          if (pa !== pb) return pa - pb
+          return (b.primary.created_at || '').localeCompare(a.primary.created_at || '')
+        })
+
+        const sectionLabels: Record<number, string> = {
+          0: 'WYMAGAJĄ UWAGI',
+          1: 'WZNOWIONE',
+          2: 'NOWE',
+          3: 'JUŻ W BAZIE',
+          4: 'ODRZUCONE',
+        }
+        let lastSection = -1
+
+        return (
         <div className="space-y-3">
-          {groupItems(items).map(({ primary: item, related }) => {
+          {sorted.map(({ primary: item, related }) => {
             const isRejected = item.status === 'rejected'
             const cls = classMap[item.id] || { kind: 'new' as const }
             const isDuplicate = cls.kind === 'duplicate'
@@ -646,11 +676,18 @@ export default function DiscountStagingPage() {
             const isLoading = actionLoading[item.id]
             const hasBrand = !!item.brand_id
             const isGrayed = isRejected || isDuplicate
+            const section = classPriority(item)
+            const showHeader = section !== lastSection
+            lastSection = section
 
             return (
               <div key={item.id}>
+              {showHeader && sectionLabels[section] && (
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mt-4 mb-2">
+                  {sectionLabels[section]}
+                </div>
+              )}
               <Card
-                key={item.id}
                 className={`transition-all duration-300 ${isGrayed ? 'opacity-50 grayscale' : ''}`}
               >
                 <CardContent className="py-4 flex items-center gap-4">
@@ -841,8 +878,8 @@ export default function DiscountStagingPage() {
                       </div>
                     ) : (
                       <div className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
-                        {item.source && <span>Źródło: {item.source}</span>}
-                        {item.source && item.created_at && <span> · </span>}
+                        <span>Źródło: WWW</span>
+                        {item.created_at && <span> · </span>}
                         {item.created_at && <span>Import: {new Date(item.created_at).toLocaleDateString('pl-PL')}</span>}
                         {item.source_url && (
                           <>
@@ -914,26 +951,30 @@ export default function DiscountStagingPage() {
               </Card>
               {/* Related items */}
               {related.length > 0 && (() => {
-                // Determine if this is a cross-source group or same-code variant group
                 const isCrossSource = related.some(r => r.core_fingerprint && r.core_fingerprint === item.core_fingerprint)
                 const isCodeVariant = !isCrossSource && related.some(r =>
                   normCode(r.code) === normCode(item.code) && r.brand_id === item.brand_id
                 )
 
+                // Don't render related section if items can't be meaningfully presented
+                if (!isCrossSource && !isCodeVariant) return null
+
+                // Cross-source: show "Wykryto w" only when labels differ
+                const crossLabels = isCrossSource
+                  ? [...new Set([item, ...related].map(r =>
+                      r.source_platform
+                        ? `${r.source_platform}${r.source_name ? ' · ' + r.source_name : ''}`
+                        : 'WWW'
+                    ))]
+                  : []
+
                 return (
                   <div className="ml-6 mt-1 space-y-1">
-                    {isCrossSource && (() => {
-                      const labels = [...new Set([item, ...related].map(r =>
-                        r.source_platform
-                          ? `${r.source_platform}${r.source_name ? ' · ' + r.source_name : ''}`
-                          : 'WWW'
-                      ))]
-                      return labels.length > 1 ? (
-                        <div className="text-[10px] text-muted-foreground font-medium">
-                          Wykryto w: {labels.join(' + ')}
-                        </div>
-                      ) : null
-                    })()}
+                    {isCrossSource && crossLabels.length > 1 && (
+                      <div className="text-[10px] text-muted-foreground font-medium">
+                        Wykryto w: {crossLabels.join(' + ')}
+                      </div>
+                    )}
                     {isCodeVariant && (
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary" className="text-[10px]">
@@ -947,7 +988,7 @@ export default function DiscountStagingPage() {
                           {isCrossSource && (
                             <div className="flex items-center gap-2">
                               <Badge variant="outline" className="text-[8px] px-1">
-                                {rel.source_platform ? `${rel.source_platform}/${rel.source_type || ''}` : (rel.source || 'WWW')}
+                                {rel.source_platform ? `${rel.source_platform}/${rel.source_type || ''}` : 'WWW'}
                               </Badge>
                               {rel.source_name && <span>{rel.source_name}</span>}
                               {rel.post_url && (
@@ -985,7 +1026,8 @@ export default function DiscountStagingPage() {
             )
           })}
         </div>
-      )}
+        )
+      })()}
 
       {/* Accept modal */}
       {acceptItem && acceptForm && (
