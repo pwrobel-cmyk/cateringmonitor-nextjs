@@ -3,12 +3,11 @@ import { fal } from '@fal-ai/client'
 
 export const maxDuration = 300
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
 export async function POST(request: Request) {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
   const { prompt, type, model, userId, brandId, referenceUrls } = await request.json()
 
   if (!prompt || !type || !userId) {

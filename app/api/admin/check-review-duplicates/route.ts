@@ -1,11 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { getService } from '@/lib/adminAuth'
 
 export async function POST(request: Request) {
+  const supabase = getService()
   const { reviews } = await request.json()
   const duplicateIds: string[] = []
   let savedResponses = 0
