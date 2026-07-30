@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
+import { useUserRole } from '@/hooks/useUserRole'
+import { isAdmin } from '@/lib/isAdmin'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -88,6 +90,8 @@ const EMPTY_CONTACT_FORM = { first_name: '', last_name: '', company: '', email: 
 
 export default function AdminReportsPage() {
   const { user } = useAuth()
+  const router = useRouter()
+  const { data: userRole, isLoading: roleLoading } = useUserRole()
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'opinions')
@@ -482,6 +486,12 @@ export default function AdminReportsPage() {
     } finally {
       setSending(false)
     }
+  }
+
+  if (!user || roleLoading) return null
+  if (!isAdmin(user.email, userRole)) {
+    router.replace('/dashboard')
+    return null
   }
 
   return (

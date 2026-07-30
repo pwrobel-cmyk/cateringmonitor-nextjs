@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { supabase } from '@/lib/supabase/client'
 import { useBrands } from '@/hooks/supabase/useBrands'
+import { useUserRole } from '@/hooks/useUserRole'
+import { isAdmin as checkAdmin } from '@/lib/isAdmin'
 import { useReviewsStatistics } from '@/hooks/supabase/useReviewsStatistics'
 import { useReviewAspects } from '@/hooks/supabase/useReviewAspects'
 import { useMarketReviewAspects } from '@/hooks/supabase/useMarketReviewAspects'
@@ -165,7 +167,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ReviewManagerPage() {
-  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL
+  const { data: userRole } = useUserRole()
   const searchParams = useSearchParams()
 
   const [brandId, setBrandId]       = useState<string | null>(null)
@@ -227,7 +229,7 @@ export default function ReviewManagerPage() {
   // Hooks
   const { data: brands = [] }            = useBrands()
   const selectedBrand                    = brands.find(b => b.id === brandId)
-  const isAdmin                          = userEmail === adminEmail
+  const isAdmin                          = checkAdmin(userEmail, userRole)
   const { data: stats }                  = useReviewsStatistics(brandId, 'all')
   const { data: aspects = [] }           = useReviewAspects(brandId || undefined)
   const { data: marketAspects = [] }     = useMarketReviewAspects()

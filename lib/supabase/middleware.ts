@@ -54,10 +54,22 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && pathname.startsWith("/admin") && user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    return NextResponse.redirect(url);
+  if (user && pathname.startsWith("/admin")) {
+    // Fallback: owner email always passes
+    if (user.email !== process.env.NEXT_PUBLIC_ADMIN_EMAIL) {
+      const { data: roleData } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+
+      const role = roleData?.role;
+      if (role !== 'admin' && role !== 'super_admin') {
+        const url = request.nextUrl.clone();
+        url.pathname = "/dashboard";
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   if (user && pathname === "/auth") {

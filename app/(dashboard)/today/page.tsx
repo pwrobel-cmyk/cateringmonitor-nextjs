@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase/client'
 import { useBrands } from '@/hooks/supabase/useBrands'
+import { useUserRole } from '@/hooks/useUserRole'
+import { isAdmin as checkAdmin } from '@/lib/isAdmin'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -42,7 +44,8 @@ function borderColor(priority: Priority) {
 
 export default function TodayPage() {
   const { user } = useAuth()
-  const isAdmin = user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL
+  const { data: userRole } = useUserRole()
+  const isAdmin = checkAdmin(user?.email, userRole)
   const { data: allBrands = [] } = useBrands()
   const [brandId, setBrandId] = useState<string | undefined>()
   const [brandName, setBrandName] = useState<string>('')
