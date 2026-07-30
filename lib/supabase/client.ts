@@ -7,5 +7,22 @@ export function createClient() {
   );
 }
 
-// Singleton for use in hooks (client-side only)
-export const supabase = createClient();
+// Lazy singleton — defers createClient() until first property access,
+// so module evaluation during SSR prerendering doesn't crash.
+let _instance: ReturnType<typeof createClient> | null = null;
+
+function getInstance() {
+  if (!_instance) _instance = createClient();
+  return _instance;
+}
+
+export const supabase: ReturnType<typeof createClient> = new Proxy(
+  {} as ReturnType<typeof createClient>,
+  {
+    get(_, prop) {
+      const target = getInstance();
+      const val = (target as any)[prop];
+      return typeof val === "function" ? val.bind(target) : val;
+    },
+  }
+);
