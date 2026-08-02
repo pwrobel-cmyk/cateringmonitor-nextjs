@@ -347,6 +347,7 @@ export default function DiscountStagingPage() {
   const [brandSelections, setBrandSelections] = useState<Record<string, string>>({})
   const [kpi, setKpi] = useState({ pending: 0, acceptedToday: 0, rejectedToday: 0, alreadyInDb: 0 })
   const [classMap, setClassMap] = useState<Record<string, StagingClass>>({})
+  const [lastImport, setLastImport] = useState<{ at: string; count: number } | null>(null)
 
   // Grouping and social display state
   const [expandedTexts, setExpandedTexts] = useState<Set<string>>(new Set())
@@ -440,6 +441,26 @@ export default function DiscountStagingPage() {
       acceptedToday: acceptedToday || 0,
       rejectedToday: rejectedToday || 0,
     })
+
+    // Last import info
+    const { data: lastRow } = await supabase
+      .from('discount_staging')
+      .select('created_at')
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (lastRow && lastRow.length > 0) {
+      const lastAt = lastRow[0].created_at
+      const lastDay = lastAt.slice(0, 10)
+      const { count: dayCount } = await supabase
+        .from('discount_staging')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', lastDay + 'T00:00:00')
+        .lt('created_at', lastDay + 'T23:59:59.999999')
+      setLastImport({ at: lastAt, count: dayCount || 0 })
+    } else {
+      setLastImport(null)
+    }
 
     setLoading(false)
   }, [])
@@ -587,6 +608,47 @@ export default function DiscountStagingPage() {
           <h1 className="text-2xl font-bold">Rabaty techniczne</h1>
         </div>
         <p className="text-muted-foreground ml-10">Weryfikacja rabatów z automatycznego importu</p>
+        {!loading && (
+          <div className="ml-10 mt-1">
+            {lastImport ? (() => {
+              const importDate = new Date(lastImport.at)
+              const now = new Date()
+              const diffMs = now.getTime() - importDate.getTime()
+              const diffH = diffMs / (1000 * 60 * 60)
+
+              const relative = (() => {
+                const diffMin = Math.floor(diffMs / (1000 * 60))
+                if (diffMin < 2) return 'przed chwilą'
+                if (diffMin < 60) return `${diffMin} minut temu`
+                const h = Math.floor(diffH)
+                if (h < 24) return `${h} ${h === 1 ? 'godzinę' : h < 5 ? 'godziny' : 'godzin'} temu`
+                const d = Math.floor(h / 24)
+                return `${d} ${d === 1 ? 'dzień' : 'dni'} temu`
+              })()
+
+              const colorClass = diffH < 24
+                ? 'text-muted-foreground'
+                : diffH < 48
+                  ? 'text-amber-600'
+                  : 'text-destructive'
+
+              return (
+                <div className={`flex items-center gap-1.5 text-xs ${colorClass}`}>
+                  <Clock className="h-4 w-4" />
+                  <span>
+                    Ostatni import: {importDate.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} · {lastImport.count} rekordów ({relative})
+                    {diffH >= 48 && ' — sprawdź czy agent działa'}
+                  </span>
+                </div>
+              )
+            })() : (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                <span>Brak importów</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* KPI Row */}
