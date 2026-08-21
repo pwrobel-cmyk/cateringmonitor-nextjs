@@ -105,6 +105,32 @@ function SectionHeader({ icon: Icon, color, title, subtitle }: { icon: any; colo
 
 // ── Podium top 3 ────────────────────────────────────────────────────────────────
 function Podium({ ratings }: { ratings: BrandRank[] }) {
+  const firstCardRef = useRef<HTMLDivElement>(null)
+  const confettiFired = useRef(false)
+
+  useEffect(() => {
+    if (confettiFired.current || !firstCardRef.current || ratings.length < 3) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
+    confettiFired.current = true
+
+    const el = firstCardRef.current
+    const rect = el.getBoundingClientRect()
+    const x = (rect.left + rect.width / 2) / window.innerWidth
+    const y = rect.top / window.innerHeight
+
+    import('canvas-confetti').then(mod => {
+      const confetti = mod.default
+      confetti({
+        particleCount: 120,
+        spread: 70,
+        origin: { x, y },
+        colors: ['#f59e0b', '#fbbf24', '#fcd34d', '#16a34a', '#22c55e', '#4ade80'],
+        disableForReducedMotion: true,
+      })
+    })
+  }, [ratings])
+
   if (ratings.length < 3) return null
   const top3 = ratings.slice(0, 3)
   // Desktop order: #2, #1, #3
@@ -118,6 +144,7 @@ function Podium({ ratings }: { ratings: BrandRank[] }) {
         return (
           <div
             key={r.brandId}
+            ref={isFirst ? firstCardRef : undefined}
             className={`flex flex-col items-center p-5 rounded-xl border transition-all ${
               isFirst
                 ? 'border-2 border-amber-400 bg-gradient-to-b from-amber-50 to-transparent dark:from-amber-950/20 dark:to-transparent md:order-2 order-first'
