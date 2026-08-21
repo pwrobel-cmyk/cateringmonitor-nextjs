@@ -15,6 +15,7 @@ import { BarChart3 } from 'lucide-react'
 import { format, subDays, differenceInDays, parseISO } from 'date-fns'
 import { useReactToPrint } from 'react-to-print'
 import { toast } from 'sonner'
+import { ratingColor, formatMonthLabel } from '@/lib/rating-colors'
 
 // ── Types ───────────────────────────────────────────────────────────────────────
 interface BrandRank {
@@ -205,25 +206,12 @@ function TrendSparkline({ brandName, heatmapData, months }: {
 }
 
 // ── Heatmap helpers ──────────────────────────────────────────────────────────────
-function formatMonthLabel(m: string): string {
-  const [year, month] = m.split('-')
-  const names = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru']
-  return names[parseInt(month) - 1] + ' ' + year.slice(2)
-}
-
 // ── Heatmap (HTML table) ─────────────────────────────────────────────────────────
 function HeatmapChart({ data, brands, months }: {
   data: Record<string, Record<string, number | null>>
   brands: string[]
   months: string[]
 }) {
-  function ratingColor(v: number): { bg: string; text: string } {
-    if (v >= 4.5) return { bg: '#1D9E75', text: '#fff' }
-    if (v >= 4.0) return { bg: '#639922', text: '#fff' }
-    if (v >= 3.5) return { bg: '#BA7517', text: '#fff' }
-    if (v >= 3.0) return { bg: '#D85A30', text: '#fff' }
-    return { bg: '#A32D2D', text: '#fff' }
-  }
 
   return (
     <div style={{ overflowX: 'auto' }}>

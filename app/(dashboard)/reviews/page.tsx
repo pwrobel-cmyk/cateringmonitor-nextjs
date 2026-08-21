@@ -28,6 +28,7 @@ import { SentimentAnalysis } from "@/components/reviews/SentimentAnalysis";
 import { BrandParametersTrendsChart } from "@/components/reviews/BrandParametersTrendsChart";
 import { BrandRankingBumpChart } from "@/components/reviews/BrandRankingBumpChart";
 import { MonthlyReviewsChart } from "@/components/reviews/MonthlyReviewsChart";
+import { RatingHistoryHeatmap } from "@/components/reviews/RatingHistoryHeatmap";
 import { ReviewsTimeline } from "@/components/reviews/ReviewsTimeline";
 import { KeywordAnalysis } from "@/components/reviews/KeywordAnalysis";
 import { AIKeywordAnalysis } from "@/components/reviews/AIKeywordAnalysis";
@@ -222,6 +223,9 @@ export default function ReviewsPage() {
 
           {/* Bump chart (ranking over time) */}
           <BrandRankingBumpChart />
+
+          {/* Rating history heatmap */}
+          <RatingHistoryHeatmap brandId={selectedBrandId} excludeDietly={excludeDietly} />
 
           {/* Parameters trends */}
           {brands && brands.length > 0 && (
