@@ -195,7 +195,7 @@ export function RatingHistoryHeatmap({ brandId, excludeDietly }: Props) {
                     {MONTH_NAMES.map((monthName, monthIdx) => {
                       const mm = String(monthIdx + 1).padStart(2, '0')
                       return (
-                        <tr key={mm}>
+                        <tr key={mm} className="heatmap-row">
                           <td style={{
                             textAlign: 'right', paddingRight: 6, color: 'var(--muted-foreground)',
                             fontWeight: 500, whiteSpace: 'nowrap',

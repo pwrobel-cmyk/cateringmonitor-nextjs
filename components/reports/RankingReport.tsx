@@ -255,7 +255,7 @@ function HeatmapChart({ data, brands, months }: {
         </thead>
         <tbody>
           {brands.map(brand => (
-            <tr key={brand}>
+            <tr key={brand} className="heatmap-row">
               <td style={{ textAlign: 'right', paddingRight: 8, color: 'var(--foreground)', whiteSpace: 'nowrap', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {brand.length > 18 ? brand.slice(0, 17) + '…' : brand}
               </td>
@@ -310,7 +310,7 @@ function DiscountHeatmapChart({ data, brands, months }: {
         </thead>
         <tbody>
           {brands.map(brand => (
-            <tr key={brand}>
+            <tr key={brand} className="heatmap-row">
               <td style={{ textAlign: 'right', paddingRight: 8, color: 'var(--foreground)', whiteSpace: 'nowrap', maxWidth: 145, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {brand.length > 18 ? brand.slice(0, 17) + '…' : brand}
               </td>
@@ -366,7 +366,7 @@ function PriceHeatmapChart({ data, brands, months, noDiscountMask }: {
         </thead>
         <tbody>
           {brands.map(brand => (
-            <tr key={brand}>
+            <tr key={brand} className="heatmap-row">
               <td style={{ textAlign: 'right', paddingRight: 8, color: 'var(--foreground)', whiteSpace: 'nowrap', maxWidth: 145, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {brand.length > 18 ? brand.slice(0, 17) + '…' : brand}
               </td>
