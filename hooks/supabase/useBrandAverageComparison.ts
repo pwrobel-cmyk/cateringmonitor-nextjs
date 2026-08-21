@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { format, subDays, eachDayOfInterval } from "date-fns";
 import { useCountry } from "@/contexts/CountryContext";
+import { matchesCustomerType } from "@/lib/discounts";
 
 export interface BrandAverageData {
   brandName: string;
@@ -74,20 +75,9 @@ export function useBrandAverageComparison(filters: BrandAverageComparisonFilters
 
         // Filter by customerType
         const customerTypeFilter = filters.customerType || "existing";
-        const filteredDiscounts = countryFilteredDiscounts.filter((discount: any) => {
-          const req = (discount.requirements || "").toLowerCase().trim();
-          if (customerTypeFilter === "existing") {
-            if (!req || req === "" || req === "brak") return true;
-            const hasNewKeywords = req.includes("nowy") || req.includes("nowych") || req.includes("nowi");
-            const hasAllKeywords = req.includes("wszyscy") || req.includes("dla wszystkich");
-            const hasExistingKeywords = req.includes("istniejący") || req.includes("istniejacy") || req.includes("obecny") || req.includes("stały") || req.includes("staly");
-            const isNewOnly = hasNewKeywords && !hasAllKeywords && !hasExistingKeywords;
-            return !isNewOnly;
-          } else {
-            if (!req || req === "" || req === "brak") return false;
-            return req.includes("nowy") || req.includes("nowych") || req.includes("nowi");
-          }
-        });
+        const filteredDiscounts = countryFilteredDiscounts.filter((discount: any) =>
+          matchesCustomerType(discount.requirements, customerTypeFilter)
+        );
 
         // 4. Calculate daily average discount per brand (using last day's max)
         const dateSeries = eachDayOfInterval({ start: queryDateFrom, end: queryDateTo });

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { format, startOfWeek, startOfMonth, endOfWeek, endOfMonth, subDays } from "date-fns";
 import { useCountry } from "@/contexts/CountryContext";
+import { matchesCustomerType } from "@/lib/discounts";
 
 interface DiscountTrendsFilters {
   dateFrom?: Date;
@@ -67,23 +68,9 @@ export function useDiscountTrends(filters: DiscountTrendsFilters = {}, enabled: 
       );
 
       if (filters.customerType) {
-        validDiscounts = validDiscounts.filter((discount: any) => {
-          const requirements = discount.requirements?.toLowerCase().trim() || '';
-
-          if (filters.customerType === 'existing') {
-            if (!discount.requirements || requirements === '' || requirements === 'brak') return true;
-            const hasNewKeywords = requirements.includes('nowy') || requirements.includes('nowych') || requirements.includes('nowi');
-            const hasAllKeywords = requirements.includes('wszyscy') || requirements.includes('dla wszystkich');
-            const hasExistingKeywords = requirements.includes('istniejący') || requirements.includes('istniejacy') || requirements.includes('obecny') || requirements.includes('stały') || requirements.includes('staly');
-            const isNewOnly = hasNewKeywords && !hasAllKeywords && !hasExistingKeywords;
-            return !isNewOnly;
-          } else if (filters.customerType === 'new') {
-            if (!discount.requirements || requirements === '') return false;
-            return requirements.includes("nowy") || requirements.includes("nowi") || requirements.includes("nowych") || requirements.includes("dla nowych") || requirements.includes("pierwsze zamówienie") || requirements.includes("pierwsze zamowienie") || requirements.includes("pierwszy");
-          }
-
-          return true;
-        });
+        validDiscounts = validDiscounts.filter((discount: any) =>
+          matchesCustomerType(discount.requirements, filters.customerType!)
+        );
       }
 
       if (filters.brandNames && filters.brandNames.length > 0) {
