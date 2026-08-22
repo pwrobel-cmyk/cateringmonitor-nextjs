@@ -29,59 +29,13 @@ export function useMarketGaps() {
     queryKey: ["market-gaps", selectedCountry],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      // Get recent price_history to determine active packages (seen in last 7 days)
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 7);
-      const cutoffStr = cutoff.toISOString().split("T")[0];
-
-      const { data, error } = await (supabase as any)
-        .from("price_history")
-        .select(`
-          price,
-          date_recorded,
-          package_kcal_ranges!price_history_package_kcal_range_id_fkey!inner (
-            packages!inner (
-              id, name,
-              brands!inner ( name, logo_url, country )
-            ),
-            kcal_ranges!inner ( kcal_from, kcal_to, kcal_label )
-          )
-        `)
-        .gte("date_recorded", cutoffStr)
-        .order("date_recorded", { ascending: false })
-        .limit(100000);
+      const { data, error } = await (supabase as any).rpc("get_active_package_prices");
 
       if (error) throw error;
       if (!data || data.length === 0)
         return { matrix: {} as GapMatrix, unclassifiedCount: 0, unclassifiedNames: [] as string[] };
 
-      // Dedupe: per (package, kcal_bucket) keep latest price per brand
-      const seen = new Map<string, { brandName: string; brandLogo: string | null; packageName: string; price: number; dietTags: string[]; bucket: KcalBucket }>();
       const unclassifiedNames = new Set<string>();
-
-      for (const row of data as any[]) {
-        const pkg = row.package_kcal_ranges?.packages;
-        const brand = pkg?.brands;
-        const kr = row.package_kcal_ranges?.kcal_ranges;
-        if (!pkg || !brand || !kr) continue;
-
-        if (selectedCountry === "Czechy" && brand.country !== "Czechy") continue;
-        if (selectedCountry !== "Czechy" && brand.country === "Czechy") continue;
-        if (isTestPackage(pkg.name)) continue;
-
-        const bucket = toKcalBucket(kr.kcal_from, kr.kcal_to);
-        const key = `${pkg.id}|${bucket}`;
-
-        if (seen.has(key)) continue; // already have latest for this combo
-
-        const dietTags = classifyDiet(pkg.name);
-        if (dietTags.length === 1 && dietTags[0] === "Inne") unclassifiedNames.add(pkg.name);
-
-        seen.set(key, {
-          brandName: brand.name, brandLogo: brand.logo_url ?? null,
-          packageName: pkg.name, price: row.price, dietTags, bucket,
-        });
-      }
 
       // Build matrix: dietType × kcalBucket
       const matrix: GapMatrix = {};
@@ -92,21 +46,40 @@ export function useMarketGaps() {
         }
       }
 
-      for (const entry of seen.values()) {
-        for (const tag of entry.dietTags) {
-          const cell = matrix[tag]?.[entry.bucket];
+      // Dedupe key: package_id + bucket
+      const seen = new Set<string>();
+
+      for (const row of data as any[]) {
+        // Country filter
+        if (selectedCountry === "Czechy" && row.country !== "Czechy") continue;
+        if (selectedCountry !== "Czechy" && row.country === "Czechy") continue;
+        if (isTestPackage(row.package_name)) continue;
+
+        const bucket = toKcalBucket(row.kcal_from, row.kcal_to);
+        const dedupeKey = `${row.package_id}|${bucket}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+
+        const dietTags = classifyDiet(row.package_name);
+        if (dietTags.length === 1 && dietTags[0] === "Inne") unclassifiedNames.add(row.package_name);
+
+        const price = Number(row.price);
+
+        for (const tag of dietTags) {
+          const cell = matrix[tag]?.[bucket];
           if (!cell) continue;
 
-          // Count unique brands per cell
-          if (!cell.brands.some(b => b.brandName === entry.brandName && b.packageName === entry.packageName)) {
+          if (!cell.brands.some(b => b.brandName === row.brand_name && b.packageName === row.package_name)) {
             cell.brands.push({
-              brandName: entry.brandName, brandLogo: entry.brandLogo,
-              packageName: entry.packageName, price: entry.price,
+              brandName: row.brand_name,
+              brandLogo: row.brand_logo ?? null,
+              packageName: row.package_name,
+              price,
             });
           }
 
-          if (cell.minPrice === null || entry.price < cell.minPrice) cell.minPrice = entry.price;
-          if (cell.maxPrice === null || entry.price > cell.maxPrice) cell.maxPrice = entry.price;
+          if (cell.minPrice === null || price < cell.minPrice) cell.minPrice = price;
+          if (cell.maxPrice === null || price > cell.maxPrice) cell.maxPrice = price;
         }
       }
 

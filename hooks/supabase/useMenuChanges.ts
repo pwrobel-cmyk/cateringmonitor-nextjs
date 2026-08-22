@@ -23,70 +23,27 @@ export function useMenuChanges() {
     queryKey: ["menu-changes", selectedCountry],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("price_history")
-        .select(`
-          price,
-          date_recorded,
-          package_kcal_ranges!price_history_package_kcal_range_id_fkey!inner (
-            packages!inner (
-              id, name,
-              brands!inner ( name, logo_url, country )
-            ),
-            kcal_ranges!inner ( kcal_label )
-          )
-        `)
-        .order("date_recorded", { ascending: false })
-        .limit(100000);
+      const { data, error } = await (supabase as any).rpc("get_package_lifecycle");
 
       if (error) throw error;
-      if (!data || data.length === 0) return { events: [], globalOldest: "", unclassifiedCount: 0, unclassifiedNames: [] as string[] };
+      if (!data || data.length === 0)
+        return { events: [], globalOldest: "", unclassifiedCount: 0, unclassifiedNames: [] as string[] };
 
-      // Group by package: first_seen, last_seen, kcal count, price range
-      const pkgMap = new Map<string, {
-        packageId: string; packageName: string; brandName: string; brandLogo: string | null;
-        firstSeen: string; lastSeen: string;
-        kcalLabels: Set<string>; prices: number[];
-      }>();
-
-      for (const row of data as any[]) {
-        const pkg = row.package_kcal_ranges?.packages;
-        const brand = pkg?.brands;
-        const kr = row.package_kcal_ranges?.kcal_ranges;
-        if (!pkg || !brand || !kr) continue;
-
-        if (selectedCountry === "Czechy" && brand.country !== "Czechy") continue;
-        if (selectedCountry !== "Czechy" && brand.country === "Czechy") continue;
-        if (isTestPackage(pkg.name)) continue;
-
-        const key = pkg.id;
-        const existing = pkgMap.get(key);
-        const d = row.date_recorded as string;
-
-        if (existing) {
-          if (d < existing.firstSeen) existing.firstSeen = d;
-          if (d > existing.lastSeen) existing.lastSeen = d;
-          existing.kcalLabels.add(kr.kcal_label);
-          existing.prices.push(row.price);
-        } else {
-          pkgMap.set(key, {
-            packageId: pkg.id, packageName: pkg.name,
-            brandName: brand.name, brandLogo: brand.logo_url ?? null,
-            firstSeen: d, lastSeen: d,
-            kcalLabels: new Set([kr.kcal_label]),
-            prices: [row.price],
-          });
-        }
-      }
+      // Country filter
+      const filtered = (data as any[]).filter((row) => {
+        if (selectedCountry === "Czechy") return row.country === "Czechy";
+        return row.country !== "Czechy";
+      });
 
       // Global oldest date (start of monitoring)
       let globalOldest = "9999-12-31";
-      for (const p of pkgMap.values()) {
-        if (p.firstSeen < globalOldest) globalOldest = p.firstSeen;
+      for (const row of filtered) {
+        if (row.first_seen < globalOldest) globalOldest = row.first_seen;
       }
 
       const today = new Date();
-      const days7ago = new Date(today); days7ago.setDate(days7ago.getDate() - 7);
+      const days7ago = new Date(today);
+      days7ago.setDate(days7ago.getDate() - 7);
       const days7Str = days7ago.toISOString().split("T")[0];
 
       // Global oldest + 3 days threshold to exclude initial monitoring data
@@ -97,30 +54,41 @@ export function useMenuChanges() {
       const events: MenuChangeEvent[] = [];
       const unclassifiedNames = new Set<string>();
 
-      for (const p of pkgMap.values()) {
-        const dietTags = classifyDiet(p.packageName);
-        if (dietTags.length === 1 && dietTags[0] === "Inne") unclassifiedNames.add(p.packageName);
+      for (const row of filtered) {
+        if (isTestPackage(row.package_name)) continue;
 
-        const minPrice = Math.min(...p.prices);
-        const maxPrice = Math.max(...p.prices);
+        const dietTags = classifyDiet(row.package_name);
+        if (dietTags.length === 1 && dietTags[0] === "Inne") unclassifiedNames.add(row.package_name);
 
         // NOWOŚĆ: first_seen > globalThreshold (no time limit)
-        if (p.firstSeen > globalThreshold) {
+        if (row.first_seen > globalThreshold) {
           events.push({
-            packageId: p.packageId, packageName: p.packageName,
-            brandName: p.brandName, brandLogo: p.brandLogo,
-            dietTags, eventType: "new", eventDate: p.firstSeen,
-            kcalCount: p.kcalLabels.size, minPrice, maxPrice,
+            packageId: row.package_id,
+            packageName: row.package_name,
+            brandName: row.brand_name,
+            brandLogo: row.brand_logo ?? null,
+            dietTags,
+            eventType: "new",
+            eventDate: row.first_seen,
+            kcalCount: Number(row.kcal_count),
+            minPrice: Number(row.min_price),
+            maxPrice: Number(row.max_price),
           });
         }
 
         // WYCOFANY: last_seen < today - 7 days
-        if (p.lastSeen < days7Str) {
+        if (row.last_seen < days7Str) {
           events.push({
-            packageId: p.packageId, packageName: p.packageName,
-            brandName: p.brandName, brandLogo: p.brandLogo,
-            dietTags, eventType: "removed", eventDate: p.lastSeen,
-            kcalCount: p.kcalLabels.size, minPrice, maxPrice,
+            packageId: row.package_id,
+            packageName: row.package_name,
+            brandName: row.brand_name,
+            brandLogo: row.brand_logo ?? null,
+            dietTags,
+            eventType: "removed",
+            eventDate: row.last_seen,
+            kcalCount: Number(row.kcal_count),
+            minPrice: Number(row.min_price),
+            maxPrice: Number(row.max_price),
           });
         }
       }
