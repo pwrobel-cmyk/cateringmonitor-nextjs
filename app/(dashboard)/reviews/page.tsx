@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
-  Star, MessageSquare, TrendingUp, BarChart2, Loader2, Brain,
+  Star, MessageSquare, TrendingUp, BarChart2, Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { pl } from "date-fns/locale";
@@ -31,7 +31,7 @@ import { MonthlyReviewsChart } from "@/components/reviews/MonthlyReviewsChart";
 import { RatingHistoryHeatmap } from "@/components/reviews/RatingHistoryHeatmap";
 import { ReviewsTimeline } from "@/components/reviews/ReviewsTimeline";
 import { KeywordAnalysis } from "@/components/reviews/KeywordAnalysis";
-import { AIKeywordAnalysis } from "@/components/reviews/AIKeywordAnalysis";
+// import { AIKeywordAnalysis } from "@/components/reviews/AIKeywordAnalysis"; // ukryte do czasu pipeline'u AI
 
 const TIME_FILTER_OPTIONS = [
   { value: "all", label: "Wszystkie" },
@@ -98,7 +98,7 @@ export default function ReviewsPage() {
   const brandRanking = reviewsStatistics?.brandRanking || [];
   const sourceBreakdown = reviewsStatistics?.sourceBreakdown || [];
 
-  const aiTimeFrame = timeFilter === "all" ? "1year" : timeFilter;
+  // const aiTimeFrame = timeFilter === "all" ? "1year" : timeFilter; // ukryte do czasu pipeline'u AI
 
   return (
     <div className="space-y-6">
@@ -195,10 +195,12 @@ export default function ReviewsPage() {
           <TabsTrigger value="sentiment">Sentyment</TabsTrigger>
           <TabsTrigger value="timeline">Oś czasu</TabsTrigger>
           <TabsTrigger value="keywords">Słowa kluczowe</TabsTrigger>
+          {/* Ukryte do czasu zbudowania pipeline'u AI analiz (tabela ai_brand_analyses i RPC nie istnieją)
           <TabsTrigger value="ai-keywords">
             <Brain className="w-4 h-4 mr-1" />
             Słowa AI
           </TabsTrigger>
+          */}
         </TabsList>
 
         {/* Tab: Statystyki */}
@@ -399,7 +401,7 @@ export default function ReviewsPage() {
           )}
         </TabsContent>
 
-        {/* Tab: Słowa AI */}
+        {/* Ukryte do czasu zbudowania pipeline'u AI analiz
         <TabsContent value="ai-keywords">
           {brands && brands.length > 0 ? (
             <AIKeywordAnalysis brands={brands.map(b => ({ ...b, logo_url: b.logo_url ?? undefined }))} timeFrame={aiTimeFrame} />
@@ -409,6 +411,7 @@ export default function ReviewsPage() {
             </div>
           )}
         </TabsContent>
+        */}
       </Tabs>
     </div>
   );

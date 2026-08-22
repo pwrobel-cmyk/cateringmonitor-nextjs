@@ -139,7 +139,6 @@ export function KeywordAnalysis({ brands }: KeywordAnalysisProps) {
                       </div>
                       <p className="text-xs text-muted-foreground mt-4">
                         * Analiza słów kluczowych oparta na statystykach dostępnych w bazie danych.
-                        Skorzystaj z zakładki &quot;Słowa AI&quot; dla zaawansowanej analizy semantycznej.
                       </p>
                     </div>
                   </AccordionContent>
