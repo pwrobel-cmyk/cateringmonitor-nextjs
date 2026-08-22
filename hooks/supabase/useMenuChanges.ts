@@ -40,7 +40,7 @@ export function useMenuChanges() {
         .limit(100000);
 
       if (error) throw error;
-      if (!data || data.length === 0) return { events: [], unclassifiedCount: 0, unclassifiedNames: [] as string[] };
+      if (!data || data.length === 0) return { events: [], globalOldest: "", unclassifiedCount: 0, unclassifiedNames: [] as string[] };
 
       // Group by package: first_seen, last_seen, kcal count, price range
       const pkgMap = new Map<string, {
@@ -86,15 +86,12 @@ export function useMenuChanges() {
       }
 
       const today = new Date();
-      const todayStr = today.toISOString().split("T")[0];
-      const days90ago = new Date(today); days90ago.setDate(days90ago.getDate() - 90);
-      const days90Str = days90ago.toISOString().split("T")[0];
       const days7ago = new Date(today); days7ago.setDate(days7ago.getDate() - 7);
       const days7Str = days7ago.toISOString().split("T")[0];
 
-      // Global oldest + 7 days threshold to exclude initial monitoring data
+      // Global oldest + 3 days threshold to exclude initial monitoring data
       const globalOldestDate = new Date(globalOldest);
-      globalOldestDate.setDate(globalOldestDate.getDate() + 7);
+      globalOldestDate.setDate(globalOldestDate.getDate() + 3);
       const globalThreshold = globalOldestDate.toISOString().split("T")[0];
 
       const events: MenuChangeEvent[] = [];
@@ -107,8 +104,8 @@ export function useMenuChanges() {
         const minPrice = Math.min(...p.prices);
         const maxPrice = Math.max(...p.prices);
 
-        // NOWOŚĆ: first_seen > globalThreshold AND first_seen within last 90 days
-        if (p.firstSeen > globalThreshold && p.firstSeen >= days90Str) {
+        // NOWOŚĆ: first_seen > globalThreshold (no time limit)
+        if (p.firstSeen > globalThreshold) {
           events.push({
             packageId: p.packageId, packageName: p.packageName,
             brandName: p.brandName, brandLogo: p.brandLogo,
@@ -132,6 +129,7 @@ export function useMenuChanges() {
 
       return {
         events,
+        globalOldest,
         unclassifiedCount: unclassifiedNames.size,
         unclassifiedNames: Array.from(unclassifiedNames).sort(),
       };

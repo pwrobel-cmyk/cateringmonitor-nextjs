@@ -44,15 +44,7 @@ export function MenuChangesTimeline() {
     )
   }
 
-  if (!data || data.events.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center text-muted-foreground">
-          Brak zdarzeń zmian w menu w analizowanym okresie.
-        </CardContent>
-      </Card>
-    )
-  }
+  if (!data) return null
 
   const visible = filtered.slice(0, visibleCount)
 
@@ -94,6 +86,15 @@ export function MenuChangesTimeline() {
         </CardContent>
       </Card>
 
+      {/* Info banner */}
+      {data.globalOldest && (
+        <Card>
+          <CardContent className="py-3 text-sm text-muted-foreground">
+            Monitoring zmian w menu aktywny od <span className="font-medium text-foreground">{data.globalOldest}</span>. Nowości i wycofania pakietów pojawiają się tutaj wraz ze zmianami na rynku.
+          </CardContent>
+        </Card>
+      )}
+
       {/* Timeline */}
       <Card>
         <CardHeader>
@@ -101,7 +102,11 @@ export function MenuChangesTimeline() {
         </CardHeader>
         <CardContent>
           {visible.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">Brak wyników dla wybranych filtrów.</p>
+            <p className="text-center text-muted-foreground py-8">
+              {filtered.length === 0 && data.events.length === 0
+                ? 'Brak zarejestrowanych zmian w menu od rozpoczęcia monitoringu.'
+                : 'Brak wyników dla wybranych filtrów.'}
+            </p>
           ) : (
             <div className="space-y-2">
               {visible.map((event, idx) => (
