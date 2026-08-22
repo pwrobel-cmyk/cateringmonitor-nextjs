@@ -99,7 +99,7 @@ function medianOf(values: number[]): number {
   return s.length % 2 === 0 ? (s[m - 1] + s[m]) / 2 : s[m]
 }
 
-// ── Data processing ─────────────────────────────────────────────────────────────
+// ── Data processing (all values computed live, zero hardcoded mockup data) ───
 
 function processData(
   lifecycle: LifecycleRow[], activePrices: ActivePriceRow[],
