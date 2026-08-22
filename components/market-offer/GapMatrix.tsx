@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Loader2, Grid3X3, ChevronDown, Lightbulb } from 'lucide-react'
 import { useMarketGaps, type GapCell } from '@/hooks/supabase/useMarketGaps'
@@ -14,6 +13,8 @@ const PRIMARY_DIETS: DietType[] = [
   'Standard', 'Keto', 'Vege', 'Wegańska', 'Vege+Fish', 'Low IG',
   'Low Carb', 'Sport', 'Bez glutenu/laktozy', 'Hashimoto',
 ]
+
+const COL_COUNT = KCAL_BUCKETS.length + 1 // diet label + kcal columns
 
 interface InterestingGap {
   diet: string
@@ -25,7 +26,7 @@ interface InterestingGap {
 function cellBg(count: number, maxCount: number): string {
   if (count === 0) return 'transparent'
   const intensity = Math.min(count / Math.max(maxCount, 1), 1)
-  const lightness = Math.round(90 - intensity * 55) // 90% (light) → 35% (dark)
+  const lightness = Math.round(90 - intensity * 55)
   return `hsl(215, 84%, ${lightness}%)`
 }
 
@@ -35,13 +36,90 @@ function cellTextColor(count: number, maxCount: number): string {
   return intensity > 0.35 ? '#fff' : 'hsl(215, 25%, 16%)'
 }
 
+// Inline detail panel with max-height transition
+function DetailPanel({ diet, kcal, cell, matrix }: {
+  diet: string; kcal: number; cell: GapCell
+  matrix: Record<string, Record<number, GapCell>>
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState(0)
+
+  useEffect(() => {
+    if (ref.current) setHeight(ref.current.scrollHeight)
+  }, [diet, kcal, cell])
+
+  const isEmpty = cell.brandCount === 0
+
+  // For gap cells: find nearest neighbors with brands
+  const neighbors = useMemo(() => {
+    if (!isEmpty) return []
+    const row = matrix[diet]
+    if (!row) return []
+    const result: { kcal: number; brands: typeof cell.brands }[] = []
+    for (const kb of KCAL_BUCKETS) {
+      if (kb === kcal) continue
+      const c = row[kb]
+      if (c && c.brandCount > 0) result.push({ kcal: kb, brands: c.brands })
+    }
+    result.sort((a, b) => Math.abs(a.kcal - kcal) - Math.abs(b.kcal - kcal))
+    return result.slice(0, 2)
+  }, [isEmpty, matrix, diet, kcal, cell])
+
+  return (
+    <div style={{ maxHeight: height || 'none', overflow: 'hidden', transition: 'max-height 200ms ease' }}>
+      <div ref={ref} className="px-4 py-3">
+        <p className="text-sm font-semibold mb-2">
+          {diet} · {kcalBucketLabel(kcal as any)} kcal — {cell.brandCount} marek
+        </p>
+        {isEmpty ? (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">Brak ofert w tej kombinacji.</p>
+            {neighbors.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Najbliżej luki są:</p>
+                {neighbors.map(n => (
+                  <div key={n.kcal} className="mb-2">
+                    <p className="text-xs font-medium">{kcalBucketLabel(n.kcal as any)} kcal ({n.brands.length} pakietów):</p>
+                    {n.brands.slice(0, 3).map((b, i) => (
+                      <p key={i} className="text-xs text-muted-foreground ml-2">{b.brandName}: {b.packageName} — {b.price.toFixed(0)} zł</p>
+                    ))}
+                    {n.brands.length > 3 && <p className="text-xs text-muted-foreground ml-2">...i {n.brands.length - 3} więcej</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {cell.brands.map((b, i) => (
+              <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded border">
+                {b.brandLogo ? (
+                  <img src={b.brandLogo} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                    {b.brandName.slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{b.brandName}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{b.packageName}</p>
+                </div>
+                <span className="text-xs font-semibold tabular-nums shrink-0">{b.price.toFixed(0)} zł</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function GapMatrix() {
   const { data, isLoading } = useMarketGaps()
   const [showAllDiets, setShowAllDiets] = useState(false)
   const [unclassifiedOpen, setUnclassifiedOpen] = useState(false)
-  const [selectedCell, setSelectedCell] = useState<{ diet: string; kcal: number; cell: GapCell } | null>(null)
+  const [expanded, setExpanded] = useState<{ diet: string; kcal: number } | null>(null)
 
-  // Find max brand count for color scale
   const maxBrandCount = useMemo(() => {
     if (!data) return 1
     let max = 1
@@ -54,7 +132,6 @@ export function GapMatrix() {
     return max
   }, [data])
 
-  // Determine visible diet rows
   const visibleDiets = useMemo(() => {
     if (!data) return []
     const hasCells = (dt: string) => KCAL_BUCKETS.some(kb => (data.matrix[dt]?.[kb]?.brandCount ?? 0) > 0)
@@ -64,14 +141,12 @@ export function GapMatrix() {
     return PRIMARY_DIETS.filter(dt => hasCells(dt))
   }, [data, showAllDiets])
 
-  // Non-primary diets that would show on expand
   const extraDietsCount = useMemo(() => {
     if (!data) return 0
     const hasCells = (dt: string) => KCAL_BUCKETS.some(kb => (data.matrix[dt]?.[kb]?.brandCount ?? 0) > 0)
     return Object.keys(data.matrix).filter(dt => dt !== 'Inne' && !PRIMARY_DIETS.includes(dt as DietType) && hasCells(dt)).length
   }, [data])
 
-  // Interesting gaps (smart detection)
   const interestingGaps = useMemo(() => {
     if (!data) return []
     const gaps: InterestingGap[] = []
@@ -79,47 +154,32 @@ export function GapMatrix() {
     for (const dt of visibleDiets) {
       const row = data.matrix[dt]
       if (!row) continue
-
       for (let i = 0; i < KCAL_BUCKETS.length; i++) {
         const kb = KCAL_BUCKETS[i]
         const count = row[kb]?.brandCount ?? 0
         if (count > 0) continue
-
-        // Check: occupied cells both left AND right
         const hasLeft = KCAL_BUCKETS.slice(0, i).some(b => (row[b]?.brandCount ?? 0) > 0)
         const hasRight = KCAL_BUCKETS.slice(i + 1).some(b => (row[b]?.brandCount ?? 0) > 0)
-        const isInternalGap = hasLeft && hasRight
-
-        // Check: adjacent cell has 5+ brands
         const leftCount = i > 0 ? (row[KCAL_BUCKETS[i - 1]]?.brandCount ?? 0) : 0
         const rightCount = i < KCAL_BUCKETS.length - 1 ? (row[KCAL_BUCKETS[i + 1]]?.brandCount ?? 0) : 0
-        const hasStrongNeighbor = leftCount >= 5 || rightCount >= 5
-
-        if (isInternalGap || hasStrongNeighbor) {
-          const neighborCount = leftCount + rightCount
-          // Find strongest adjacent bucket for label
+        if ((hasLeft && hasRight) || leftCount >= 5 || rightCount >= 5) {
           const strongBucket = leftCount >= rightCount
             ? (i > 0 ? KCAL_BUCKETS[i - 1] : kb)
             : (i < KCAL_BUCKETS.length - 1 ? KCAL_BUCKETS[i + 1] : kb)
           const strongCount = Math.max(leftCount, rightCount)
-
           gaps.push({
-            diet: dt, kcal: kb, neighborCount,
+            diet: dt, kcal: kb, neighborCount: leftCount + rightCount,
             label: `${dt} ${kcalBucketLabel(kb)} kcal — 0 marek, przy ${strongCount} markach w ${kcalBucketLabel(strongBucket)} kcal`,
           })
         }
       }
     }
-
     return gaps.sort((a, b) => b.neighborCount - a.neighborCount).slice(0, 5)
   }, [data, visibleDiets])
 
-  // Is this cell a "smart gap" (for yellow highlighting)?
   const isSmartGap = useMemo(() => {
     const set = new Set(interestingGaps.map(g => `${g.diet}|${g.kcal}`))
-    // Also check the full matrix for internal gaps not in top 5
     if (!data) return (dt: string, kb: number) => set.has(`${dt}|${kb}`)
-
     for (const dt of visibleDiets) {
       const row = data.matrix[dt]
       if (!row) continue
@@ -130,13 +190,19 @@ export function GapMatrix() {
         const hasRight = KCAL_BUCKETS.slice(i + 1).some(b => (row[b]?.brandCount ?? 0) > 0)
         const leftCount = i > 0 ? (row[KCAL_BUCKETS[i - 1]]?.brandCount ?? 0) : 0
         const rightCount = i < KCAL_BUCKETS.length - 1 ? (row[KCAL_BUCKETS[i + 1]]?.brandCount ?? 0) : 0
-        if ((hasLeft && hasRight) || leftCount >= 5 || rightCount >= 5) {
-          set.add(`${dt}|${kb}`)
-        }
+        if ((hasLeft && hasRight) || leftCount >= 5 || rightCount >= 5) set.add(`${dt}|${kb}`)
       }
     }
     return (dt: string, kb: number) => set.has(`${dt}|${kb}`)
   }, [data, visibleDiets, interestingGaps])
+
+  function handleCellClick(diet: string, kcal: number) {
+    if (expanded?.diet === diet && expanded?.kcal === kcal) {
+      setExpanded(null)
+    } else {
+      setExpanded({ diet, kcal })
+    }
+  }
 
   if (isLoading) {
     return (
@@ -152,7 +218,6 @@ export function GapMatrix() {
 
   return (
     <div className="space-y-4">
-      {/* Interesting gaps */}
       {interestingGaps.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -173,7 +238,6 @@ export function GapMatrix() {
         </Card>
       )}
 
-      {/* Matrix */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -207,43 +271,62 @@ export function GapMatrix() {
                 </tr>
               </thead>
               <tbody>
-                {visibleDiets.map(dt => (
-                  <tr key={dt} className="heatmap-row">
-                    <td style={{
-                      textAlign: 'left', paddingRight: 8, paddingLeft: 4,
-                      color: 'var(--foreground)', whiteSpace: 'nowrap', fontWeight: 500, fontSize: 11,
-                      position: 'sticky', left: 0, zIndex: 1, background: 'var(--card)',
-                    }}>
-                      {dt}
-                    </td>
-                    {KCAL_BUCKETS.map(kb => {
-                      const cell = data.matrix[dt]?.[kb]
-                      const count = cell?.brandCount ?? 0
-                      const gap = count === 0 && isSmartGap(dt, kb)
-
-                      return (
+                {visibleDiets.map(dt => {
+                  const isExpandedRow = expanded?.diet === dt
+                  const expandedCell = isExpandedRow ? data.matrix[dt]?.[expanded!.kcal] : null
+                  return (
+                    <React.Fragment key={dt}>
+                      <tr className="heatmap-row">
                         <td
-                          key={kb}
-                          onClick={() => cell && cell.brandCount > 0 && setSelectedCell({ diet: dt, kcal: kb, cell })}
+                          onClick={() => isExpandedRow && setExpanded(null)}
                           style={{
-                            height: 32, textAlign: 'center', fontWeight: 600, fontSize: 12,
-                            backgroundColor: gap ? '#FEF3C7' : cellBg(count, maxBrandCount),
-                            color: gap ? '#92400E' : cellTextColor(count, maxBrandCount),
-                            border: '1px solid white', borderRadius: 2,
-                            cursor: count > 0 ? 'pointer' : undefined,
+                            textAlign: 'left', paddingRight: 8, paddingLeft: 4,
+                            color: 'var(--foreground)', whiteSpace: 'nowrap', fontWeight: 500, fontSize: 11,
+                            position: 'sticky', left: 0, zIndex: 1, background: 'var(--card)',
+                            cursor: isExpandedRow ? 'pointer' : undefined,
                           }}
                         >
-                          {count > 0 ? count : ''}
+                          {dt}
                         </td>
-                      )
-                    })}
-                  </tr>
-                ))}
+                        {KCAL_BUCKETS.map(kb => {
+                          const cell = data.matrix[dt]?.[kb]
+                          const count = cell?.brandCount ?? 0
+                          const gap = count === 0 && isSmartGap(dt, kb)
+                          const isActive = expanded?.diet === dt && expanded?.kcal === kb
+
+                          return (
+                            <td
+                              key={kb}
+                              onClick={() => handleCellClick(dt, kb)}
+                              style={{
+                                height: 32, textAlign: 'center', fontWeight: 600, fontSize: 12,
+                                backgroundColor: gap ? '#FEF3C7' : cellBg(count, maxBrandCount),
+                                color: gap ? '#92400E' : cellTextColor(count, maxBrandCount),
+                                border: isActive ? '2px solid hsl(215, 84%, 25%)' : '1px solid white',
+                                borderRadius: 2,
+                                cursor: 'pointer',
+                                boxShadow: isActive ? '0 0 0 1px hsl(215, 84%, 25%)' : undefined,
+                              }}
+                            >
+                              {count > 0 ? count : ''}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                      {isExpandedRow && expandedCell && (
+                        <tr>
+                          <td colSpan={COL_COUNT} style={{ padding: 0, background: 'var(--muted)', borderRadius: 4 }}>
+                            <DetailPanel diet={dt} kcal={expanded!.kcal} cell={expandedCell} matrix={data.matrix} />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
 
-          {/* Expand button */}
           {extraDietsCount > 0 && (
             <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => setShowAllDiets(v => !v)}>
               <ChevronDown className={`h-3 w-3 mr-1 transition-transform ${showAllDiets ? 'rotate-180' : ''}`} />
@@ -251,7 +334,6 @@ export function GapMatrix() {
             </Button>
           )}
 
-          {/* Legend */}
           <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 11, flexWrap: 'wrap', alignItems: 'center' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--muted-foreground)' }}>
               <span style={{ width: 14, height: 14, borderRadius: 2, background: '#FEF3C7', border: '1px solid #e5e7eb', display: 'inline-block' }} />
@@ -269,39 +351,6 @@ export function GapMatrix() {
         </CardContent>
       </Card>
 
-      {/* Detail drawer */}
-      <Sheet open={!!selectedCell} onOpenChange={(open) => { if (!open) setSelectedCell(null) }}>
-        <SheetContent side="right" className="overflow-y-auto">
-          {selectedCell && (
-            <>
-              <SheetHeader>
-                <SheetTitle>{selectedCell.diet} · {kcalBucketLabel(selectedCell.kcal as any)} kcal</SheetTitle>
-                <p className="text-sm text-muted-foreground">{selectedCell.cell.brandCount} marek</p>
-              </SheetHeader>
-              <div className="space-y-3 p-4 pt-2">
-                {selectedCell.cell.brands.map((b, i) => (
-                  <div key={i} className="flex items-center gap-3 py-2 border-b last:border-0">
-                    {b.brandLogo ? (
-                      <img src={b.brandLogo} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                        {b.brandName.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{b.brandName}</p>
-                      <p className="text-xs text-muted-foreground truncate">{b.packageName}</p>
-                    </div>
-                    <span className="text-sm font-semibold tabular-nums shrink-0">{b.price.toFixed(0)} zł</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
-
-      {/* Unclassified packages */}
       {data.unclassifiedCount > 0 && (
         <Collapsible open={unclassifiedOpen} onOpenChange={setUnclassifiedOpen}>
           <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors px-1">
