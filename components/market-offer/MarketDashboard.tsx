@@ -7,7 +7,7 @@ import { useCountry } from '@/contexts/CountryContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  Loader2, Package, Info, BarChart3, TrendingUp, Sparkles,
+  Loader2, Package, Info, BarChart3, TrendingUp, Sparkles, Lightbulb,
   ArrowUp, ArrowDown, ArrowRight,
   // Diet icons (lucide, spec point 1)
   Dumbbell, Leaf, Flame, Droplet, CheckCircle, WheatOff, ListChecks,
@@ -361,7 +361,7 @@ export function MarketDashboard() {
           </CardContent>
         </Card>
 
-        {/* S2: Zakresy oferty (spec 5: CO TO OZNACZA? jasnofioletowe tło) */}
+        {/* S2: Zakresy oferty */}
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
@@ -371,47 +371,51 @@ export function MarketDashboard() {
             <p className="text-[10px] text-muted-foreground">Liczba różnych zakresów kcal × liczba posiłków w ofercie</p>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="flex gap-3">
+            <div className="flex gap-4">
               <div className="flex-1">
-                <table className="w-full text-[11px]" style={{ borderCollapse: 'separate', borderSpacing: 1 }}>
+                <table className="w-full text-[11px]">
                   <thead>
-                    <tr>
-                      <th className="text-left px-1 py-1 text-muted-foreground font-semibold" style={{ fontSize: 9 }}>Segment</th>
-                      <th className="text-center px-1 py-1 text-muted-foreground font-semibold" style={{ fontSize: 9 }}>Śr. liczba<br/>zakresów kcal</th>
-                      <th className="text-center px-1 py-1 text-muted-foreground font-semibold" style={{ fontSize: 9 }}>% marek z zakresem<br/>2500+ kcal</th>
-                      <th className="text-center px-1 py-1 text-muted-foreground font-semibold" style={{ fontSize: 9 }}>Śr. liczba<br/>posiłków</th>
+                    <tr className="border-b">
+                      <th className="text-left px-1 py-1.5 text-muted-foreground font-semibold" style={{ fontSize: 9 }}>Segment</th>
+                      <th className="text-center px-1 py-1.5 text-muted-foreground font-semibold" style={{ fontSize: 9 }}>Śr. liczba<br/>zakresów kcal</th>
+                      <th className="text-center px-1 py-1.5 text-muted-foreground font-semibold" style={{ fontSize: 9 }}>% marek z zakresem<br/>2500+ kcal</th>
+                      <th className="text-center px-1 py-1.5 text-muted-foreground font-semibold" style={{ fontSize: 9 }}>Śr. liczba<br/>posiłków</th>
                     </tr>
                   </thead>
                   <tbody>
                     {data.rangeTable.map(row => (
-                      <tr key={row.diet} className="heatmap-row">
-                        <td className="px-1 py-1 font-semibold whitespace-nowrap"><DietIcon diet={row.diet} />{row.diet.toUpperCase()}</td>
-                        <td className="text-center font-semibold">{row.avgKcalRanges}</td>
-                        <td className="px-1">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] font-medium w-[28px]">{row.pct2500plus}%</span>
-                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full" style={{ width: `${Math.min(row.pct2500plus, 100)}%` }} /></div>
+                      <tr key={row.diet} className="heatmap-row border-b">
+                        <td className="px-1 py-2 font-semibold whitespace-nowrap"><DietIcon diet={row.diet} />{row.diet.toUpperCase()}</td>
+                        <td className="text-center py-2 font-semibold">{row.avgKcalRanges}</td>
+                        <td className="px-1 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-semibold w-[30px]">{row.pct2500plus}%</span>
+                            <div className="flex-1 h-2.5 bg-violet-100 dark:bg-violet-950/30 rounded-full overflow-hidden">
+                              <div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.min(row.pct2500plus, 100)}%` }} />
+                            </div>
                           </div>
                         </td>
-                        <td className="text-center">{row.avgMeals}</td>
+                        <td className="text-center py-2">{row.avgMeals}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               {(data.rangeInsights.length > 0 || data.rangeConclusion) && (
-                <div className="w-[180px] shrink-0 border-l pl-3 space-y-2">
-                  <p className="text-[10px] font-bold text-primary uppercase tracking-wider">Insight</p>
+                <div className="w-[190px] shrink-0 rounded-lg bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 p-3 space-y-2.5 self-start">
+                  <p className="text-[10px] font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Lightbulb className="h-3.5 w-3.5" />
+                    Insight
+                  </p>
                   {data.rangeInsights.map((ins, i) => (
                     <div key={i} className="flex items-start gap-1.5">
                       {ins.arrow === 'up' ? <ArrowUp className="h-3 w-3 text-green-600 mt-0.5 shrink-0" /> : <ArrowDown className="h-3 w-3 text-red-600 mt-0.5 shrink-0" />}
-                      <p className="text-[10px] text-muted-foreground leading-tight">{ins.text}</p>
+                      <p className="text-[10px] text-violet-900 dark:text-violet-300 leading-tight">{ins.text}</p>
                     </div>
                   ))}
-                  {/* Spec 5: CO TO OZNACZA? box */}
                   {data.rangeConclusion && (
-                    <div className="mt-2 p-2 rounded bg-violet-50 border border-violet-200 dark:bg-violet-950/30 dark:border-violet-800">
-                      <p className="text-[9px] font-bold text-violet-700 dark:text-violet-400 uppercase mb-1">Co to oznacza?</p>
+                    <div className="mt-1 p-2 rounded bg-white dark:bg-violet-950/40 border border-violet-200 dark:border-violet-700">
+                      <p className="text-[9px] font-bold text-violet-700 dark:text-violet-400 uppercase mb-1 text-center">Co to oznacza?</p>
                       <p className="text-[10px] text-violet-900 dark:text-violet-300 leading-tight">{data.rangeConclusion}</p>
                     </div>
                   )}
@@ -472,26 +476,28 @@ export function MarketDashboard() {
           </CardContent>
         </Card>
 
-        {/* S4: Co nowego (spec 4: full names, kcal range, meals; spec 6: navy title) */}
+        {/* S4: Co nowego w ofercie */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className={`text-sm font-bold uppercase tracking-wide ${navyCls}`}>Co nowego w ofercie?</CardTitle>
             <p className="text-[10px] text-muted-foreground">Nowe i wycofane pakiety w ostatnich 30 dniach</p>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-green-700 mb-1">Nowe pakiety (top 5)</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2">
+              <div className="pr-4">
+                <p className="text-xs font-bold uppercase tracking-wider text-green-700 mb-2">Nowe pakiety (top 5)</p>
                 {data.newPackages.length === 0 ? <p className="text-[10px] text-muted-foreground">Brak nowych pakietów.</p> : <PkgTable items={data.newPackages} />}
               </div>
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-red-700 mb-1">Wycofane pakiety (top 5)</p>
+              <div className="pl-4 border-l">
+                <p className="text-xs font-bold uppercase tracking-wider text-red-700 mb-2">Wycofane pakiety (top 5)</p>
                 {data.removedPackages.length === 0 ? <p className="text-[10px] text-muted-foreground">Brak wycofanych pakietów.</p> : <PkgTable items={data.removedPackages} />}
               </div>
             </div>
-            <div className="flex items-center gap-1.5 mt-3 pt-2 border-t">
-              <Info className="h-3 w-3 text-blue-500 shrink-0" />
-              <p className="text-[10px] text-muted-foreground">{data.totalNew} nowych pakietów | {data.totalRemoved} wycofanych pakietów</p>
+            <div className="flex items-center gap-2 mt-3 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+              <div className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0">
+                <Info className="h-3 w-3 text-white" />
+              </div>
+              <p className="text-[10px] text-blue-800 dark:text-blue-300 font-medium">{data.totalNew} nowych pakietów | {data.totalRemoved} wycofanych pakietów</p>
             </div>
           </CardContent>
         </Card>
@@ -523,31 +529,30 @@ function KpiCard({ label, value, delta, deltaLabel, sub }: {
   )
 }
 
-/* Spec 4: pełne nazwy (zawijane do 2 linii), Kcal = zakres, Posiłki = meals_per_day, nagłówki wg specyfikacji */
 function PkgTable({ items }: { items: PkgItem[] }) {
   return (
-    <table className="w-full text-[10px]" style={{ borderCollapse: 'collapse' }}>
+    <table className="w-full text-[10px]">
       <thead>
-        <tr className="border-b">
-          <th className="text-left py-0.5 font-semibold text-muted-foreground">Nazwa pakietu</th>
-          <th className="text-left py-0.5 font-semibold text-muted-foreground">Typ diety</th>
-          <th className="text-center py-0.5 font-semibold text-muted-foreground">Kcal</th>
-          <th className="text-center py-0.5 font-semibold text-muted-foreground">Posiłki</th>
-          <th className="text-left py-0.5 font-semibold text-muted-foreground">Marka</th>
+        <tr className="border-b-2">
+          <th className="text-left py-1 font-semibold text-muted-foreground">Nazwa pakietu</th>
+          <th className="text-left py-1 font-semibold text-muted-foreground">Typ diety</th>
+          <th className="text-center py-1 font-semibold text-muted-foreground">Kcal</th>
+          <th className="text-center py-1 font-semibold text-muted-foreground">Posiłki</th>
+          <th className="text-left py-1 font-semibold text-muted-foreground">Marka</th>
         </tr>
       </thead>
       <tbody>
         {items.map((p, i) => {
           const badgeClass = DIET_BADGE_COLOR[p.diet] || 'bg-gray-100 text-gray-700 border-gray-300'
           return (
-            <tr key={i} className="border-b last:border-0">
-              <td className="py-1 pr-1 font-medium" style={{ maxWidth: 160, wordBreak: 'break-word', lineHeight: '1.3' }}>{p.name}</td>
-              <td className="py-1 pr-1">
-                <Badge className={`text-[8px] px-1 py-0 font-medium border whitespace-nowrap ${badgeClass}`}>{p.diet.toUpperCase()}</Badge>
+            <tr key={i} className="border-b">
+              <td className="py-2 pr-1 font-medium text-foreground" style={{ maxWidth: 160, wordBreak: 'break-word', lineHeight: '1.3' }}>{p.name}</td>
+              <td className="py-2 pr-1">
+                <Badge className={`text-[7px] px-1.5 py-0.5 font-bold rounded-full border whitespace-nowrap ${badgeClass}`}>{p.diet.toUpperCase()}</Badge>
               </td>
-              <td className="text-center py-1 text-muted-foreground whitespace-nowrap">{p.kcalLabel}</td>
-              <td className="text-center py-1 text-muted-foreground">{p.meals ?? '\u2013'}</td>
-              <td className="py-1 text-muted-foreground" style={{ maxWidth: 80, wordBreak: 'break-word', lineHeight: '1.3' }}>{p.brand}</td>
+              <td className="text-center py-2 text-muted-foreground whitespace-nowrap">{p.kcalLabel}</td>
+              <td className="text-center py-2 text-muted-foreground">{p.meals ?? '\u2013'}</td>
+              <td className="py-2 text-muted-foreground" style={{ maxWidth: 80, wordBreak: 'break-word', lineHeight: '1.3' }}>{p.brand}</td>
             </tr>
           )
         })}
