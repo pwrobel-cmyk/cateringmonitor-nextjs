@@ -4,9 +4,12 @@ import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Loader2, Grid3X3, ChevronDown, Lightbulb } from 'lucide-react'
+import { Loader2, Grid3X3, ChevronDown, Lightbulb, Target } from 'lucide-react'
 import { useMarketGaps, type GapCell } from '@/hooks/supabase/useMarketGaps'
+import { useBrands } from '@/hooks/supabase/useBrands'
+import { useUserBrands } from '@/hooks/useUserBrands'
 import { KCAL_BUCKETS, kcalBucketLabel, type DietType } from '@/lib/dietClassification'
 
 const PRIMARY_DIETS: DietType[] = [
@@ -14,14 +17,7 @@ const PRIMARY_DIETS: DietType[] = [
   'Low Carb', 'Sport', 'Bez glutenu/laktozy', 'Hashimoto',
 ]
 
-const COL_COUNT = KCAL_BUCKETS.length + 1 // diet label + kcal columns
-
-interface InterestingGap {
-  diet: string
-  kcal: number
-  neighborCount: number
-  label: string
-}
+const COL_COUNT = KCAL_BUCKETS.length + 1
 
 function cellBg(count: number, maxCount: number): string {
   if (count === 0) return 'transparent'
@@ -36,21 +32,39 @@ function cellTextColor(count: number, maxCount: number): string {
   return intensity > 0.35 ? '#fff' : 'hsl(215, 25%, 16%)'
 }
 
-// Inline detail panel with max-height transition
-function DetailPanel({ diet, kcal, cell, matrix }: {
+/** One representative price per brand = cheapest package of that brand */
+function brandMinPrices(cell: GapCell): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const b of cell.brands) {
+    const cur = map.get(b.brandName)
+    if (cur === undefined || b.price < cur) map.set(b.brandName, b.price)
+  }
+  return map
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+}
+
+// ── Detail Panel ───────────────────────────────────────────────────────────────
+
+function DetailPanel({ diet, kcal, cell, matrix, refBrand }: {
   diet: string; kcal: number; cell: GapCell
   matrix: Record<string, Record<number, GapCell>>
+  refBrand: string | null
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [height, setHeight] = useState(0)
 
   useEffect(() => {
     if (ref.current) setHeight(ref.current.scrollHeight)
-  }, [diet, kcal, cell])
+  }, [diet, kcal, cell, refBrand])
 
   const isEmpty = cell.brandCount === 0
 
-  // For gap cells: find nearest neighbors with brands
   const neighbors = useMemo(() => {
     if (!isEmpty) return []
     const row = matrix[diet]
@@ -64,6 +78,21 @@ function DetailPanel({ diet, kcal, cell, matrix }: {
     result.sort((a, b) => Math.abs(a.kcal - kcal) - Math.abs(b.kcal - kcal))
     return result.slice(0, 2)
   }, [isEmpty, matrix, diet, kcal, cell])
+
+  // Ref brand analysis
+  const refAnalysis = useMemo(() => {
+    if (!refBrand || isEmpty) return null
+    const refPackages = cell.brands.filter(b => b.brandName === refBrand)
+    if (refPackages.length === 0) return null
+
+    const minPrices = brandMinPrices(cell)
+    const prices = Array.from(minPrices.values())
+    const med = median(prices)
+    const refMinPrice = minPrices.get(refBrand)!
+    const deviation = med > 0 ? ((refMinPrice - med) / med) * 100 : 0
+
+    return { refPackages, refMinPrice, median: med, deviation, totalBrands: minPrices.size }
+  }, [refBrand, cell, isEmpty])
 
   return (
     <div style={{ maxHeight: height || 'none', overflow: 'hidden', transition: 'max-height 200ms ease' }}>
@@ -91,34 +120,161 @@ function DetailPanel({ diet, kcal, cell, matrix }: {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {cell.brands.map((b, i) => (
-              <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded border">
-                {b.brandLogo ? (
-                  <img src={b.brandLogo} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
-                ) : (
-                  <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
-                    {b.brandName.slice(0, 2).toUpperCase()}
+            {cell.brands.map((b, i) => {
+              const isRef = refBrand && b.brandName === refBrand
+              return (
+                <div key={i} className={`flex items-center gap-2 py-1.5 px-2 rounded border ${isRef ? 'bg-green-50 border-green-300 dark:bg-green-950/30 dark:border-green-800' : ''}`}>
+                  {b.brandLogo ? (
+                    <img src={b.brandLogo} alt="" className="w-6 h-6 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0">
+                      {b.brandName.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{b.brandName}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{b.packageName}</p>
                   </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate">{b.brandName}</p>
-                  <p className="text-[10px] text-muted-foreground truncate">{b.packageName}</p>
+                  <span className="text-xs font-semibold tabular-nums shrink-0">{b.price.toFixed(0)} zł</span>
                 </div>
-                <span className="text-xs font-semibold tabular-nums shrink-0">{b.price.toFixed(0)} zł</span>
-              </div>
-            ))}
+              )
+            })}
           </div>
+        )}
+        {refAnalysis && (
+          <p className="text-xs text-muted-foreground mt-2 border-t pt-2">
+            Twoja cena {refAnalysis.refMinPrice.toFixed(0)} zł
+            {refAnalysis.refPackages.length > 1 && ` (najtańszy z ${refAnalysis.refPackages.length} pakietów)`}
+            , mediana {refAnalysis.median.toFixed(0)} zł,{' '}
+            <span className={refAnalysis.deviation > 0 ? 'text-red-600' : 'text-green-600'}>
+              {refAnalysis.deviation > 0 ? '+' : ''}{refAnalysis.deviation.toFixed(0)}%
+            </span>
+          </p>
         )}
       </div>
     </div>
   )
 }
 
+// ── Insights ───────────────────────────────────────────────────────────────────
+
+interface Insight {
+  text: string
+  type: 'gap' | 'blind-spot' | 'price'
+}
+
+function generateInsights(
+  matrix: Record<string, Record<number, GapCell>>,
+  visibleDiets: string[],
+  refBrand: string,
+): Insight[] {
+  const insights: Insight[] = []
+
+  // 1. Blind spots: cells with 5+ competitors, ref brand absent (top 2)
+  const blindSpots: { diet: string; kcal: number; competitors: number }[] = []
+  // 2. Price extremes: cells where ref brand present, |deviation| from median > 10% (top 2 by |dev|)
+  const priceExtremes: { diet: string; kcal: number; refPrice: number; med: number; dev: number; rank: number; total: number }[] = []
+
+  for (const dt of visibleDiets) {
+    const row = matrix[dt]
+    if (!row) continue
+    for (const kb of KCAL_BUCKETS) {
+      const cell = row[kb]
+      if (!cell) continue
+
+      const minPrices = brandMinPrices(cell)
+      const hasRef = minPrices.has(refBrand)
+
+      if (!hasRef && cell.brandCount >= 5) {
+        blindSpots.push({ diet: dt, kcal: kb, competitors: cell.brandCount })
+      }
+
+      if (hasRef && minPrices.size >= 3) {
+        const prices = Array.from(minPrices.values())
+        const med = median(prices)
+        const refPrice = minPrices.get(refBrand)!
+        const dev = med > 0 ? ((refPrice - med) / med) * 100 : 0
+        const sorted = [...prices].sort((a, b) => a - b)
+        const rank = sorted.indexOf(refPrice) + 1
+
+        if (Math.abs(dev) > 10) {
+          priceExtremes.push({ diet: dt, kcal: kb, refPrice, med, dev, rank, total: minPrices.size })
+        }
+      }
+    }
+  }
+
+  // Top 2 blind spots by competitor count
+  blindSpots.sort((a, b) => b.competitors - a.competitors)
+  for (const bs of blindSpots.slice(0, 2)) {
+    insights.push({
+      type: 'blind-spot',
+      text: `${bs.diet} ${kcalBucketLabel(bs.kcal as any)} kcal — ${bs.competitors} konkurentów bez Twojej oferty`,
+    })
+  }
+
+  // Top 2 price extremes by |deviation|
+  priceExtremes.sort((a, b) => Math.abs(b.dev) - Math.abs(a.dev))
+  for (const pe of priceExtremes.slice(0, 2)) {
+    const dir = pe.dev > 0
+      ? `+${pe.dev.toFixed(0)}% vs mediana ${pe.med.toFixed(0)} zł — najdroższa półka`
+      : `${pe.dev.toFixed(0)}% vs mediana ${pe.med.toFixed(0)} zł — najniższa półka segmentu`
+    insights.push({
+      type: 'price',
+      text: `${pe.diet} ${kcalBucketLabel(pe.kcal as any)} kcal — Twoja cena ${pe.refPrice.toFixed(0)} zł, ${dir}`,
+    })
+  }
+
+  // Max 1 market gap (existing smart gap logic)
+  for (const dt of visibleDiets) {
+    const row = matrix[dt]
+    if (!row) continue
+    for (let i = 0; i < KCAL_BUCKETS.length; i++) {
+      const kb = KCAL_BUCKETS[i]
+      if ((row[kb]?.brandCount ?? 0) > 0) continue
+      const hasLeft = KCAL_BUCKETS.slice(0, i).some(b => (row[b]?.brandCount ?? 0) > 0)
+      const hasRight = KCAL_BUCKETS.slice(i + 1).some(b => (row[b]?.brandCount ?? 0) > 0)
+      const leftCount = i > 0 ? (row[KCAL_BUCKETS[i - 1]]?.brandCount ?? 0) : 0
+      const rightCount = i < KCAL_BUCKETS.length - 1 ? (row[KCAL_BUCKETS[i + 1]]?.brandCount ?? 0) : 0
+      if ((hasLeft && hasRight) || leftCount >= 5 || rightCount >= 5) {
+        const strongCount = Math.max(leftCount, rightCount)
+        const strongBucket = leftCount >= rightCount
+          ? (i > 0 ? KCAL_BUCKETS[i - 1] : kb)
+          : (i < KCAL_BUCKETS.length - 1 ? KCAL_BUCKETS[i + 1] : kb)
+        insights.push({
+          type: 'gap',
+          text: `${dt} ${kcalBucketLabel(kb as any)} kcal — luka rynkowa (0 marek), przy ${strongCount} markach w ${kcalBucketLabel(strongBucket as any)} kcal`,
+        })
+        return insights // max 1 gap, stop early
+      }
+    }
+  }
+
+  return insights
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export function GapMatrix() {
   const { data, isLoading } = useMarketGaps()
+  const { data: brands } = useBrands()
+  const { assignedBrandIds } = useUserBrands()
+
   const [showAllDiets, setShowAllDiets] = useState(false)
   const [unclassifiedOpen, setUnclassifiedOpen] = useState(false)
   const [expanded, setExpanded] = useState<{ diet: string; kcal: number } | null>(null)
+  const [brandOverride, setBrandOverride] = useState<string | undefined>(undefined)
+
+  // Resolve default brand from user assignments
+  const defaultBrandName = useMemo(() => {
+    if (!brands || !assignedBrandIds || assignedBrandIds.length === 0) return null
+    const firstAssigned = brands.find(b => assignedBrandIds.includes(b.id))
+    return firstAssigned?.name ?? null
+  }, [brands, assignedBrandIds])
+
+  const selectedBrand = brandOverride === undefined
+    ? defaultBrandName
+    : brandOverride === '__all__' ? null : brandOverride
 
   const maxBrandCount = useMemo(() => {
     if (!data) return 1
@@ -147,39 +303,10 @@ export function GapMatrix() {
     return Object.keys(data.matrix).filter(dt => dt !== 'Inne' && !PRIMARY_DIETS.includes(dt as DietType) && hasCells(dt)).length
   }, [data])
 
-  const interestingGaps = useMemo(() => {
-    if (!data) return []
-    const gaps: InterestingGap[] = []
-
-    for (const dt of visibleDiets) {
-      const row = data.matrix[dt]
-      if (!row) continue
-      for (let i = 0; i < KCAL_BUCKETS.length; i++) {
-        const kb = KCAL_BUCKETS[i]
-        const count = row[kb]?.brandCount ?? 0
-        if (count > 0) continue
-        const hasLeft = KCAL_BUCKETS.slice(0, i).some(b => (row[b]?.brandCount ?? 0) > 0)
-        const hasRight = KCAL_BUCKETS.slice(i + 1).some(b => (row[b]?.brandCount ?? 0) > 0)
-        const leftCount = i > 0 ? (row[KCAL_BUCKETS[i - 1]]?.brandCount ?? 0) : 0
-        const rightCount = i < KCAL_BUCKETS.length - 1 ? (row[KCAL_BUCKETS[i + 1]]?.brandCount ?? 0) : 0
-        if ((hasLeft && hasRight) || leftCount >= 5 || rightCount >= 5) {
-          const strongBucket = leftCount >= rightCount
-            ? (i > 0 ? KCAL_BUCKETS[i - 1] : kb)
-            : (i < KCAL_BUCKETS.length - 1 ? KCAL_BUCKETS[i + 1] : kb)
-          const strongCount = Math.max(leftCount, rightCount)
-          gaps.push({
-            diet: dt, kcal: kb, neighborCount: leftCount + rightCount,
-            label: `${dt} ${kcalBucketLabel(kb)} kcal — 0 marek, przy ${strongCount} markach w ${kcalBucketLabel(strongBucket)} kcal`,
-          })
-        }
-      }
-    }
-    return gaps.sort((a, b) => b.neighborCount - a.neighborCount).slice(0, 5)
-  }, [data, visibleDiets])
-
+  // Smart gap detection (used in both modes)
   const isSmartGap = useMemo(() => {
-    const set = new Set(interestingGaps.map(g => `${g.diet}|${g.kcal}`))
-    if (!data) return (dt: string, kb: number) => set.has(`${dt}|${kb}`)
+    if (!data) return (_dt: string, _kb: number) => false
+    const set = new Set<string>()
     for (const dt of visibleDiets) {
       const row = data.matrix[dt]
       if (!row) continue
@@ -194,7 +321,81 @@ export function GapMatrix() {
       }
     }
     return (dt: string, kb: number) => set.has(`${dt}|${kb}`)
-  }, [data, visibleDiets, interestingGaps])
+  }, [data, visibleDiets])
+
+  // Insights — brand-specific or market-wide
+  const insights = useMemo(() => {
+    if (!data) return []
+    if (selectedBrand) {
+      return generateInsights(data.matrix, visibleDiets, selectedBrand)
+    }
+    // Market-wide: top 5 interesting gaps
+    const gaps: { diet: string; kcal: number; neighborCount: number }[] = []
+    for (const dt of visibleDiets) {
+      const row = data.matrix[dt]
+      if (!row) continue
+      for (let i = 0; i < KCAL_BUCKETS.length; i++) {
+        const kb = KCAL_BUCKETS[i]
+        if ((row[kb]?.brandCount ?? 0) > 0) continue
+        const hasLeft = KCAL_BUCKETS.slice(0, i).some(b => (row[b]?.brandCount ?? 0) > 0)
+        const hasRight = KCAL_BUCKETS.slice(i + 1).some(b => (row[b]?.brandCount ?? 0) > 0)
+        const leftCount = i > 0 ? (row[KCAL_BUCKETS[i - 1]]?.brandCount ?? 0) : 0
+        const rightCount = i < KCAL_BUCKETS.length - 1 ? (row[KCAL_BUCKETS[i + 1]]?.brandCount ?? 0) : 0
+        if ((hasLeft && hasRight) || leftCount >= 5 || rightCount >= 5) {
+          const strongBucket = leftCount >= rightCount
+            ? (i > 0 ? KCAL_BUCKETS[i - 1] : kb)
+            : (i < KCAL_BUCKETS.length - 1 ? KCAL_BUCKETS[i + 1] : kb)
+          const strongCount = Math.max(leftCount, rightCount)
+          gaps.push({ diet: dt, kcal: kb, neighborCount: leftCount + rightCount })
+        }
+      }
+    }
+    gaps.sort((a, b) => b.neighborCount - a.neighborCount)
+    return gaps.slice(0, 5).map(g => {
+      const row = data.matrix[g.diet]
+      const i = KCAL_BUCKETS.indexOf(g.kcal as any)
+      const leftCount = i > 0 ? (row?.[KCAL_BUCKETS[i - 1]]?.brandCount ?? 0) : 0
+      const rightCount = i < KCAL_BUCKETS.length - 1 ? (row?.[KCAL_BUCKETS[i + 1]]?.brandCount ?? 0) : 0
+      const strongBucket = leftCount >= rightCount
+        ? (i > 0 ? KCAL_BUCKETS[i - 1] : g.kcal)
+        : (i < KCAL_BUCKETS.length - 1 ? KCAL_BUCKETS[i + 1] : g.kcal)
+      const strongCount = Math.max(leftCount, rightCount)
+      return {
+        type: 'gap' as const,
+        text: `${g.diet} ${kcalBucketLabel(g.kcal as any)} kcal — 0 marek, przy ${strongCount} markach w ${kcalBucketLabel(strongBucket as any)} kcal`,
+      }
+    })
+  }, [data, visibleDiets, selectedBrand])
+
+  // Brand presence per cell (for cell rendering)
+  const refBrandPosition = useMemo(() => {
+    if (!data || !selectedBrand) return (_dt: string, _kb: number) => null
+    const cache = new Map<string, { rank: number; total: number } | null>()
+    return (dt: string, kb: number) => {
+      const key = `${dt}|${kb}`
+      if (cache.has(key)) return cache.get(key)!
+      const cell = data.matrix[dt]?.[kb]
+      if (!cell) { cache.set(key, null); return null }
+      const minPrices = brandMinPrices(cell)
+      if (!minPrices.has(selectedBrand)) { cache.set(key, null); return null }
+      const sorted = Array.from(minPrices.values()).sort((a, b) => a - b)
+      const refPrice = minPrices.get(selectedBrand)!
+      const rank = sorted.indexOf(refPrice) + 1
+      const result = { rank, total: minPrices.size }
+      cache.set(key, result)
+      return result
+    }
+  }, [data, selectedBrand])
+
+  // Blind spot detection for cells (5+ competitors, ref brand absent)
+  const isBlindSpot = useMemo(() => {
+    if (!data || !selectedBrand) return (_dt: string, _kb: number) => false
+    return (dt: string, kb: number) => {
+      const cell = data.matrix[dt]?.[kb]
+      if (!cell || cell.brandCount < 5) return false
+      return !cell.brands.some(b => b.brandName === selectedBrand)
+    }
+  }, [data, selectedBrand])
 
   function handleCellClick(diet: string, kcal: number) {
     if (expanded?.diet === diet && expanded?.kcal === kcal) {
@@ -216,21 +417,52 @@ export function GapMatrix() {
 
   if (!data) return null
 
+  const insightsTitle = selectedBrand ? `Wnioski dla ${selectedBrand}` : 'Najciekawsze luki'
+  const insightsIcon = selectedBrand ? Target : Lightbulb
+
   return (
     <div className="space-y-4">
-      {interestingGaps.length > 0 && (
+      {/* Brand selector */}
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-muted-foreground shrink-0">Perspektywa:</span>
+            <Select
+              value={selectedBrand ?? '__all__'}
+              onValueChange={(v) => v && setBrandOverride(v)}
+            >
+              <SelectTrigger className="w-[260px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">Wszystkie marki (cały rynek)</SelectItem>
+                {(brands ?? []).map(b => (
+                  <SelectItem key={b.id} value={b.name}>{b.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Insights */}
+      {insights.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Lightbulb className="h-4 w-4 text-amber-500" />
-              Najciekawsze luki
+              {React.createElement(insightsIcon, { className: `h-4 w-4 ${selectedBrand ? 'text-green-600' : 'text-amber-500'}` })}
+              {insightsTitle}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-1">
-              {interestingGaps.map((gap, i) => (
-                <li key={i} className="text-sm text-muted-foreground">
-                  <span className="font-medium text-foreground">{gap.diet}</span> {kcalBucketLabel(gap.kcal as any)} kcal — <span className="text-amber-600 font-medium">0 marek</span>, przy {gap.label.split('przy ')[1]}
+            <ul className="space-y-1.5">
+              {insights.map((ins, i) => (
+                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                    ins.type === 'blind-spot' ? 'bg-orange-400' :
+                    ins.type === 'price' ? 'bg-blue-400' : 'bg-amber-400'
+                  }`} />
+                  <span>{ins.text}</span>
                 </li>
               ))}
             </ul>
@@ -238,6 +470,7 @@ export function GapMatrix() {
         </Card>
       )}
 
+      {/* Matrix */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -293,6 +526,8 @@ export function GapMatrix() {
                           const count = cell?.brandCount ?? 0
                           const gap = count === 0 && isSmartGap(dt, kb)
                           const isActive = expanded?.diet === dt && expanded?.kcal === kb
+                          const pos = refBrandPosition(dt, kb)
+                          const blindSpot = isBlindSpot(dt, kb)
 
                           return (
                             <td
@@ -302,13 +537,33 @@ export function GapMatrix() {
                                 height: 32, textAlign: 'center', fontWeight: 600, fontSize: 12,
                                 backgroundColor: gap ? '#FEF3C7' : cellBg(count, maxBrandCount),
                                 color: gap ? '#92400E' : cellTextColor(count, maxBrandCount),
-                                border: isActive ? '2px solid hsl(215, 84%, 25%)' : '1px solid white',
+                                border: isActive
+                                  ? '2px solid hsl(215, 84%, 25%)'
+                                  : pos ? '2px solid #16a34a' : '1px solid white',
                                 borderRadius: 2,
                                 cursor: 'pointer',
                                 boxShadow: isActive ? '0 0 0 1px hsl(215, 84%, 25%)' : undefined,
+                                position: 'relative',
                               }}
                             >
                               {count > 0 ? count : ''}
+                              {pos && (
+                                <span style={{
+                                  position: 'absolute', bottom: 1, right: 2,
+                                  fontSize: 7, fontWeight: 500, lineHeight: 1,
+                                  color: pos.rank <= 3 ? '#16a34a' : 'inherit',
+                                  opacity: 0.8,
+                                }}>
+                                  #{pos.rank}/{pos.total}
+                                </span>
+                              )}
+                              {blindSpot && !gap && (
+                                <span style={{
+                                  position: 'absolute', top: 2, right: 2,
+                                  width: 5, height: 5, borderRadius: '50%',
+                                  backgroundColor: '#f97316', display: 'inline-block',
+                                }} />
+                              )}
                             </td>
                           )
                         })}
@@ -316,7 +571,10 @@ export function GapMatrix() {
                       {isExpandedRow && expandedCell && (
                         <tr>
                           <td colSpan={COL_COUNT} style={{ padding: 0, background: 'var(--muted)', borderRadius: 4 }}>
-                            <DetailPanel diet={dt} kcal={expanded!.kcal} cell={expandedCell} matrix={data.matrix} />
+                            <DetailPanel
+                              diet={dt} kcal={expanded!.kcal} cell={expandedCell}
+                              matrix={data.matrix} refBrand={selectedBrand}
+                            />
                           </td>
                         </tr>
                       )}
@@ -347,6 +605,16 @@ export function GapMatrix() {
               <span style={{ width: 14, height: 14, borderRadius: 2, background: 'hsl(215, 84%, 45%)', display: 'inline-block' }} />
               Dużo marek
             </span>
+            {selectedBrand && (<>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--muted-foreground)' }}>
+                <span style={{ width: 14, height: 14, borderRadius: 2, border: '2px solid #16a34a', display: 'inline-block' }} />
+                Twoja marka
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--muted-foreground)' }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: '#f97316', display: 'inline-block' }} />
+                Biała plama (5+ konkurentów)
+              </span>
+            </>)}
           </div>
         </CardContent>
       </Card>
