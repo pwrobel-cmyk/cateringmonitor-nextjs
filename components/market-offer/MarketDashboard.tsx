@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase/client'
 import { useCountry } from '@/contexts/CountryContext'
@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Loader2, Package, Info, BarChart3, TrendingUp, Sparkles, Lightbulb,
-  ArrowUp, ArrowDown, ArrowRight,
+  ArrowUp, ArrowDown, ArrowRight, ChevronRight, ChevronDown,
   // Diet icons (lucide, spec point 1)
   Dumbbell, Leaf, Flame, Droplet, CheckCircle, WheatOff, ListChecks,
   TrendingDown, Triangle, Baby, GlassWater, Dna, Sun, Briefcase,
@@ -78,6 +78,7 @@ interface ProcessedData {
   globalOldest: string
   gapTable: { diet: string; counts: Record<number, number>; totalBrands: number }[]
   gapOtherRow: { dietCount: number; counts: Record<number, { min: number; max: number }>; totalBrands: { min: number; max: number } } | null
+  gapOtherRows: { diet: string; counts: Record<number, number>; totalBrands: number }[]
   gapInsight: string
   rangeTable: { diet: string; avgKcalRanges: number; pct2500plus: number; avgMeals: number }[]
   rangeInsights: { arrow: 'up' | 'down'; text: string }[]
@@ -164,6 +165,7 @@ function processData(
     for (const kb of KCAL_BUCKETS) { const vals = others.map(d => d.buckets.get(kb)?.size ?? 0); oc[kb] = { min: Math.min(...vals), max: Math.max(...vals) } }
     const ot = others.map(d => d.totalBrands); gapOtherRow = { dietCount: others.length, counts: oc, totalBrands: { min: Math.min(...ot), max: Math.max(...ot) } }
   }
+  const gapOtherRows = others.map(d => { const counts: Record<number, number> = {}; for (const kb of KCAL_BUCKETS) counts[kb] = d.buckets.get(kb)?.size ?? 0; return { diet: d.diet, counts, totalBrands: d.totalBrands } })
   const greenBuckets = new Set<number>()
   for (const row of gapTable) { for (const kb of KCAL_BUCKETS) { if (row.counts[kb] >= 10) greenBuckets.add(kb) } }
   const gapCandidates: string[] = []
@@ -221,7 +223,7 @@ function processData(
     classifiedPct: active.length > 0 ? Math.round((classifiedCount / active.length) * 100) : 0, kcalBucketCount: activeKcalBuckets.size,
     kcalRange: activeKcalBuckets.size > 0 ? `${Math.min(...activeKcalBuckets)} \u2013 ${kcalBucketLabel(Math.max(...activeKcalBuckets) as any)} kcal` : '\u2014',
     mealsMin: mealValues.length > 0 ? Math.min(...mealValues) : 0, mealsMax: mealValues.length > 0 ? Math.max(...mealValues) : 0, mealsMedian: medianOf(mealValues), globalOldest,
-    gapTable, gapOtherRow, gapInsight, rangeTable, rangeInsights, rangeConclusion, momentumTable, momentumInsights,
+    gapTable, gapOtherRow, gapOtherRows, gapInsight, rangeTable, rangeInsights, rangeConclusion, momentumTable, momentumInsights,
     newPackages: allNew.sort((a, b) => b.first_seen.localeCompare(a.first_seen)).slice(0, 5).map(mapPkg),
     removedPackages: allRemoved.sort((a, b) => b.last_seen.localeCompare(a.last_seen)).slice(0, 5).map(mapPkg),
     totalNew: allNew.length, totalRemoved: allRemoved.length,
@@ -275,11 +277,12 @@ export function MarketDashboard() {
     return processData(rawData.lifecycle, rawData.activePrices, mealsMap, pkrMap, selectedCountry)
   }, [rawData, selectedCountry])
 
+  const [gapOthersExpanded, setGapOthersExpanded] = useState(false)
+
   if (isLoading || !data) {
     return <Card><CardContent className="py-16 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></CardContent></Card>
   }
 
-  // Spec point 6: navy color from theme = hsl(var(--primary))
   const navyCls = 'text-primary'
 
   return (
@@ -342,14 +345,25 @@ export function MarketDashboard() {
                     <td className="text-center font-bold text-[12px]">{row.totalBrands}</td>
                   </tr>
                 ))}
-                {/* Spec 3: fix \u2013 — use actual en-dash character */}
                 {data.gapOtherRow && (
-                  <tr>
-                    <td className="px-1 py-0.5 text-muted-foreground italic text-[10px]">Inne typy ({data.gapOtherRow.dietCount})</td>
+                  <tr className="heatmap-row cursor-pointer" onClick={() => setGapOthersExpanded((v: boolean) => !v)}>
+                    <td className="px-1 py-0.5 text-muted-foreground text-[10px] whitespace-nowrap">
+                      {gapOthersExpanded
+                        ? <ChevronDown className="inline-block w-3 h-3 mr-0.5 -mt-px" />
+                        : <ChevronRight className="inline-block w-3 h-3 mr-0.5 -mt-px" />}
+                      Inne typy ({data.gapOtherRow.dietCount})
+                    </td>
                     {KCAL_BUCKETS.map(kb => { const r = data.gapOtherRow!.counts[kb]; return <td key={kb} className="text-center text-muted-foreground italic" style={{ fontSize: 9, height: 24 }}>{r.min === r.max ? (r.min || '') : `${r.min}\u2013${r.max}`}</td> })}
                     <td className="text-center text-muted-foreground italic" style={{ fontSize: 9 }}>{'\u2013'}</td>
                   </tr>
                 )}
+                {gapOthersExpanded && data.gapOtherRows.map(row => (
+                  <tr key={row.diet} className="heatmap-row">
+                    <td className="px-1 py-0.5 font-semibold whitespace-nowrap text-[11px] pl-5"><DietIcon diet={row.diet} />{row.diet.toUpperCase()}</td>
+                    {KCAL_BUCKETS.map(kb => { const s = gapCellStyle(row.counts[kb]); return <td key={kb} style={{ backgroundColor: s.bg, color: s.text, textAlign: 'center', fontWeight: 600, borderRadius: 2, border: '1px solid white', height: 24 }}>{row.counts[kb] || ''}</td> })}
+                    <td className="text-center font-bold text-[12px]">{row.totalBrands}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
             {data.gapInsight && (
