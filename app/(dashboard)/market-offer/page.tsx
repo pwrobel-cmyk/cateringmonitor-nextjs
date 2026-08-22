@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { LayoutGrid, RefreshCw } from 'lucide-react'
+import { LayoutGrid, RefreshCw, BarChart3 } from 'lucide-react'
 import { MenuChangesTimeline } from '@/components/market-offer/MenuChangesTimeline'
 import { GapMatrix } from '@/components/market-offer/GapMatrix'
+import { MarketDashboard } from '@/components/market-offer/MarketDashboard'
 
 export default function MarketOfferPage() {
-  const [activeTab, setActiveTab] = useState('timeline')
+  const [activeTab, setActiveTab] = useState('dashboard')
 
   return (
     <div className="space-y-6">
@@ -23,6 +24,10 @@ export default function MarketOfferPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value="dashboard">
+            <BarChart3 className="h-4 w-4 mr-1.5" />
+            Oferta Rynkowa
+          </TabsTrigger>
           <TabsTrigger value="timeline">
             <RefreshCw className="h-4 w-4 mr-1.5" />
             Zmiany w menu
@@ -32,6 +37,10 @@ export default function MarketOfferPage() {
             Macierz luk ofertowych
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dashboard" className="space-y-4 mt-4">
+          <MarketDashboard />
+        </TabsContent>
 
         <TabsContent value="timeline" className="space-y-4 mt-4">
           <MenuChangesTimeline />
