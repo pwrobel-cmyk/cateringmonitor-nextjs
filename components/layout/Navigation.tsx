@@ -16,6 +16,7 @@ import {
   ChevronDown,
   TrendingUp,
   Trophy,
+  LayoutGrid,
 } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -30,6 +31,7 @@ const navigation: { name: string; href: string; icon: any; beta?: boolean }[] = 
   { name: "Ranking", href: "/ranking", icon: Trophy },
   { name: "Porównywarka", href: "/compare", icon: ArrowLeftRight },
   { name: "Pakiety & Diety", href: "/packages", icon: Package },
+  { name: "Oferta Rynku", href: "/market-offer", icon: LayoutGrid },
   { name: "Rabaty", href: "/discounts", icon: Percent },
   { name: "Opinie", href: "/reviews", icon: MessageSquare },
   { name: "Raporty", href: "/reports", icon: BarChart3 },
