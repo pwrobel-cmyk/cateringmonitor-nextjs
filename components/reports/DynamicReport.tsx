@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { supabase } from "@/lib/supabase/client"
+import { formatWarsawDate } from "@/lib/dates"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -1442,8 +1443,8 @@ export function DynamicReport({ brandId, brandName, brandLogoUrl, dateFrom, date
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {code.description || "Brak opisu"}{" "}
-                        | {code.valid_from ? format(new Date(code.valid_from), "d MMM", { locale: pl }) : "?"} –{" "}
-                        {code.valid_until ? format(new Date(code.valid_until), "d MMM", { locale: pl }) : "?"}
+                        | {formatWarsawDate(code.valid_from, { day: "numeric", month: "short" }, "?")} –{" "}
+                        {formatWarsawDate(code.valid_until, { day: "numeric", month: "short" }, "?")}
                       </p>
                     </div>
                   ))}

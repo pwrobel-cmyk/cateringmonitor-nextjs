@@ -10,6 +10,7 @@ import { LineChart, Line, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Cart
 import { Progress } from "@/components/ui/progress";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
+import { formatWarsawDate } from "@/lib/dates";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReviewAspects } from "@/hooks/supabase/useReviewAspects";
 import { useMemo } from "react";
@@ -1207,7 +1208,7 @@ export default function DietyOdBrokulaSummary2025() {
                         <p className="text-xs text-muted-foreground">{code.description}</p>
                       )}
                       <p className="text-xs text-muted-foreground mt-1">
-                        {code.valid_from ? format(new Date(code.valid_from), 'dd.MM.yyyy') : '?'} - {code.valid_until ? format(new Date(code.valid_until), 'dd.MM.yyyy') : '?'}
+                        {formatWarsawDate(code.valid_from, { day: '2-digit', month: '2-digit', year: 'numeric' }, '?')} - {formatWarsawDate(code.valid_until, { day: '2-digit', month: '2-digit', year: 'numeric' }, '?')}
                       </p>
                     </div>
                   ))}

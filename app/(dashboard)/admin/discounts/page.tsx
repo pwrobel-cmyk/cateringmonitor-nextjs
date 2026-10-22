@@ -7,6 +7,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
 import { isAdmin } from '@/lib/isAdmin';
+import { formatWarsawDate, toWarsawDateOnly, toWarsawValidFrom, toWarsawValidUntil } from '@/lib/dates';
 import { supabase } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -104,12 +105,7 @@ function emptyBulkRow(): BulkRow {
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '—';
-  try {
-    return new Date(dateStr).toLocaleDateString('pl-PL');
-  } catch {
-    return dateStr;
-  }
+  return formatWarsawDate(dateStr);
 }
 
 function parsePaginationPages(current: number, total: number): (number | '...')[] {
@@ -222,8 +218,8 @@ export default function AdminDiscountsPage() {
       brand_id: d.brand_id ?? '',
       percentage: d.percentage !== null ? String(d.percentage) : '',
       fixed_amount: d.fixed_amount !== null ? String(d.fixed_amount) : '',
-      valid_from: d.valid_from ? d.valid_from.slice(0, 10) : '',
-      valid_until: d.valid_until ? d.valid_until.slice(0, 10) : '',
+      valid_from: toWarsawDateOnly(d.valid_from) ?? '',
+      valid_until: toWarsawDateOnly(d.valid_until) ?? '',
       requirements: d.requirements ?? '',
       min_days: d.min_days !== null ? String(d.min_days) : '',
       max_days: d.max_days !== null ? String(d.max_days) : '',
@@ -245,8 +241,8 @@ export default function AdminDiscountsPage() {
       brand_id: f.brand_id || null,
       percentage: f.percentage !== '' ? Number(f.percentage) : null,
       fixed_amount: f.fixed_amount !== '' ? Number(f.fixed_amount) : null,
-      valid_from: f.valid_from || null,
-      valid_until: f.valid_until || null,
+      valid_from: toWarsawValidFrom(f.valid_from),
+      valid_until: toWarsawValidUntil(f.valid_until),
       requirements: f.requirements || null,
       min_days: f.min_days !== '' ? Number(f.min_days) : null,
       max_days: f.max_days !== '' ? Number(f.max_days) : null,
@@ -315,8 +311,8 @@ export default function AdminDiscountsPage() {
       code: r.code.trim(),
       brand_id: r.brand_id || null,
       percentage: r.percentage !== '' ? Number(r.percentage) : null,
-      valid_from: r.valid_from || null,
-      valid_until: r.valid_until || null,
+      valid_from: toWarsawValidFrom(r.valid_from),
+      valid_until: toWarsawValidUntil(r.valid_until),
       is_active: true,
     }));
     const { error } = await supabase.from('discounts').insert(payload);
@@ -334,9 +330,7 @@ export default function AdminDiscountsPage() {
   function parseDateValue(val: unknown): string | null {
     if (!val) return null;
     if (typeof val === 'string') {
-      const d = new Date(val);
-      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-      return null;
+      return toWarsawDateOnly(val.trim());
     }
     if (typeof val === 'number') {
       const d = new Date(Math.round((val - 25569) * 86400 * 1000));
@@ -378,8 +372,8 @@ export default function AdminDiscountsPage() {
         brand_id: brand?.id ?? null,
         percentage: row['Procent'] !== undefined && row['Procent'] !== '' ? Number(row['Procent']) : null,
         fixed_amount: row['Kwota'] !== undefined && row['Kwota'] !== '' ? Number(row['Kwota']) : null,
-        valid_from: parseDateValue(row['DataOd']),
-        valid_until: parseDateValue(row['DataDo']),
+        valid_from: toWarsawValidFrom(parseDateValue(row['DataOd'])),
+        valid_until: toWarsawValidUntil(parseDateValue(row['DataDo'])),
         requirements: String(row['Warunki'] ?? '').trim() || null,
         min_days: row['MinDni'] !== undefined && row['MinDni'] !== '' ? Number(row['MinDni']) : null,
         max_days: row['MaxDni'] !== undefined && row['MaxDni'] !== '' ? Number(row['MaxDni']) : null,

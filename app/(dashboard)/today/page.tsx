@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase/client'
 import { useBrands } from '@/hooks/supabase/useBrands'
 import { useUserRole } from '@/hooks/useUserRole'
 import { isAdmin as checkAdmin } from '@/lib/isAdmin'
+import { formatWarsawDate } from '@/lib/dates'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -221,7 +222,7 @@ export default function TodayPage() {
         priority: 'info',
         category: 'Rabaty',
         title: `Rynek aktywuje promocje — ${discounts.length} aktywnych rabatów`,
-        description: `Największy: ${top.brands?.name} −${top.discount_percentage}% (do ${top.valid_until ? new Date(top.valid_until).toLocaleDateString('pl-PL') : '?'})`,
+        description: `Największy: ${top.brands?.name} −${top.discount_percentage}% (do ${formatWarsawDate(top.valid_until, {}, '?')})`,
         action_label: 'Zobacz rabaty',
         action_href: '/discounts',
       })

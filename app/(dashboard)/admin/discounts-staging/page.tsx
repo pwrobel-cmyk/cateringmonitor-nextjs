@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useUserRole } from '@/hooks/useUserRole'
 import { isAdmin } from '@/lib/isAdmin'
+import { toWarsawDateOnly } from '@/lib/dates'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
@@ -115,10 +116,9 @@ function normCode(c: string | null | undefined): string {
   return (c || '').trim().toUpperCase()
 }
 
-/** Normalize date to YYYY-MM-DD, handling TIMESTAMPTZ ("2026-07-27T21:59:00+00:00") and DATE ("2026-07-27"). */
+/** Normalize date to YYYY-MM-DD in Europe/Warsaw, handling TIMESTAMPTZ ("2026-07-26T22:01:00+00:00" → "2026-07-27") and DATE ("2026-07-27"). */
 function toDateOnly(v: string | null | undefined): string | null {
-  if (!v) return null
-  return v.slice(0, 10)  // "2026-07-27T21:59:00+00:00" → "2026-07-27"
+  return toWarsawDateOnly(v)
 }
 
 function classifyStagingItem(s: StagingDiscount, existing: ExistingDiscount[], today: string): StagingClass {
@@ -398,7 +398,7 @@ export default function DiscountStagingPage() {
     })
 
     // Classify pending items against final discounts table
-    const today = new Date().toISOString().slice(0, 10)
+    const today = toWarsawDateOnly(new Date().toISOString()) as string
     const cmap: Record<string, StagingClass> = {}
     for (const item of all) {
       if (item.status === 'pending') {

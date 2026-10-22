@@ -1,4 +1,5 @@
 import { getAdminUser, getService } from '@/lib/adminAuth'
+import { toWarsawValidFrom, toWarsawValidUntil } from '@/lib/dates'
 
 export async function POST(request: Request) {
   const user = await getAdminUser()
@@ -68,8 +69,9 @@ export async function POST(request: Request) {
       code: o.code ?? staging.code ?? '',
       percentage: o.percentage !== undefined ? o.percentage : staging.percentage,
       fixed_amount: o.fixed_amount !== undefined ? o.fixed_amount : staging.fixed_amount,
-      valid_from: o.valid_from !== undefined ? o.valid_from : staging.valid_from,
-      valid_until: o.valid_until !== undefined ? o.valid_until : staging.valid_until,
+      // discount_staging trzyma DATE; discounts zapisuje 00:01 / 23:59 czasu Europe/Warsaw
+      valid_from: toWarsawValidFrom(o.valid_from !== undefined ? o.valid_from : staging.valid_from),
+      valid_until: toWarsawValidUntil(o.valid_until !== undefined ? o.valid_until : staging.valid_until),
       description: o.description !== undefined ? o.description : staging.description,
       min_days: o.min_days !== undefined ? o.min_days : staging.min_days,
       max_days: o.max_days !== undefined ? o.max_days : staging.max_days,

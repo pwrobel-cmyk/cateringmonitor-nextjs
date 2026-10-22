@@ -10,6 +10,7 @@ import { LineChart, Line, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Cart
 import { Progress } from "@/components/ui/progress";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
+import { formatWarsawDate } from "@/lib/dates";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useReviewAspects } from "@/hooks/supabase/useReviewAspects";
 import { useMemo } from "react";
@@ -1340,7 +1341,7 @@ export default function WygodnaDietaSummary2025() {
                         <Badge variant={idx === 0 ? 'default' : 'secondary'}>{code.percentage}%</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {code.description || 'Brak opisu'} | {code.valid_from ? format(new Date(code.valid_from), 'd MMM', { locale: pl }) : '?'} - {code.valid_until ? format(new Date(code.valid_until), 'd MMM', { locale: pl }) : '?'}
+                        {code.description || 'Brak opisu'} | {formatWarsawDate(code.valid_from, { day: 'numeric', month: 'short' }, '?')} - {formatWarsawDate(code.valid_until, { day: 'numeric', month: 'short' }, '?')}
                       </p>
                     </div>
                   ))}

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar, Copy } from "lucide-react";
 import { Discount } from "@/hooks/supabase/useDiscounts";
 import { toast } from "sonner";
+import { formatWarsawDate } from "@/lib/dates";
 
 interface DiscountTimelineProps {
   discounts: Discount[];
@@ -18,12 +19,7 @@ export function DiscountTimeline({ discounts }: DiscountTimelineProps) {
   };
 
   const formatDate = (date: string | null) => {
-    if (!date) return "Brak daty";
-    return new Date(date).toLocaleDateString("pl-PL", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+    return formatWarsawDate(date, { day: "2-digit", month: "short", year: "numeric" }, "Brak daty");
   };
 
   const getDaysRemaining = (validUntil: string | null) => {
