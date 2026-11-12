@@ -78,7 +78,7 @@ export function BrandParametersComparison({ timeFilter = "all" }: BrandParameter
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[150px]">Parametr</TableHead>
+                <TableHead className="sticky left-0 z-10 w-[150px] bg-card shadow-[1px_0_0_var(--color-border)]">Parametr</TableHead>
                 {brands.map((brand) => (
                   <TableHead key={brand} className="text-center min-w-[150px]">
                     {brand}
@@ -89,7 +89,7 @@ export function BrandParametersComparison({ timeFilter = "all" }: BrandParameter
             <TableBody>
               {topics.map((topic) => (
                 <TableRow key={topic}>
-                  <TableCell className="font-medium capitalize">{topic}</TableCell>
+                  <TableCell className="sticky left-0 z-10 bg-card font-medium capitalize shadow-[1px_0_0_var(--color-border)]">{topic}</TableCell>
                   {brands.map((brand) => {
                     const data = brandData[brand]?.[topic];
                     if (!data || data.mentions === 0) {
