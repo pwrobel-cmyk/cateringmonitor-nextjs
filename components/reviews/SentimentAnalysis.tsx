@@ -10,12 +10,14 @@ import { Loader2 } from "lucide-react";
 
 interface SentimentAnalysisProps {
   brands: Array<{ id: string; name: string; logo_url?: string }>;
+  timeFilter?: string;
+  excludeDietly?: boolean;
 }
 
-export function SentimentAnalysis({ brands }: SentimentAnalysisProps) {
+export function SentimentAnalysis({ brands, timeFilter = "all", excludeDietly = false }: SentimentAnalysisProps) {
   const [selectedBrand, setSelectedBrand] = useState<string>("");
   const [comparedBrand, setComparedBrand] = useState<string>("");
-  const { data: statsData, isLoading } = useReviewsStats();
+  const { data: statsData, isLoading } = useReviewsStats(timeFilter, excludeDietly);
 
   if (!brands.length) return null;
 

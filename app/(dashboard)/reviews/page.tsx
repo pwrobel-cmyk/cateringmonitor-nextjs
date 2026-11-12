@@ -70,7 +70,7 @@ export default function ReviewsPage() {
     timeFilter,
     excludeDietly
   );
-  const { data: statsData } = useReviewsStats();
+  const { data: statsData } = useReviewsStats(timeFilter, excludeDietly);
 
   const { data: reviewsData, isLoading: isLoadingReviews } = useReviews(
     page,
@@ -353,7 +353,7 @@ export default function ReviewsPage() {
 
         {/* Tab: Rozkład ocen */}
         <TabsContent value="ratings" className="space-y-4">
-          <BrandParametersComparison />
+          <BrandParametersComparison timeFilter={timeFilter} />
 
           {statsData && (
             <div className="space-y-4">
@@ -366,6 +366,7 @@ export default function ReviewsPage() {
                     brandName={brandName}
                     brandId={brand?.id}
                     logoUrl={brand?.logo_url ?? undefined}
+                    timeFilter={timeFilter}
                     stats={stats}
                   />
                 );
@@ -377,7 +378,7 @@ export default function ReviewsPage() {
         {/* Tab: Sentyment */}
         <TabsContent value="sentiment">
           {brands && brands.length > 0 ? (
-            <SentimentAnalysis brands={brands.map(b => ({ ...b, logo_url: b.logo_url ?? undefined }))} />
+            <SentimentAnalysis brands={brands.map(b => ({ ...b, logo_url: b.logo_url ?? undefined }))} timeFilter={timeFilter} excludeDietly={excludeDietly} />
           ) : (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -393,7 +394,7 @@ export default function ReviewsPage() {
         {/* Tab: Słowa kluczowe */}
         <TabsContent value="keywords">
           {brands && brands.length > 0 ? (
-            <KeywordAnalysis brands={brands.map(b => ({ ...b, logo_url: b.logo_url ?? undefined }))} timeFilter={timeFilter} />
+            <KeywordAnalysis brands={brands.map(b => ({ ...b, logo_url: b.logo_url ?? undefined }))} timeFilter={timeFilter} excludeDietly={excludeDietly} />
           ) : (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

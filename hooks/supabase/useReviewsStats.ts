@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 
-export function useReviewsStats() {
+export function useReviewsStats(timeFilter: string = "all", excludeDietly: boolean = false) {
   return useQuery({
-    queryKey: ["reviews-stats"],
+    queryKey: ["reviews-stats", timeFilter, excludeDietly],
     queryFn: async () => {
-      const { data, error } = await (supabase as any).rpc("get_reviews_stats");
+      const { data, error } = await (supabase as any).rpc("get_reviews_stats", {
+        time_filter: timeFilter === "all" ? null : timeFilter,
+        exclude_dietly: excludeDietly,
+      });
 
       if (error) throw error;
 

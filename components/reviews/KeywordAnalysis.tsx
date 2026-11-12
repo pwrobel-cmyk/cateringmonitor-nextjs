@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 interface KeywordAnalysisProps {
   brands: Array<{ id: string; name: string; logo_url?: string }>;
   timeFilter?: string;
+  excludeDietly?: boolean;
 }
 
 interface KeywordData {
@@ -67,8 +68,8 @@ function useAllBrandKeywords(brandName: string, statsData: any) {
   return stats || null;
 }
 
-export function KeywordAnalysis({ brands }: KeywordAnalysisProps) {
-  const { data: statsData, isLoading } = useReviewsStats();
+export function KeywordAnalysis({ brands, timeFilter = "all", excludeDietly = false }: KeywordAnalysisProps) {
+  const { data: statsData, isLoading } = useReviewsStats(timeFilter, excludeDietly);
 
   if (isLoading) {
     return (

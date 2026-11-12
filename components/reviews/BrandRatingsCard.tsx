@@ -12,6 +12,7 @@ interface BrandRatingsCardProps {
   brandName: string;
   brandId?: string;
   logoUrl?: string;
+  timeFilter?: string;
   stats: {
     total: number;
     avg: number;
@@ -75,9 +76,9 @@ const analyzeReviewContent = (reviews: Array<{ content: string; rating: number }
     .slice(0, 6);
 };
 
-export function BrandRatingsCard({ brandName, brandId, logoUrl, stats }: BrandRatingsCardProps) {
+export function BrandRatingsCard({ brandName, brandId, logoUrl, timeFilter = "all", stats }: BrandRatingsCardProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const { data: reviews, isLoading } = useBrandReviews(isOpen ? (brandId || null) : null);
+  const { data: reviews, isLoading } = useBrandReviews(isOpen ? (brandId || null) : null, timeFilter);
 
   const topicAnalysis = reviews && reviews.length > 0 ? analyzeReviewContent(reviews) : [];
 

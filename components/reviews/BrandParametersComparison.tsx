@@ -20,13 +20,17 @@ interface BrandTopics {
   };
 }
 
-export function BrandParametersComparison() {
+interface BrandParametersComparisonProps {
+  timeFilter?: string;
+}
+
+export function BrandParametersComparison({ timeFilter = "all" }: BrandParametersComparisonProps) {
   const { data: brandData, isLoading } = useQuery({
-    queryKey: ["brand-parameters-comparison"],
+    queryKey: ["brand-parameters-comparison", timeFilter],
     queryFn: async () => {
       const { data, error } = await (supabase as any).rpc("get_brand_parameters_comparison", {
         filter_brand_id: null,
-        time_filter: null
+        time_filter: timeFilter === "all" ? null : timeFilter
       });
 
       if (error) throw error;

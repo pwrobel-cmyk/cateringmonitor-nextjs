@@ -9,9 +9,7 @@ export function useReviewsStatistics(brandId?: string | null, timeFilter: string
     refetchOnMount: "always" as const,
     refetchOnWindowFocus: "always" as const,
     queryFn: async () => {
-      const dbTimeFilter = timeFilter === "all" ? null :
-        timeFilter === "3months" ? "6months" :
-        timeFilter;
+      const dbTimeFilter = timeFilter === "all" ? null : timeFilter;
 
       const { data, error } = await (supabase as any)
         .rpc("get_reviews_statistics", {
