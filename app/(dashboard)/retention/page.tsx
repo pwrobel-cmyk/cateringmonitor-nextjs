@@ -6,18 +6,16 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { AlertTriangle, BrainCircuit, TrendingDown, TrendingUp } from 'lucide-react'
-import {
-  CartesianGrid, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis,
-} from 'recharts'
+import { AlertTriangle, BrainCircuit, CheckCircle2, ThumbsUp, TrendingUp } from 'lucide-react'
 import { useRetentionModel } from '@/hooks/useRetentionModel'
 import { useUserBrands } from '@/hooks/useUserBrands'
-import { computeValue, diagnoseBrand, predictPriceEffect } from '@/lib/retentionModel'
+import {
+  buildOwnerReport, computeValue, predictPriceEffect, type OwnerTopic,
+} from '@/lib/retentionModel'
 
 const zl = (n: number) =>
   new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0 }).format(Math.round(n)) + ' zł'
-const pct = (x: number, digits = 1) => (x * 100).toFixed(digits).replace('.', ',') + '%'
+const n0 = (x: number) => Math.round(x).toString()
 const pp = (x: number) => (x > 0 ? '+' : '') + x.toFixed(1).replace('.', ',') + ' pp'
 
 function NumberField(props: {
@@ -41,6 +39,28 @@ function NumberField(props: {
   )
 }
 
+function Quotes({ topic }: { topic: OwnerTopic }) {
+  if (topic.examples.length === 0) return null
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="text-xs font-medium text-muted-foreground">Ostatnie negatywne opinie klientów</div>
+      {topic.examples.map((e, i) => (
+        <blockquote key={i} className="border-l-2 border-border pl-3 text-sm">
+          „{e.text}”
+          <span className="ml-2 text-xs text-muted-foreground whitespace-nowrap">{e.date} · ocena {e.rating}/5</span>
+        </blockquote>
+      ))}
+    </div>
+  )
+}
+
+function Position({ topic }: { topic: OwnerTopic }) {
+  if (topic.rank === null) return null
+  return (
+    <Badge variant="outline">{topic.rank}. miejsce na {topic.rankedBrands} marek</Badge>
+  )
+}
+
 export default function RetentionPage() {
   const { data, isLoading, error } = useRetentionModel()
   const { assignedBrandIds } = useUserBrands()
@@ -59,18 +79,15 @@ export default function RetentionPage() {
     setBrandId((assigned || data.brands[0]).id)
   }, [brandId, data, assignedBrandIds])
 
-  const diagnosis = useMemo(
-    () => (data && brandId ? diagnoseBrand(brandId, data.reviews, data.aspectModel) : null),
+  const report = useMemo(
+    () => (data && brandId ? buildOwnerReport(brandId, data.reviews) : null),
     [data, brandId]
   )
 
   const value = computeValue({ activeCustomers, revenuePerCustomer, marginPct, churnPct })
   const priceModel = data?.priceModel
-  const prediction = priceModel ? predictPriceEffect(priceModel, plannedChange) : null
-  const brandEvents = priceModel?.events.filter((e) => e.brandId === brandId) ?? []
-  const scatter = (priceModel?.events ?? []).map((e) => ({
-    x: e.changePercent, y: Number(e.did.toFixed(2)), own: e.brandId === brandId,
-  }))
+  const priceUsable = !!priceModel && (priceModel.reliability === 'średnia' || priceModel.reliability === 'wysoka')
+  const prediction = priceModel && priceUsable ? predictPriceEffect(priceModel, plannedChange) : null
 
   if (isLoading) {
     return (
@@ -82,12 +99,12 @@ export default function RetentionPage() {
     )
   }
 
-  if (error || !data) {
+  if (error || !data || !report) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-destructive">
-            <AlertTriangle className="h-5 w-5" /> Nie udało się przeliczyć modelu
+            <AlertTriangle className="h-5 w-5" /> Nie udało się przygotować raportu
           </CardTitle>
           <CardDescription>{error ? String((error as Error).message) : 'Brak danych.'}</CardDescription>
         </CardHeader>
@@ -95,10 +112,9 @@ export default function RetentionPage() {
     )
   }
 
-  const topDrivers = (diagnosis?.drivers ?? []).filter((d) => d.mentions >= 10)
-  const excessTotal = diagnosis && diagnosis.expectedNegatives !== null
-    ? diagnosis.negatives - diagnosis.expectedNegatives
-    : null
+  const brandName = data.brands.find((b) => b.id === brandId)?.name ?? ''
+  const better = report.brandPer100 <= report.marketPer100
+  const nothingToFix = report.worsening.length === 0 && report.losing.length === 0
 
   return (
     <div className="space-y-6">
@@ -109,8 +125,7 @@ export default function RetentionPage() {
             Retencja i ceny
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Model trenowany na {data.reviews.length.toLocaleString('pl-PL')} opiniach rynku od {data.since}
-            {data.truncated && ' (osiągnięto limit pobierania — starsze opinie pominięte)'}
+            Na podstawie {data.reviews.length.toLocaleString('pl-PL')} opinii o {data.brands.length} markach od {data.since}
           </p>
         </div>
         <div className="space-y-1.5">
@@ -128,183 +143,168 @@ export default function RetentionPage() {
         </div>
       </div>
 
-      {!data.aspectModel && (
+      {report.reviewsUsed < 50 ? (
         <Card>
           <CardContent className="flex items-center gap-2 pt-6 text-sm">
             <AlertTriangle className="h-4 w-4 text-amber-600" />
-            Za mało opinii z treścią i oceną (minimum 200), żeby wytrenować model rynkowy. Tabela pokazuje same zliczenia.
+            {brandName} ma tylko {report.reviewsUsed} opinii z treścią w tym okresie. To za mało na wiarygodne wnioski.
           </CardContent>
         </Card>
+      ) : (
+        <>
+          {/* Werdykt */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-lg font-semibold">
+                {n0(report.brandPer100)} na 100 opinii o {brandName} jest negatywnych. Średnia konkurencji: {n0(report.marketPer100)} na 100.
+              </div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {better ? 'Lepiej niż rynek.' : 'Gorzej niż rynek.'}
+                {report.overallRank !== null && ` ${report.overallRank}. miejsce na ${report.overallRankedBrands} marek pod względem najmniejszego udziału negatywnych opinii.`}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Do naprawy */}
+          <div className="space-y-3">
+            <h2 className="text-lg font-semibold">Do naprawy</h2>
+
+            {nothingToFix && (
+              <Card>
+                <CardContent className="flex items-center gap-2 pt-6 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  W żadnym temacie nie jest gorzej niż u konkurencji i nic nie pogorszyło się w ostatnich 90 dniach.
+                </CardContent>
+              </Card>
+            )}
+
+            {report.worsening.map((t) => (
+              <Card key={'w-' + t.aspect} className="border-destructive/40">
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2 capitalize">
+                    <TrendingUp className="h-5 w-5 text-destructive" />
+                    {t.aspect}
+                    <Badge variant="destructive">pogarsza się</Badge>
+                    <Position topic={t} />
+                  </CardTitle>
+                  <CardDescription>
+                    W ostatnich 90 dniach {n0(t.recentPer100!)} na 100 opinii o tym temacie było negatywnych. W poprzednich 90 dniach: {n0(t.previousPer100!)} na 100.
+                    {' '}Konkurencja: {n0(t.marketPer100)} na 100.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent><Quotes topic={t} /></CardContent>
+              </Card>
+            ))}
+
+            {report.losing.map((t) => (
+              <Card key={'l-' + t.aspect}>
+                <CardHeader>
+                  <CardTitle className="flex flex-wrap items-center gap-2 capitalize">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    {t.aspect}
+                    <Badge variant="outline">gorzej niż konkurencja</Badge>
+                    <Position topic={t} />
+                  </CardTitle>
+                  <CardDescription>
+                    {n0(t.brandPer100)} na 100 opinii o tym temacie jest negatywnych. U konkurencji: {n0(t.marketPer100)} na 100.
+                    {' '}To {t.negatives} negatywnych opinii w analizowanym okresie.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent><Quotes topic={t} /></CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Przewagi */}
+          {report.strengths.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ThumbsUp className="h-5 w-5 text-green-600" />
+                  Przewagi nad konkurencją
+                </CardTitle>
+                <CardDescription>Tematy, w których klienci narzekają wyraźnie rzadziej niż u konkurencji. Materiał do komunikacji marketingowej.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2 text-sm">
+                  {report.strengths.map((t) => (
+                    <li key={t.aspect} className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium capitalize">{t.aspect}</span>
+                      <span className="text-muted-foreground">
+                        {n0(t.brandPer100)} na 100 negatywnych, konkurencja {n0(t.marketPer100)} na 100
+                      </span>
+                      <Position topic={t} />
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
-      {/* 1. Przyczyny negatywnych opinii */}
+      {/* Cena */}
       <Card>
         <CardHeader>
-          <CardTitle>Co generuje negatywne opinie</CardTitle>
-          <CardDescription>
-            {diagnosis && diagnosis.reviewsUsed > 0 ? (
-              <>
-                {diagnosis.reviewsUsed.toLocaleString('pl-PL')} opinii marki, w tym {diagnosis.negatives} negatywnych ({pct(diagnosis.negativeRate)}).
-                {excessTotal !== null && (
-                  <> Model rynkowy dla takiego miksu tematów przewiduje {Math.round(diagnosis.expectedNegatives!)}, czyli różnica {excessTotal > 0 ? '+' : ''}{Math.round(excessTotal)}.</>
-                )}
-              </>
-            ) : 'Brak opinii tej marki w analizowanym okresie.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {topDrivers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Żaden temat nie ma co najmniej 10 wzmianek.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Temat</TableHead>
-                  <TableHead className="text-right">Wzmianki</TableHead>
-                  <TableHead className="text-right">Negatywne u marki</TableHead>
-                  <TableHead className="text-right">Negatywne na rynku</TableHead>
-                  <TableHead className="text-right">Ponad normę rynku</TableHead>
-                  <TableHead className="text-right">Trend 90 dni</TableHead>
-                  <TableHead className="text-right">Waga rynkowa</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {topDrivers.map((d) => (
-                  <TableRow key={d.aspect}>
-                    <TableCell className="font-medium capitalize">{d.aspect}</TableCell>
-                    <TableCell className="text-right">{d.mentions}</TableCell>
-                    <TableCell className="text-right">{pct(d.brandNegRate)}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">{pct(d.marketNegRate)}</TableCell>
-                    <TableCell className="text-right">
-                      {d.excessNegatives >= 1 ? (
-                        <Badge variant="destructive">+{Math.round(d.excessNegatives)} opinii</Badge>
-                      ) : (
-                        <span className="text-muted-foreground">{Math.round(d.excessNegatives)}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {d.trendPp === null ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <span className={`inline-flex items-center gap-1 ${d.trendPp > 0 ? 'text-destructive' : 'text-green-600'}`}>
-                          {d.trendPp > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                          {pp(d.trendPp)}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right text-muted-foreground">
-                      {data.aspectModel ? '×' + d.marketOddsRatio.toFixed(2).replace('.', ',') : '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-          <p className="mt-3 text-xs text-muted-foreground">
-            „Ponad normę rynku” = liczba negatywnych opinii z danym tematem powyżej tego, co wynikałoby z rynkowego odsetka.
-            „Waga rynkowa” = ile razy wzmianka o temacie zwiększa szansę, że opinia jest negatywna (regresja logistyczna, ocena ≤ 2).
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* 2. Cena */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            Zmiana ceny a opinie
-            <Badge variant={priceModel?.reliability === 'wysoka' ? 'default' : 'outline'}>
-              wiarygodność: {priceModel?.reliability}
-            </Badge>
-          </CardTitle>
-          <CardDescription>
-            {priceModel?.n ?? 0} zmian cen na rynku z wystarczającą liczbą opinii w oknie ±{priceModel?.windowDays} dni
-            (z {data.priceChangesCount.toLocaleString('pl-PL')} zarejestrowanych zmian), w tym {brandEvents.length} tej marki.
-            {data.priceError && ` Błąd pobierania zmian cen: ${data.priceError}`}
-          </CardDescription>
+          <CardTitle>Czy podwyżka ceny pogorszy opinie</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {priceModel && priceModel.slope !== null ? (
-            <>
-              <div className="grid gap-4 md:grid-cols-3">
-                <NumberField id="planned" label="Planowana zmiana ceny" value={plannedChange} onChange={setPlannedChange} step={0.5} suffix="%" />
-                <div className="md:col-span-2 rounded-lg border p-3 text-sm">
-                  {prediction && (
-                    <>
-                      <div className="text-muted-foreground">Przewidywana zmiana udziału negatywnych opinii względem rynku</div>
-                      <div className="text-2xl font-bold">{pp(prediction.pointPp)}</div>
-                      {prediction.lowPp !== null && prediction.highPp !== null && (
-                        <div className="text-muted-foreground">
-                          przedział 95%: od {pp(prediction.lowPp)} do {pp(prediction.highPp)}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
+          {priceUsable && prediction ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              <NumberField id="planned" label="Planowana zmiana ceny" value={plannedChange} onChange={setPlannedChange} step={0.5} suffix="%" />
+              <div className="md:col-span-2 rounded-lg border p-3 text-sm">
+                <div className="text-muted-foreground">Przewidywana zmiana udziału negatywnych opinii względem konkurencji</div>
+                <div className="text-2xl font-bold">{pp(prediction.pointPp)}</div>
+                {prediction.lowPp !== null && prediction.highPp !== null && (
+                  <div className="text-muted-foreground">
+                    najpewniej między {pp(prediction.lowPp)} a {pp(prediction.highPp)}, na podstawie {priceModel!.n} podwyżek i obniżek na rynku
+                  </div>
+                )}
               </div>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" dataKey="x" name="Zmiana ceny" unit="%" label={{ value: 'zmiana ceny (%)', position: 'bottom', offset: 4 }} />
-                    <YAxis type="number" dataKey="y" name="Zmiana negatywów" unit=" pp" />
-                    <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                    <Scatter name="Rynek" data={scatter.filter((s) => !s.own)} fill="hsl(var(--muted-foreground))" fillOpacity={0.45} />
-                    <Scatter name="Wybrana marka" data={scatter.filter((s) => s.own)} fill="hsl(var(--primary))" />
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Każdy punkt to jedna zmiana ceny. Oś pionowa: zmiana udziału negatywnych opinii marki minus zmiana na reszcie rynku w tym samym czasie.
-                Nachylenie: {priceModel.slope.toFixed(2).replace('.', ',')} pp na 1% ceny
-                {priceModel.slopeStdErr !== null && ` (błąd standardowy ${priceModel.slopeStdErr.toFixed(2).replace('.', ',')})`}
-                {priceModel.r2 !== null && `, R² ${priceModel.r2.toFixed(2).replace('.', ',')}`}.
-              </p>
-            </>
+            </div>
           ) : (
-            <p className="flex items-center gap-2 text-sm">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              Za mało zmian cen z opiniami po obu stronach (minimum 5), żeby oszacować zależność. Model uzupełni się sam wraz z nowymi danymi.
+            <p className="text-sm text-muted-foreground">
+              Jeszcze nie wiadomo. Do rzetelnej odpowiedzi potrzeba co najmniej 25 zmian cen na rynku, wokół których jest wystarczająco dużo opinii.
+              Dziś jest ich {priceModel?.n ?? 0}. Prognoza pojawi się tu sama, gdy danych przybędzie.
             </p>
           )}
         </CardContent>
       </Card>
 
-      {/* 3. Wartość */}
+      {/* Wartość */}
       <Card>
         <CardHeader>
-          <CardTitle>Ile to jest warte</CardTitle>
-          <CardDescription>Arytmetyka na Twoich liczbach. Wpisz dane swojego cateringu.</CardDescription>
+          <CardTitle>Ile to jest warte w Twojej firmie</CardTitle>
+          <CardDescription>Wpisz swoje liczby.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <NumberField id="customers" label="Aktywni klienci" value={activeCustomers} onChange={setActiveCustomers} />
             <NumberField id="revenue" label="Przychód na klienta" value={revenuePerCustomer} onChange={setRevenuePerCustomer} suffix="zł/mies." />
             <NumberField id="margin" label="Marża" value={marginPct} onChange={setMarginPct} step={0.5} suffix="%" />
-            <NumberField id="churn" label="Churn miesięczny" value={churnPct} onChange={setChurnPct} step={0.5} suffix="%" />
+            <NumberField id="churn" label="Odejścia klientów miesięcznie" value={churnPct} onChange={setChurnPct} step={0.5} suffix="%" />
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-lg border p-3">
-              <div className="text-sm text-muted-foreground">+1% ceny bez utraty klientów</div>
+              <div className="text-sm text-muted-foreground">Podwyżka o 1% bez utraty klientów</div>
               <div className="text-2xl font-bold">{zl(value.valueOfOnePctPrice)}</div>
-              <div className="text-xs text-muted-foreground">zysku miesięcznie</div>
+              <div className="text-xs text-muted-foreground">więcej zysku co miesiąc</div>
             </div>
             <div className="rounded-lg border p-3">
-              <div className="text-sm text-muted-foreground">1 pp churnu mniej</div>
+              <div className="text-sm text-muted-foreground">
+                {Math.round(activeCustomers * 0.01)} klientów mniej odchodzi co miesiąc
+              </div>
               <div className="text-2xl font-bold">{zl(value.valueOfOnePpChurn)}</div>
-              <div className="text-xs text-muted-foreground">zysku miesięcznie</div>
+              <div className="text-xs text-muted-foreground">więcej zysku co miesiąc</div>
             </div>
             <div className="rounded-lg border p-3">
               <div className="text-sm text-muted-foreground">Jeden zatrzymany klient</div>
               <div className="text-2xl font-bold">{zl(value.profitPerSavedCustomer)}</div>
               <div className="text-xs text-muted-foreground">
-                zysku przez {value.lifetimeMonths.toFixed(1).replace('.', ',')} mies. życia klienta
+                zysku, bo zostaje średnio {value.lifetimeMonths.toFixed(1).replace('.', ',')} mies.
               </div>
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Model nie łączy jeszcze opinii z odejściami klientów. Do tego potrzebne są dane o zamówieniach cateringu.
-          </p>
         </CardContent>
       </Card>
     </div>

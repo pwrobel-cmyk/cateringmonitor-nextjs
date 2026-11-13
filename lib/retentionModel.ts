@@ -412,3 +412,145 @@ export function computeValue(v: ValueInputs) {
     valueOfOnePctPrice: monthlyRevenue * 0.01,
   };
 }
+
+// ---------------------------------------------------------------------------
+// D) Raport dla właściciela: co się psuje, gdzie przegrywa, w czym wygrywa
+// ---------------------------------------------------------------------------
+
+export interface ReviewExample {
+  date: string;
+  rating: number;
+  text: string;
+}
+
+export interface OwnerTopic {
+  aspect: string;
+  mentions: number;
+  negatives: number;
+  brandPer100: number; // negatywnych na 100 opinii o temacie
+  marketPer100: number;
+  rank: number | null; // 1 = najmniej negatywów wśród marek z wystarczającą liczbą wzmianek
+  rankedBrands: number;
+  recentPer100: number | null; // ostatnie 90 dni
+  previousPer100: number | null; // poprzednie 90 dni
+  recentNegatives: number; // negatywne z ostatnich 90 dni
+  examples: ReviewExample[]; // najnowsze negatywne opinie o temacie
+}
+
+export interface OwnerReport {
+  reviewsUsed: number;
+  brandPer100: number;
+  marketPer100: number;
+  overallRank: number | null;
+  overallRankedBrands: number;
+  worsening: OwnerTopic[]; // rośnie udział negatywów w ostatnich 90 dniach
+  losing: OwnerTopic[]; // gorzej niż rynek
+  strengths: OwnerTopic[]; // wyraźnie lepiej niż rynek
+  all: OwnerTopic[];
+}
+
+const MIN_RANK_MENTIONS = 20;
+
+function clip(text: string, max = 240): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > max ? t.slice(0, max).trimEnd() + "…" : t;
+}
+
+export function buildOwnerReport(
+  brandId: string,
+  reviews: ReviewRow[],
+  now: number = Date.now()
+): OwnerReport {
+  const k = ASPECT_KEYS.length;
+  // per marka: [wzmianki, negatywy] na temat + ogółem
+  const per = new Map<string, { m: number[]; n: number[]; total: number; neg: number }>();
+  const recentM = new Array<number>(k).fill(0);
+  const recentN = new Array<number>(k).fill(0);
+  const prevM = new Array<number>(k).fill(0);
+  const prevN = new Array<number>(k).fill(0);
+  const examples: ReviewExample[][] = ASPECT_KEYS.map(() => []);
+
+  for (const r of reviews) {
+    if (r.rating === null || r.rating === undefined) continue;
+    if (!r.content || r.content.trim().length < 3) continue;
+    const x = detectAspects(r.content);
+    const neg = r.rating <= 2 ? 1 : 0;
+    let b = per.get(r.brand_id);
+    if (!b) {
+      b = { m: new Array<number>(k).fill(0), n: new Array<number>(k).fill(0), total: 0, neg: 0 };
+      per.set(r.brand_id, b);
+    }
+    b.total++;
+    b.neg += neg;
+    const own = r.brand_id === brandId;
+    const age = own ? (now - toTime(r.review_date)) / DAY_MS : 0;
+    for (let j = 0; j < k; j++) {
+      if (!x[j]) continue;
+      b.m[j]++;
+      b.n[j] += neg;
+      if (!own) continue;
+      if (age >= 0 && age < 90) { recentM[j]++; recentN[j] += neg; }
+      else if (age >= 90 && age < 180) { prevM[j]++; prevN[j] += neg; }
+      if (neg) examples[j].push({ date: r.review_date.slice(0, 10), rating: r.rating, text: clip(r.content) });
+    }
+  }
+
+  const own = per.get(brandId) ?? { m: new Array<number>(k).fill(0), n: new Array<number>(k).fill(0), total: 0, neg: 0 };
+
+  let mktTotal = 0, mktNeg = 0;
+  const overallRates: { id: string; rate: number }[] = [];
+  for (const [id, b] of per) {
+    if (id !== brandId) { mktTotal += b.total; mktNeg += b.neg; }
+    if (b.total >= 50) overallRates.push({ id, rate: b.neg / b.total });
+  }
+  overallRates.sort((a, b) => a.rate - b.rate);
+  const overallIdx = overallRates.findIndex((r) => r.id === brandId);
+
+  const all: OwnerTopic[] = ASPECT_KEYS.map((aspect, j) => {
+    let mM = 0, mN = 0;
+    const rates: { id: string; rate: number }[] = [];
+    for (const [id, b] of per) {
+      if (id !== brandId) { mM += b.m[j]; mN += b.n[j]; }
+      if (b.m[j] >= MIN_RANK_MENTIONS) rates.push({ id, rate: b.n[j] / b.m[j] });
+    }
+    rates.sort((a, b) => a.rate - b.rate);
+    const idx = rates.findIndex((r) => r.id === brandId);
+    examples[j].sort((a, b) => (a.date < b.date ? 1 : -1));
+    return {
+      aspect,
+      mentions: own.m[j],
+      negatives: own.n[j],
+      brandPer100: own.m[j] > 0 ? (own.n[j] / own.m[j]) * 100 : 0,
+      marketPer100: mM > 0 ? (mN / mM) * 100 : 0,
+      rank: idx >= 0 ? idx + 1 : null,
+      rankedBrands: rates.length,
+      recentPer100: recentM[j] >= 10 ? (recentN[j] / recentM[j]) * 100 : null,
+      previousPer100: prevM[j] >= 10 ? (prevN[j] / prevM[j]) * 100 : null,
+      recentNegatives: recentN[j],
+      examples: examples[j].slice(0, 3),
+    };
+  });
+
+  const worsening = all
+    .filter((t) => t.recentPer100 !== null && t.previousPer100 !== null && t.recentPer100 - t.previousPer100 >= 3 && t.recentNegatives >= 3)
+    .sort((a, b) => (b.recentPer100! - b.previousPer100!) - (a.recentPer100! - a.previousPer100!));
+  const worseningSet = new Set(worsening.map((t) => t.aspect));
+  const losing = all
+    .filter((t) => !worseningSet.has(t.aspect) && t.mentions >= MIN_RANK_MENTIONS && t.negatives >= 5 && t.brandPer100 - t.marketPer100 >= 3)
+    .sort((a, b) => (b.brandPer100 - b.marketPer100) - (a.brandPer100 - a.marketPer100));
+  const strengths = all
+    .filter((t) => !worseningSet.has(t.aspect) && t.mentions >= 30 && t.marketPer100 - t.brandPer100 >= 5)
+    .sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || (b.marketPer100 - b.brandPer100) - (a.marketPer100 - a.brandPer100));
+
+  return {
+    reviewsUsed: own.total,
+    brandPer100: own.total > 0 ? (own.neg / own.total) * 100 : 0,
+    marketPer100: mktTotal > 0 ? (mktNeg / mktTotal) * 100 : 0,
+    overallRank: overallIdx >= 0 ? overallIdx + 1 : null,
+    overallRankedBrands: overallRates.length,
+    worsening,
+    losing,
+    strengths,
+    all,
+  };
+}
