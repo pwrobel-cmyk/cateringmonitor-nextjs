@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Trophy,
   LayoutGrid,
+  BrainCircuit,
 } from "lucide-react";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -37,6 +38,7 @@ const navigation: { name: string; href: string; icon: any; beta?: boolean }[] = 
   { name: "Raporty", href: "/reports", icon: BarChart3 },
   { name: "Screenshots", href: "/screenshots", icon: Camera },
   { name: "Review Manager", href: "/review-manager", icon: MessageSquare, beta: true },
+  { name: "Retencja i ceny", href: "/retention", icon: BrainCircuit, beta: true },
 ];
 
 const infografikiSubItems = [
