@@ -6,16 +6,19 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AlertTriangle, BrainCircuit, CheckCircle2, ThumbsUp, TrendingUp } from 'lucide-react'
 import { useRetentionModel } from '@/hooks/useRetentionModel'
 import { useUserBrands } from '@/hooks/useUserBrands'
 import {
-  buildOwnerReport, computeValue, predictPriceEffect, type OwnerTopic,
+  buildOwnerReport, buildPricePosition, computeValue, predictPriceEffect, type OwnerTopic,
 } from '@/lib/retentionModel'
 
 const zl = (n: number) =>
   new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 0 }).format(Math.round(n)) + ' zł'
 const n0 = (x: number) => Math.round(x).toString()
+const zl2 = (n: number) => n.toFixed(2).replace('.', ',') + ' zł'
+const pct1 = (x: number) => Math.abs(x).toFixed(1).replace('.', ',') + '%'
 const pp = (x: number) => (x > 0 ? '+' : '') + x.toFixed(1).replace('.', ',') + ' pp'
 
 function NumberField(props: {
@@ -84,6 +87,12 @@ export default function RetentionPage() {
     [data, brandId]
   )
 
+  const brandNameForPrice = data?.brands.find((b) => b.id === brandId)?.name ?? ''
+  const position = useMemo(
+    () => (data && brandNameForPrice ? buildPricePosition(brandNameForPrice, data.offers, data.qualityByName) : null),
+    [data, brandNameForPrice]
+  )
+
   const value = computeValue({ activeCustomers, revenuePerCustomer, marginPct, churnPct })
   const priceModel = data?.priceModel
   const priceUsable = !!priceModel && (priceModel.reliability === 'średnia' || priceModel.reliability === 'wysoka')
@@ -142,6 +151,101 @@ export default function RetentionPage() {
           </select>
         </div>
       </div>
+
+      {/* Pozycja cenowa */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Czy Twoje ceny są za niskie</CardTitle>
+          <CardDescription>
+            Każdy pakiet porównany z cenami innych marek w tym samym typie diety i kaloryczności
+            {position?.qualityPremiumTrusted ? ', z poprawką na to, jak klienci oceniają markę.' : '.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {data.offersError && (
+            <p className="flex items-center gap-2 text-sm">
+              <AlertTriangle className="h-4 w-4 text-amber-600" /> Nie udało się pobrać aktualnych cen: {data.offersError}
+            </p>
+          )}
+          {!position || position.compared === 0 || position.avgGapPct === null ? (
+            <p className="text-sm text-muted-foreground">
+              Brak pakietów tej marki, które mają co najmniej 3 konkurentów w tym samym typie diety i kaloryczności.
+            </p>
+          ) : (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-lg border p-4">
+                  <div className="text-lg font-semibold">
+                    {Math.abs(position.avgGapPct) < 1.5
+                      ? `Ceny ${brandName} są na poziomie rynku.`
+                      : position.avgGapPct > 0
+                        ? `${brandName} jest średnio ${pct1(position.avgGapPct)} tańszy niż rynek.`
+                        : `${brandName} jest średnio ${pct1(position.avgGapPct)} droższy niż rynek.`}
+                  </div>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    Porównano {position.compared} pakietów.
+                    {position.skipped > 0 && ` ${position.skipped} pominięto, bo mają mniej niż 3 konkurentów.`}
+                  </div>
+                </div>
+                {position.avgGapPct >= 1.5 && (
+                  <div className="rounded-lg border p-4">
+                    <div className="text-sm text-muted-foreground">Wyrównanie cen do rynku, jeśli klienci zostaną</div>
+                    <div className="text-2xl font-bold">{zl(value.valueOfOnePctPrice * position.avgGapPct)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      więcej zysku co miesiąc przy {activeCustomers.toLocaleString('pl-PL')} klientach i {zl(revenuePerCustomer)} przychodu na klienta (zmienisz na dole strony)
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-sm text-muted-foreground">
+                {position.qualityPremiumTrusted && position.qualityPremiumPct !== null
+                  ? `Na tym rynku marka, która ma o 10 mniej negatywnych opinii na 100, bierze średnio ${pct1(position.qualityPremiumPct)} ${position.qualityPremiumPct >= 0 ? 'więcej' : 'mniej'} za ten sam pakiet. „Cena rynku” poniżej to uwzględnia.`
+                  : 'Dziś rynek nie płaci wyraźnie więcej za lepsze opinie, więc „cena rynku” poniżej to średnia cen konkurentów.'}
+              </p>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Pakiet</TableHead>
+                    <TableHead className="text-right">Twoja cena</TableHead>
+                    <TableHead className="text-right">Cena rynku</TableHead>
+                    <TableHead className="text-right">Różnica na dzień</TableHead>
+                    <TableHead>Najtańszy i najdroższy konkurent</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {position.offers.map((o) => (
+                    <TableRow key={o.packageName + o.kcal}>
+                      <TableCell>
+                        <div className="font-medium">{o.packageName}</div>
+                        <div className="text-xs text-muted-foreground">{o.segment} · {o.kcal} kcal · {o.competitors} konkurentów</div>
+                      </TableCell>
+                      <TableCell className="text-right">{zl2(o.price)}</TableCell>
+                      <TableCell className="text-right">{zl2(o.expectedPrice)}</TableCell>
+                      <TableCell className="text-right">
+                        {Math.abs(o.gap) < 0.5 ? (
+                          <span className="text-muted-foreground">na poziomie rynku</span>
+                        ) : o.gap > 0 ? (
+                          <Badge variant="default">możesz +{zl2(o.gap)}</Badge>
+                        ) : (
+                          <Badge variant="outline">drożej o {zl2(-o.gap)}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {o.cheapest.brandName} {zl2(o.cheapest.price)} · {o.priciest.brandName} {zl2(o.priciest.price)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <p className="text-xs text-muted-foreground">
+                To porównanie cen katalogowych, a nie dowód, że podwyżka się uda. Nie uwzględnia rabatów, liczby posiłków ani zasięgu dostaw.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {report.reviewsUsed < 50 ? (
         <Card>

@@ -10,7 +10,6 @@ import {
   Percent,
   Home,
   MessageSquare,
-  Camera,
   Menu,
   Image,
   ChevronDown,
@@ -36,9 +35,8 @@ const navigation: { name: string; href: string; icon: any; beta?: boolean }[] = 
   { name: "Rabaty", href: "/discounts", icon: Percent },
   { name: "Opinie", href: "/reviews", icon: MessageSquare },
   { name: "Raporty", href: "/reports", icon: BarChart3 },
-  { name: "Screenshots", href: "/screenshots", icon: Camera },
-  { name: "Review Manager", href: "/review-manager", icon: MessageSquare, beta: true },
   { name: "Retencja i ceny", href: "/retention", icon: BrainCircuit, beta: true },
+  { name: "Review Manager", href: "/review-manager", icon: MessageSquare, beta: true },
 ];
 
 const infografikiSubItems = [

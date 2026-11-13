@@ -554,3 +554,159 @@ export function buildOwnerReport(
     all,
   };
 }
+
+// ---------------------------------------------------------------------------
+// E) Pozycja cenowa: cena marki vs cena, jaką rynek bierze za podobną jakość
+// ---------------------------------------------------------------------------
+//
+// Oferty grupujemy w segmenty (typ diety + kaloryczność). W każdym segmencie
+// log(cena) = efekt segmentu + beta * jakość marki. Jakość = udział negatywnych
+// opinii marki (na 100). Beta uczymy na całym rynku; gdy nie jest istotna
+// statystycznie, przyjmujemy 0 i porównujemy do średniej segmentu.
+
+export interface ActiveOffer {
+  brandName: string;
+  packageName: string;
+  segment: string; // np. "Standard"
+  kcal: number; // koszyk kaloryczności
+  price: number; // zł / dzień
+}
+
+export interface OfferPosition {
+  packageName: string;
+  segment: string;
+  kcal: number;
+  price: number;
+  expectedPrice: number; // cena rynku dla jakości tej marki
+  gap: number; // expectedPrice - price (zł/dzień); > 0 = marka tańsza niż rynek
+  gapPct: number; // gap / price * 100
+  competitors: number; // liczba innych marek w segmencie
+  cheapest: { brandName: string; price: number };
+  priciest: { brandName: string; price: number };
+}
+
+export interface PricePosition {
+  offers: OfferPosition[]; // posortowane malejąco po gap
+  compared: number;
+  skipped: number; // oferty bez co najmniej 3 konkurentów w segmencie
+  avgGapPct: number | null; // średnia po ofertach; > 0 = taniej niż rynek
+  qualityPremiumPct: number | null; // o ile % wyższa cena przy 10 pkt mniej negatywów; null = rynek nie wycenia
+  qualityPremiumTrusted: boolean;
+  marketOffers: number; // ile obserwacji (marka x segment) użyto do nauki
+}
+
+export function brandQuality(reviews: ReviewRow[], minReviews = 50): Map<string, number> {
+  const acc = new Map<string, { n: number; neg: number }>();
+  for (const r of reviews) {
+    if (r.rating === null || r.rating === undefined) continue;
+    let a = acc.get(r.brand_id);
+    if (!a) { a = { n: 0, neg: 0 }; acc.set(r.brand_id, a); }
+    a.n++;
+    if (r.rating <= 2) a.neg++;
+  }
+  const out = new Map<string, number>();
+  for (const [id, a] of acc) if (a.n >= minReviews) out.set(id, (a.neg / a.n) * 100);
+  return out;
+}
+
+export function buildPricePosition(
+  brandName: string,
+  offers: ActiveOffer[],
+  negPer100ByBrand: Map<string, number> // klucz: nazwa marki
+): PricePosition {
+  // segment -> marka -> mediana log(ceny)
+  const cells = new Map<string, Map<string, number[]>>();
+  for (const o of offers) {
+    if (!(o.price > 0)) continue;
+    const key = `${o.segment}|${o.kcal}`;
+    if (!cells.has(key)) cells.set(key, new Map());
+    const c = cells.get(key)!;
+    if (!c.has(o.brandName)) c.set(o.brandName, []);
+    c.get(o.brandName)!.push(Math.log(o.price));
+  }
+  const cellBrand = new Map<string, Map<string, number>>();
+  for (const [key, c] of cells) {
+    const m = new Map<string, number>();
+    for (const [b, xs] of c) m.set(b, median(xs));
+    cellBrand.set(key, m);
+  }
+
+  // Nauka beta: odchylenia od średniej segmentu (segmenty z >= 4 markami o znanej jakości).
+  let sxx = 0, sxy = 0, syy = 0, nObs = 0, nCells = 0;
+  for (const m of cellBrand.values()) {
+    const pts: { q: number; lp: number }[] = [];
+    for (const [b, lp] of m) {
+      const q = negPer100ByBrand.get(b);
+      if (q !== undefined) pts.push({ q, lp });
+    }
+    if (pts.length < 4) continue;
+    const mq = pts.reduce((s, p) => s + p.q, 0) / pts.length;
+    const mp = pts.reduce((s, p) => s + p.lp, 0) / pts.length;
+    for (const p of pts) {
+      sxx += (p.q - mq) ** 2;
+      sxy += (p.q - mq) * (p.lp - mp);
+      syy += (p.lp - mp) ** 2;
+    }
+    nObs += pts.length;
+    nCells++;
+  }
+  let beta = 0;
+  let trusted = false;
+  let premium: number | null = null;
+  const dof = nObs - nCells - 1;
+  if (sxx > 0 && dof >= 10) {
+    const b = sxy / sxx;
+    const sse = syy - b * sxy;
+    const se = Math.sqrt(Math.max(sse, 0) / dof / sxx);
+    trusted = se > 0 && Math.abs(b / se) >= 2;
+    if (trusted) {
+      beta = b;
+      premium = (Math.exp(-10 * b) - 1) * 100; // 10 pkt mniej negatywów
+    }
+  }
+
+  const ownQ = negPer100ByBrand.get(brandName);
+  const out: OfferPosition[] = [];
+  let skipped = 0;
+
+  for (const o of offers) {
+    if (o.brandName !== brandName || !(o.price > 0)) continue;
+    const m = cellBrand.get(`${o.segment}|${o.kcal}`)!;
+    const others = [...m.entries()].filter(([b]) => b !== brandName);
+    if (others.length < 3) { skipped++; continue; }
+
+    const meanLp = others.reduce((s, [, lp]) => s + lp, 0) / others.length;
+    let adj = 0;
+    if (beta !== 0 && ownQ !== undefined) {
+      const qs = others.map(([b]) => negPer100ByBrand.get(b)).filter((q): q is number => q !== undefined);
+      if (qs.length >= 3) adj = beta * (ownQ - qs.reduce((s, q) => s + q, 0) / qs.length);
+    }
+    const expectedPrice = Math.exp(meanLp + adj);
+    const sorted = others.map(([b, lp]) => ({ brandName: b, price: Math.exp(lp) })).sort((a, b) => a.price - b.price);
+
+    out.push({
+      packageName: o.packageName,
+      segment: o.segment,
+      kcal: o.kcal,
+      price: o.price,
+      expectedPrice,
+      gap: expectedPrice - o.price,
+      gapPct: ((expectedPrice - o.price) / o.price) * 100,
+      competitors: others.length,
+      cheapest: sorted[0],
+      priciest: sorted[sorted.length - 1],
+    });
+  }
+
+  out.sort((a, b) => b.gap - a.gap);
+
+  return {
+    offers: out,
+    compared: out.length,
+    skipped,
+    avgGapPct: out.length ? out.reduce((s, o) => s + o.gapPct, 0) / out.length : null,
+    qualityPremiumPct: premium,
+    qualityPremiumTrusted: trusted,
+    marketOffers: nObs,
+  };
+}
